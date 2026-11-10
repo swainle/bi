@@ -1,0 +1,46 @@
+{
+  "name": "mingzebi-frontend",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "明策BI 前端 — 自研 BI 画布引擎 / 看板设计器 / AI 生成",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "build:layout": "pnpm --dir packages/mylayout build"
+  },
+  "dependencies": {
+    "@mylayout/core": "file:./packages/mylayout",
+    "@emotion/react": "^11.11.0",
+    "@emotion/styled": "^11.11.0",
+    "@hello-pangea/dnd": "^18.0.1",
+    "@mui/icons-material": "^5.15.0",
+    "@mui/material": "^5.15.0",
+    "@tiptap/core": "^3.25.0",
+    "@tiptap/extension-placeholder": "^3.25.0",
+    "@tiptap/extension-text-align": "^3.25.0",
+    "@tiptap/extension-underline": "^3.25.0",
+    "@tiptap/react": "^3.25.0",
+    "@tiptap/starter-kit": "^3.25.0",
+    "axios": "^1.7.0",
+    "echarts": "^6.1.0",
+    "echarts-for-react": "^3.0.6",
+    "echarts-wordcloud": "^2.1.0",
+    "html2canvas": "^1.4.1",
+    "react": "^18.3.1",
+    "react-dnd": "^16.0.1",
+    "react-dnd-html5-backend": "^16.0.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.23.0",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "typescript": "^5.5.3",
+    "vite": "^5.4.0"
+  }
+}

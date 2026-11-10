@@ -1,0 +1,39 @@
+# 明策BI · 后端依赖
+# 安装: python -m venv .venv && .venv/bin/pip install -r requirements.txt
+
+# ── Web 框架 ──
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+python-multipart==0.0.9
+
+# ── 配置 / 校验 ──
+pydantic==2.7.0
+pydantic-settings==2.3.0
+email-validator==2.1.1
+
+# ── 数据库（BI 依赖 PostgreSQL: jsonb / 窗口函数 / 物化视图）──
+sqlalchemy==2.0.30
+psycopg2-binary==2.9.9
+
+# ── 认证 ──
+python-jose[cryptography]==3.3.0
+bcrypt==4.1.0
+
+# ── 数据处理 / 导入导出（Excel、CSV、聚合计算）──
+pandas==2.2.2
+numpy==1.26.4
+openpyxl==3.1.2
+
+# ── HTTP 客户端（LLM 调用、外部数据源）──
+httpx==0.28.1
+requests==2.32.3
+
+# ── 日志 / 中文拼音（团队目录命名）──
+structlog>=24.0.0
+pypinyin==0.50.0
+
+# ── 可选：Redis（布局缓存 / 分布式限流）──
+redis>=5.0.0
+
+# ── 可选：系统监控端点 ──
+psutil>=5.9.0

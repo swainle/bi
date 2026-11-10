@@ -1,0 +1,109 @@
+"""数据库引擎与会话管理.
+
+支持 SQLite（开发）和 PostgreSQL（生产）。
+通过 DATABASE_URL 环境变量切换。
+"""
+
+import os
+
+from sqlalchemy import create_engine, event
+from sqlalchemy.orm import DeclarativeBase, sessionmaker
+
+from app.config import settings
+
+
+class Base(DeclarativeBase):
+    """SQLAlchemy 声明式基类."""
+    pass
+
+
+# ── 数据库 URL 判断 ──────────────────────────────────────────
+_db_url = settings.database_url
+_is_sqlite = _db_url.startswith("sqlite")
+
+# ── 引擎参数 ─────────────────────────────────────────────────
+_engine_kwargs = {"echo": getattr(settings, "db_echo", False)}
+
+if _is_sqlite:
+    # 确保 SQLite 数据目录存在
+    data_dir = os.path.dirname(_db_url.replace("sqlite:///", ""))
+    if data_dir and not os.path.exists(data_dir):
+        os.makedirs(data_dir, exist_ok=True)
+    _engine_kwargs["connect_args"] = {"check_same_thread": False}
+else:
+    # PostgreSQL 企业级连接池配置（100 人并发）
+    _engine_kwargs["pool_size"] = 20             # 基础连接数（每 Uvicorn worker）
+    _engine_kwargs["max_overflow"] = 10          # 高峰额外连接（总计最多 30）
+    _engine_kwargs["pool_pre_ping"] = True       # 每次借出前检测连接可用性
+    _engine_kwargs["pool_recycle"] = 1800        # 30 分钟后回收连接，防止 PG 断开
+    _engine_kwargs["pool_timeout"] = 30          # 等待连接超时 30s，防并发 500
+    _engine_kwargs["pool_use_lifo"] = True       # LIFO 复用最近连接，减少空闲数
+
+engine = create_engine(_db_url, **_engine_kwargs)
+
+
+if _is_sqlite:
+    @event.listens_for(engine, "connect")
+    def _set_sqlite_pragma(dbapi_connection, _connection_record):  # type: ignore[no-untyped-def]
+        """启用 SQLite WAL 模式和外键约束."""
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
+
+# ── 会话工厂 ─────────────────────────────────────────────────
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+
+def get_db():
+    """FastAPI 依赖：获取数据库会话."""
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+# ── 慢查询日志 + 连接池监控 ──────────────────────────────────
+import logging
+import time as _time
+
+_slow_log = logging.getLogger("sqlalchemy.slow")
+_pool_log = logging.getLogger("sqlalchemy.pool")
+
+@event.listens_for(engine, "before_cursor_execute")
+def _before_exec(conn, cursor, statement, parameters, context, executemany):
+    conn.info.setdefault("_start", _time.time())
+
+@event.listens_for(engine, "after_cursor_execute")
+def _after_exec(conn, cursor, statement, parameters, context, executemany):
+    elapsed = _time.time() - conn.info.pop("_start", _time.time())
+    if elapsed > 0.5:  # 超过 500ms 记录
+        _slow_log.warning(f"SLOW QUERY ({elapsed:.2f}s): {statement[:200]}")
+
+
+# ── 连接池溢出告警 ───────────────────────────────────────────
+@event.listens_for(engine, "checkout")
+def _on_checkout(dbapi_connection, connection_record, connection_proxy):
+    """连接池使用率超 80% 时告警."""
+    pool = engine.pool  # type: ignore[attr-defined]
+    size = pool.size()
+    checked_out = pool.checkedout()
+    if size > 0 and checked_out / size > 0.8:
+        _pool_log.warning(
+            f"POOL HIGH USAGE: {checked_out}/{size} connections in use "
+            f"(overflow: {pool.overflow()})"
+        )
+
+
+def get_pool_status() -> dict:
+    """获取连接池状态 — 供 /api/health 或监控端点调用."""
+    pool = engine.pool  # type: ignore[attr-defined]
+    return {
+        "pool_size": pool.size(),
+        "checked_in": pool.checkedin(),
+        "checked_out": pool.checkedout(),
+        "overflow": pool.overflow(),
+        "utilization_pct": round(pool.checkedout() / max(pool.size(), 1) * 100, 1),
+    }

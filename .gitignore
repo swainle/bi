@@ -1,0 +1,33 @@
+# ── Python ──
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# ── 环境与密钥 ──
+.env
+.jwt_secret
+
+# ── 运行时数据 ──
+backend/uploads/
+backend/data/
+*.log
+
+# ── 前端 ──
+node_modules/
+
+# 本地包 @mylayout/core 的 dist 随仓库分发（file: 依赖直接指向 dist）
+frontend/dist/
+frontend/node_modules/
+.vite/
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts
+
+# ── 系统 / 编辑器 ──
+.DS_Store
+.idea/
+.vscode/
+*.swp

@@ -1,0 +1,55 @@
+# ─────────────────────────────────────────────────────────────
+# 明策BI · 一键启动（PostgreSQL + FastAPI + Nginx/React）
+#   docker compose up -d --build
+#   前端 http://localhost:8080   后端 http://localhost:8000/api/health
+# ─────────────────────────────────────────────────────────────
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: mingzebi-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: mingzebi
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mingzebi}
+      POSTGRES_DB: mingzebi
+    ports:
+      - "5432:5432"
+    volumes:
+      - mingzebi_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mingzebi -d mingzebi"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+    container_name: mingzebi-backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://mingzebi:${POSTGRES_PASSWORD:-mingzebi}@db:5432/mingzebi
+      JWT_SECRET: ${JWT_SECRET:?请先设置 JWT_SECRET（openssl rand -base64 48）}
+      LLM_API_BASE: ${LLM_API_BASE:-https://api.deepseek.com}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-deepseek-chat}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Admin@123456}
+      DEBUG: "false"
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: mingzebi-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "8080:80"
+
+volumes:
+  mingzebi_pgdata:
