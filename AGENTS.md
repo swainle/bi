@@ -92,8 +92,24 @@ DATABASE_URL="postgresql://cavan-m4max@127.0.0.1:5432/mingzebi_dev" DEBUG=true \
   前端预览页右上角「收藏视图」，保存 / 恢复「视图 + 筛选参数」（地址栏 `p_*` 同步）。
 - **地图组件（2026-11-13 起）**：`kind=map`（组件库 `base.map`，第 23 类）；维度绑省份、指标决定颜色深浅；
   GeoJSON 走 `GET /api/bi/maps/china`（`backend/app/maps/china.json`，419KB / gzip 117KB，ETag + 缓存一天，
-  **不进前端 bundle**）；省份名兼容「广东省 / 广东」；演示数据集 `bi_demo_sku` 有「省份」字段，
-  存量行按 `link_id` 顺序回填（`seed_demo.ensure_demo_dataset` 启动时幂等补齐）。
+  **不进前端 bundle**）；省份名兼容「广东省 / 广东」；演示数据集 `bi_demo_sku` 有「省份」字段。
+- **演示数据集（2026-11-13 起换成真表）**：`bi_demo_sku` 不再随机生成，数据源是仓库里的
+  `backend/app/components/data/demo_sku.csv`（180 行 / 26 字段，脱敏：平台A/B/C、品牌A~N、31 个省），
+  字段名与「榜单端」真实数据集对齐（平台 / 品牌 / 种类 / 榜单 / 均价 / 日销量 / 日销量档位…）。
+  改数据 = 换这份 CSV；`seed_demo.ensure_demo_dataset` 幂等：表结构不符就重建、行数或产品 id 指纹不符就整表重刷、
+  字段集合不符就整组按 CSV 顺序重建（日常启动不动用户改过的字段名/角色）。
+  🚨 这行数据集**只按物理表 `bi_demo_sku` 认，不要按 name 认**（2026-11-13 按要求改名成「测试-01」）：
+  改名保护 / 删除保护 / 组件库缩略图兜底（`components/router.py::_demo_dataset_id`）都必须按 `physical_table` 判，
+  按名字认一旦改名就会「凭空多建一份 + 卡片墙塌成灰条」。
+  改字段名（如 `商品标题 → 产品标题`）时要同步：`seed_base.BASE` + `bi_component.spec` + 绑了演示数据集的画板，
+  用 `scripts/rebind_demo_fields.py --apply`（只改 `binding.dataset_id == 20` 的地方，业务数据集不碰，改前自动备份 doc 到 /tmp）。
+- **时间序列卡的排序（2026-11-13 修）**：`binding.order_by_dimension = true` 的卡（折线 / 面积、有序类目）
+  **必须保留 SQL 的时间/维度顺序** —— `components/resolver.py` 里原来无条件 `out.sort(value)`，会把「按时间升序」重排成
+  「按值排序」，折线图画出来是「值最大的几个点」、时间轴乱跳。改这块时别再把那句重排加回去。
+- **测试数据集里的「自建」数据（2026-11-13 起）**：同一页可以「＋ 新建数据集」（上传 CSV / Excel，或挑已有物理表）；
+  落库是 `bi_dataset.is_sandbox = true` + `owner_id = NULL`（公共、跟随项目）——**只有管理员能建能删**（成员 403）。
+  这类数据集只在「测试数据集」页列（`GET /bi/semantic/datasets/sandbox`），**不进「数据集」管理页**，
+  但看板 / 组件库的数据集选择器里能选到；删除只删数据集，导入的物理表留在「数据源」里。
 - **图表联动（2026-11-13 起）**：`/render`、`/rows`、导出接口都接受 `cross_filters: [{column, value}]`（最多 10 条）；
   页面筛选优先、只对有该列的卡片生效；渲染缓存 key 已包含联动条件，改缓存逻辑时别漏。
   下钻明细：`POST /bi/dashboards/{id}/drill`（`{item_key, column, value, view, params}`，≤200 行，权限 `_require_read`）。
@@ -112,21 +128,79 @@ DATABASE_URL="postgresql://cavan-m4max@127.0.0.1:5432/mingzebi_dev" DEBUG=true \
   数据源引擎（`app/sources/repository.engine_for`）按「id + 连接串指纹」缓存 1h，改地址/密码自动释放旧池；
   它与直连查询（`app/query/live.engine_for_source`，带 30s 语句超时）刻意分开 —— 同步几十万行不能被 30s 打断。
   方言回归在 `backend/tests/test_query_dialects.py`，改 `builder.py` / `grain.py` 必跑。
+  ClickHouse：`clickhouse-sqlalchemy` + `clickhouse-driver`；连接串按端口选驱动（8123 → `clickhouse+http`，
+  其余 → `clickhouse+native`），原生连接统一带 `settings={"prefer_column_name_to_alias": 1}`；
+  SQL Server：`pyodbc` + 系统 ODBC 驱动，连接串固定 `mssql+pyodbc://` 并自动补 `driver=` —— 驱动名按
+  `BI_MSSQL_DRIVER` → 本机 `ODBC Driver 18/17` → `FreeTDS` 顺序探测；用 MS 驱动时附带
+  `TrustServerCertificate=yes`（18 默认强制加密，内网自签证书会握手失败），FreeTDS 不加这个参数。
+  macOS 本地要 `brew install unixodbc freetds` 并在 `~/.odbcinst.ini` 注册 `FreeTDS`（`Driver=/opt/homebrew/lib/libtdsodbc.so`），
+  否则 `pyodbc.drivers()` 是空列表、连接报 IM002。连接串拼装回归在 `backend/tests/test_source_urls.py`。
+- **数据源类型清单唯一来源（2026-11-13 起）**：`backend/app/sources/types_catalog.py`，经
+  `GET /api/bi/sources/types` 下发；前端不再硬编码（`constants.tsx` 的 `DS_TYPES` 已删除）。
+  驱动可用性用 `importlib.util.find_spec` 实时探测，缺驱动的类型返回 `available=false` + `reason/install`，
+  新建对话框里置灰并标「未装驱动」—— 这是为了杜绝「界面能选、点测试连接报不支持」的花架子。
+  新增类型必须同时改三处：目录 + `repository.TYPE_DIALECT` + `requirements.txt`，并真机验证（连库 / 读表 / 查询），
+  缺一项就会出现「目录有、后端不认」。回归 `backend/tests/test_source_types.py`（含目录与 TYPE_DIALECT 一一对应）。
+  连接串细节：Oracle 固定 `oracle+oracledb://`（`oracle://` 会去找 cx_Oracle，本仓库装的是 python-oracledb）；
+  Redshift 走 PostgreSQL 协议（`TYPE_DIALECT` 收敛成 `postgresql`，不要再引第三方方言）；
+  空密码不拼 `user:@host`（PyHive 会把空串当密码，报「Protocol must be https」这种假错）。
+  方言差异：Hive / Impala 标识符用反引号（`builder.quote`），Impala 不支持 `NULLS LAST`；
+  Hive / Impala / Db2 暂未适配时间粒度，`grain._UNSUPPORTED_DIALECTS` 会明确报错 —— **不要静默回退 PG**。
 - **数据源结构 / 新鲜度（2026-11-13 起）**：`bi_source_table` 存 `columns_snapshot`（字段快照）/ `schema_hash` /
   `checked_at` / `drift`（迁移 `027_source_schema.sql`）。接入或重新同步时落基线并清空漂移；
   `POST /api/bi/sources/{id}/schema-check` 只读源库结构对比（无基线的老表只补基线，不报「全部新增」），
   `POST /api/bi/sources/files/{id}/resync` 单表重拉（文件表拒绝）。列表接口返回
   `freshness`（fresh <24h / aging <7d / stale）/ `age_hours`，阈值常量在 `sources/repository.py` 的
   `FRESH_HOURS` / `STALE_HOURS`。纯函数回归在 `backend/tests/test_source_schema.py`，改快照/漂移逻辑必跑。
+- **自动同步（2026-11-13 起）**：`bi_source_table.sync_interval_minutes`（0 = 关闭，其余 15 分钟 ~ 7 天），
+  `app/sources/sync_scheduler.py` 随应用启动，默认 60s 扫「`synced_at` + 间隔 <= now」的表并重拉：
+  每轮上限 `BI_SYNC_MAX_PER_RUN`（默认 3）、`BI_SYNC_INTERVAL_SECONDS=0` 整体关闭（表配置保留）、
+  多 worker 用 PG advisory lock（key 872302）去重；单表独立 Session，失败只写
+  `last_sync_status=failed` + `last_sync_error`，不中断同轮其它表。
+  接口：`PATCH /api/bi/sources/files/{id}/schedule`（`{interval_minutes}`）、
+  `POST /api/bi/sources/sync/due`（立即跑一轮，验证 / 补跑）。验证调度别等真实间隔：
+  把该行 `synced_at` 回拨超过间隔再调 sync/due 即可。
+- **指标治理（2026-11-13 起）**：`bi_dataset_metric` 有 `certified / certified_by / certified_at / version`，
+  历史快照在 `bi_metric_version`（迁移 `029_metric_governance.sql`）。口径 = 聚合表达式 + 格式：
+  只有口径变了才 `version + 1`、自动取消认证、写一条 `口径变更` 快照；改名 / 改描述不动版本。
+  接口：`GET .../metrics/{id}/versions`、`POST .../metrics/{id}/certify`、
+  `GET .../metrics/{id}/usages`（读 `bi_dash_item_source` 账本，按数据集 + 指标名找引用它的看板元素）。
+  影响分析依赖「保存看板时重建账本」，手工 SQL 改过 `doc` 的看板要重新保存一次。
+  纯函数回归在 `backend/tests/test_metric_governance.py`。
+  字段级血缘：`GET /api/bi/semantic/datasets/{id}/fields/usages`，由
+  `dashboards/sources.field_hits_in_doc` 直接解析看板文档（维度 / 指标 / 筛选 `fields[].column`），
+  数据集「字段」页签显示可点的「使用 N」；改这段解析必跑 `backend/tests/test_field_lineage.py`。
+- **dbt / LookML 导入（2026-11-13 起）**：`backend/app/semantic/importer.py`，只导「指标口径 + 字段说明」，
+  `plan()` 只读出计划（新建 / 更新 / 跳过 + 原因）→ `apply()` 才写库，指标复用 `update_metric` 的版本治理；
+  新增解析能力时保持这个两段式，别在 plan 里落库。dbt 只认 `simple` / `ratio` / 旧版 `calculation_method`，
+  `derived` 与带 filter 的指标一律跳过并给原因（硬转会改变口径）；LookML `filters` 的多值（OR）同理跳过。
+  表达式入库前过 `validate_metric_expression` 并检查列是否在数据集里，**不允许带病入库**。
+  纯函数回归在 `backend/tests/test_model_import.py`。
+- **数据集行列权限（2026-11-13 起）**：`bi_dataset_row_rule` / `bi_dataset_column_mask`（迁移 `030_dataset_security.sql`），
+  代码在 `app/security/dataset_rules.py`。行级条件与表级 RLS **同时 AND** 进 WHERE；
+  列级先套表级脱敏再套数据集脱敏（同列数据集优先）。生效点是 `query.executor.run` / `query.live.run_live` 的
+  `dataset_id` 参数 —— 新增取数入口时**必须把 dataset_id 传进去**，否则数据集规则不生效（直连结果缓存键也带 dataset_id）。
+  改权限限数据集 owner / 管理员；模板复制在 `template_market._copy_dataset` 里整组复制规则
+  （条件按列名写，别写表名，副本表名会变成 `bi_tpl_*`）。
+  语义接口：`GET/POST/DELETE /api/bi/semantic/datasets/{id}/security...`；回归 `backend/tests/test_dataset_rules.py`。
 - 多 worker 部署用叠加配置：`docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build`
   （2 worker + 连接池收窄；默认不启用，出问题直接去掉 `-f docker-compose.prod.yml` 回退单 worker）。
-- 压测：`backend/tests/load/k6_dashboard.js`（k6，50→100→200 并发打开看板，p95<1.5s）；
+- 压测：`backend/tests/load/k6_dashboard.js`（k6）。
+  单账号：`TOKEN=<token> DASHBOARD_ID=<id> k6 run ...`；
+  线上口径（多账号 × 多看板，缓存按用户隔离）：`ACCOUNTS="u1:p1,u2:p2" DASHBOARD_IDS="57,58,107" k6 run ...`。
+  压测前把后端 `RATE_LIMIT_DEFAULT` 调大（默认 300 次/分钟/IP 会 429）、关掉告警/报表/同步调度（`BI_*_INTERVAL_SECONDS=0`），
+  单开一个端口（例：8301）跑，别干扰开发服；临时账号与授权行测完要删干净。
   量化缓存收益就用 `BI_RENDER_CACHE_TTL=0` 与 `15` 各跑一遍对比。
 - 常用读路径索引在 `schema/migrations/018_read_path_indexes.sql`；新加高频查询先补索引再上线。
 - CI 在 `.github/workflows/ci.yml`：后端 pytest + 前端 `npm run typecheck` / `npm test` / `vite build`。
 - 可观测性：`GET /api/metrics`（进程内聚合，不含 SQL / 业务数据）——
   查询成功/失败/超时/取消/配额/并发、缓存命中率、队列长度与 worker 数、连接池、慢查询 1h/24h。
   新增埋点用 `app/query/metrics.incr(...)`；多 worker 时数字是「当前进程」的。
+- **K8s 探针（2026-11-13 起）**：`GET /api/livez` 只证明进程能响应、**不碰数据库**（DB 抖动不能触发重启）；
+  `GET /api/readyz` 要求数据库可用，不可用直接 **503**（被摘出 Service），Redis 连不上只报 `redis: down`、
+  不影响就绪（缓存是可选依赖）。`/api/health` 保持原样（compose / 前端在用，别改语义）。
+  部署清单在 `deploy/helm/mingzebi`：探针已按上面口径配好，开 `worker.enabled` 时 API 自动切 `BI_JOB_EXECUTOR=worker`；
+  改 chart 必须跑 `helm lint deploy/helm/mingzebi` + `helm template`（默认 / worker+ingress+hpa 两个变体）再交付。
 - 前端单测：`cd frontend && npm test`（Vitest 2.1.9，和 Vite 5 匹配，别升到 vitest 3+）。
   纯函数（格式化、分套判定等）改动要补 `src/**/__tests__/*.test.ts`。
 - 主链路 E2E（本地门禁）：`cd frontend && npm run e2e`（Playwright + 本机 Chrome，7 条：登录跳转 / 我的看板 / 看板渲染 + 导出 / 筛选切换 / 组件库地图 / 模板分享弹窗 / 团队协同）；
@@ -140,6 +214,22 @@ DATABASE_URL="postgresql://cavan-m4max@127.0.0.1:5432/mingzebi_dev" DEBUG=true \
   后端 `global_exception_handler` 捕获未处理异常自动落 `source=backend`（方法 + 路径 + traceback）；
   `GET /api/bi/errors` 仅管理员（成员 403），「操作审计」页有「错误日志」表；
   保留 `BI_ERROR_RETAIN_DAYS`（默认 30 天，每小时最多清理一次）。
+- **Sentry / GlitchTip（2026-11-13 起）**：`app/observability.init_sentry()` 由 `SENTRY_DSN` 驱动 ——
+  为空不导入 SDK、不发请求；DSN 写错只打印一行原因，**不能让应用起不来**（回归 `backend/tests/test_observability.py`）。
+  后端取值顺序是「`init_sentry()` 参数（来自 `Settings`，可读 `backend/.env`）> 环境变量」，
+  所以配 `.env` 后普通启动命令就生效，别再往 uvicorn 命令行里内联 DSN。
+  就绪探针返回 `sentry: on/off`。自建部署清单在 `deploy/glitchtip/docker-compose.yml`（独立 PG/Redis，端口 8070，
+  单进程，没有 celery worker）；**镜像优先用 `registry.gitlab.com/glitchtip/glitchtip`** —— 本机 Docker Hub 拉不动，
+  13 个国内镜像全 403，GitLab Registry 可以（`GLITCHTIP_IMAGE` 可覆盖）。
+  GlitchTip 源码直跑不行：最新版依赖 `glitchtip-rust`（PyPI 没有）、`django-vcache` 要 Rust 编 wheel。
+  **界面中文化**走「挂载 + 同源注入」：`deploy/glitchtip/i18n/index.html`（从镜像拷出的 SPA 模板，保留 `{{ csp_nonce }}`）
+  挂到 `/code/dist/index.html`，`glitchtip-i18n.js/css` 挂到 `/code/static/`；CSP 的 `script-src 'self'` 放行同源脚本。
+  词典在 js 里按 7.0.0 的文案维护，**镜像升级后要重新 `docker compose cp web:/code/dist/index.html i18n/index.html`
+  再补新文案**，否则新版本的 index 模板（新 chunk 名）不会加载翻译。
+  前端是**构建期**变量 `VITE_SENTRY_DSN`（Vite 会把 env 内联成字面量，没配时整段动态 import 会被摇掉）：
+  开发写 `frontend/.env.local`（不进 git，改完要重启 `npm run dev`），生产走 `frontend/Dockerfile` 的
+  `ARG VITE_SENTRY_DSN` + compose `build.args`。带 DSN 构建后 gzip 942 → 1059KB（预算 1075KB，只剩 16KB 余量，
+  再加依赖先看 `npm run budget`）。GlitchTip 默认 `CORS_ORIGIN_ALLOW_ALL=True`，浏览器跨端口上报不用额外放行。
 - 视觉回归（本地门禁）：`npm run visual` 比对 4 个关键页面；改版式确认无误后 `npm run visual:update` 更新基线。
   基线在 `frontend/e2e/visual.spec.ts-snapshots/`，默认用**本机 Chrome**（不用 playwright install）。
   token 用 `scripts/visual_tokens.py` 生成（**不要走登录接口，会把浏览器会话踢掉**）。
@@ -246,6 +336,15 @@ DATABASE_URL="postgresql://cavan-m4max@127.0.0.1:5432/mingzebi_dev" DEBUG=true \
   2. 同步库里现有那一行（`PUT /bi/components/{id}` 或直接 `UPDATE bi_component.spec`），**模板里不写死 dataset_id**；
   3. 自查：`select code, kind, spec->'binding' from bi_component where archived=false`，
      逐条核对「字段在演示数据集里存在、kind 需要的维度有没有、不该有的维度有没有」。
+- **词云的槽位口径**（2026-11-13 对齐业界）：词云 = `binding.dimension`（词 / 文本列）+ `binding.metric`（权重 / 字号）
+  + `binding.series`（可选，「颜色（分类）」，同分类同色）。
+  对应帆软的 文本 / 大小 / 颜色 三档，也与 Superset（Series + Metric）、Tableau（标记卡 文本 + 大小）、
+  Power BI / FineBI / Quick BI 一致。
+  只绑词不绑权重时后端自动 `COUNT` 计数（`resolver.py` 的 wordcloud 分支），别把这条兜底删了。
+- **模板不许写死字段**（2026-11-13 用户要求）：组件库模板里的字段名 / 绑定列 / 候选值都要以数据集为准 ——
+  种子侧 `seed_base.build_filter_spec` 按演示数据集现建筛选栏，`_prune_missing` 清掉数据集里不存在的引用；
+  画布侧 `CanvasBoardPage.pruneSpecFields` 在拖入时按目标数据集再自检一次。
+  新增模板 / 改模板绑定时别手抄 天猫·拼多多·乌鸫食品 这类「某张表才有的值」，否则换数据就对不上。
 - **启动不会覆盖库**：`upsert_builtin` 默认只插入缺失组件，已存在的一律保留（用户调过的字段/选项/默认值不能被种子冲掉）。
   要让 `seed_base.BASE` 的改动生效：`MINGZEBI_RESEED=1` 启动一次；平时不要开。
 
@@ -298,6 +397,9 @@ DATABASE_URL="postgresql://cavan-m4max@127.0.0.1:5432/mingzebi_dev" DEBUG=true \
   前端 `FilterBar.visible`、后端 `resolved_fields` 必须同口径。
 - **筛选栏通用那份字段删完 = 组件自动移除**（编辑器回调 `onEmpty`，别留一个空框）；只删某个平台的专套不动组件。
   读文档时也清掉历史遗留的空筛选栏 —— 通用 0 字段就没有平台入口，专套里剩的永远渲染不出来。
+- **分套依据 ≠ 行过滤**（2026-11-13 用户踩坑）：勾了「分套依据」/ 配了「切换数据集」的字段，默认只切「卡片套 + 数据集」，
+  **不会**生成 `WHERE`（`dashboards/render.py::_page_filters` 只认 `field.column`）。要让它同时过滤行，
+  必须在面板里把字段拖进「绑定列」框（编辑器里平台字段现在也有这个框）。排查「选了平台却没过滤」先看这个字段的 `column` 空不空。
 - 分套依据字段（「平台」这种）只存在通用那份，但**面板在平台作用域下也要显示它**（带「通用」标记，改动写回通用）：
   否则筛选栏上的「平台」在面板里既看不见也删不掉。删它 = 取消这一页分套（先确认），同时清空 `fields_map`。
 - **面板默认编辑「通用」那份，平台专套不自动复制**：画布切平台时只有该平台确实有专套才跟过去，没有就停在通用。
@@ -342,14 +444,23 @@ DATABASE_URL="postgresql://cavan-m4max@127.0.0.1:5432/mingzebi_dev" DEBUG=true \
 12. **贴着容器顶边的 `Tooltip placement="top"` 会被 Popper 翻到下方**：抽屉（Drawer）标题贴着视口顶边时没有上方空间，
     MUI 自动 flip 到 bottom，气泡正好压住页签（2026-11-13 数据集改名踩过）。这类位置用原生 `title`（或换到不遮挡的方位），
     别指望 `placement="top"`。
-13. **MySQL 里 `ORDER BY \`别名\` IS NULL` 会把别名解析成源列**：时间粒度维度（`DATE_FORMAT(...) AS \`dt\``）与源列同名时，
-    这个写法直接触发 `ONLY_FULL_GROUP_BY` 报错（2026-11-13 真机 MySQL 8 踩过）。粒度别名不要再补空值排序键，
-    只对普通列 / 指标别名补；详见 `app/query/builder.py` 的 `grain_aliases`。
+13. **MySQL / ClickHouse 里 `ORDER BY \`别名\`` 会被解析成源列**：时间粒度维度（`DATE_FORMAT(...) AS \`dt\``）与源列同名时，
+    直接按别名排序或补 `(别名 IS NULL)` 都会报错（MySQL `ONLY_FULL_GROUP_BY`、ClickHouse `NOT_AN_AGGREGATE`，
+    2026-11-13 实测）。现在 `builder` 统一**按粒度表达式排序**（见 `grain_exprs`），别再改回按别名排序。
 14. **依赖版本按发行版写，不要抄模块的 `__version__`**：`PyMySQL.__version__` 是历史遗留值 `2.2.8`，
     真实发行版是 `1.2.x`，按前者 pin 会让 `pip install -r requirements.txt` 直接失败（2026-11-13 修正）。
 15. **SQLAlchemy `text()` 里不要写 `:param::jsonb`**：`::` 后面的 `jsonb` 会被当成第二个绑定参数，
     SQL 原样透传给 PG → `syntax error at or near ":"`（2026-11-13 结构检查接口踩过）。
     统一写 `CAST(:param AS jsonb)`；文本里的 `$1::jsonb` 之类也一样要换成 `CAST`。
+16. **ClickHouse / MySQL 会拿 SELECT 别名替换同名源列**：时间粒度写成 `toStartOfMonth("dt") AS "dt"` 时，
+    `GROUP BY toStartOfMonth("dt")` 会被解析成「别名套别名」，ClickHouse 报 `NOT_AN_AGGREGATE`、MySQL 报
+    `ONLY_FULL_GROUP_BY`（2026-11-13 嵌入式 ClickHouse 26.9 实测）。两条对策都要有：
+    ① `builder` 的 ORDER BY 按**粒度表达式**排序而不是别名；② ClickHouse 原生连接加
+    `settings={"prefer_column_name_to_alias": 1}`（列名优先于别名）。凡是新增聚合/粒度表达式，先在这两个库上跑一遍。
+17. **左栏「数据集」只跟「数据类元素」走**（2026-11-13 踩过）：`CanvasBoardPage` 的 `fieldDatasetId`
+    只能用 `type === "chart"` 的 `binding.dataset_id` 决定；筛选栏 / 标题 / 文字 / 画板上的
+    `binding.dataset_id` 是历史残留，拿它说话会让左栏被钉死、点下拉没反应（下拉 `onChange` 也只回写 chart）。
+    加新元素类型时想清楚它算不算「数据类」，别把残留绑定当真相。
 
 ---
 

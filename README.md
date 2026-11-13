@@ -25,7 +25,7 @@
 
 | 数据接入 | 分析画布 | AI 能力 | 企业能力 |
 |:--|:--|:--|:--|
-| **17+ 数据源**<br>MySQL · PostgreSQL · ClickHouse · Doris · StarRocks · 达梦 · 人大金仓 … | **双模式布局**<br>12 列栅格 / 自由悬浮 · 磁吸吸附 · 撤销重做 | **自然语言转 SQL**<br>一键生成看板 · 三阶段 Agent 管线 | **RBAC + 行级权限**<br>字段脱敏 · 操作审计 · 版本快照 |
+| **15 类数据源**<br>PG · MySQL 家族 · ClickHouse · SQL Server · Oracle · Db2 · Presto · Hive · Impala · Redshift + CSV/Excel | **双模式布局**<br>12 列栅格 / 自由悬浮 · 磁吸吸附 · 撤销重做 | **自然语言转 SQL**<br>一键生成看板 · 三阶段 Agent 管线 | **RBAC + 行级权限**<br>字段脱敏 · 操作审计 · 版本快照 |
 
 ---
 
@@ -84,6 +84,56 @@ python -m app.bootstrap            # 幂等：建表 / 种子 / 管理员
 python -m app.bootstrap --reset    # 清空重建（需 ALLOW_RESET=1）
 ```
 
+### 方式三：Kubernetes（Helm）
+
+`deploy/helm/mingzebi` 起 API / 前端，可选独立 worker、Ingress、HPA；数据库与 Redis 走外部托管实例。
+
+```bash
+# 密钥建议放 Secret（键：DATABASE_URL / JWT_SECRET / LLM_API_KEY / ADMIN_PASSWORD）
+kubectl create secret generic mingzebi-secrets \
+  --from-literal=DATABASE_URL='postgresql://u:p@rds:5432/mingzebi' \
+  --from-literal=JWT_SECRET="$(openssl rand -base64 48)"
+
+helm upgrade --install mingzebi deploy/helm/mingzebi \
+  --namespace mingzebi --create-namespace \
+  --set backend.existingSecret=mingzebi-secrets \
+  --set backend.redisUrl=redis://redis:6379/0 \
+  --set image.backend.tag=1.0.0 --set image.frontend.tag=1.0.0
+```
+
+- 探针分开：`/api/livez` 只看进程（不碰数据库），`/api/readyz` 数据库不可用返回 503（摘流量）；Redis 挂了只降级缓存，不影响就绪；
+- 开 worker：`--set worker.enabled=true`（API 侧自动切成 `BI_JOB_EXECUTOR=worker`，异步查询入队执行）；
+- 开 HPA：`--set autoscaling.enabled=true`（默认 2→6 副本，CPU 70%）；开 Ingress：`--set ingress.enabled=true`；
+- 校验：`helm lint deploy/helm/mingzebi`、`helm template t deploy/helm/mingzebi --set ...`。
+
+### 错误上报（可选：Sentry / 自建 GlitchTip）
+
+不配 DSN 时完全关闭，错误只进站内「操作审计 → 错误日志」(`bi_error_log`)。
+
+```bash
+# 自建 GlitchTip（轻量，Sentry 协议兼容）：http://127.0.0.1:8070
+# 镜像默认取 GitLab Registry（Docker Hub 拉不动时可用）；想换源：GLITCHTIP_IMAGE=glitchtip/glitchtip:latest
+cd deploy/glitchtip && docker compose up -d
+# 注册 → 建 Organization / Project → Settings → Client Keys (DSN) 复制那串地址
+# 也可以直接建一个开发用项目（会打印 DSN）：
+#   docker compose exec -e DEBUG=True web python manage.py bootstrap_dev
+# 界面默认中文，右下角「EN / 中文」可切换（词典在 deploy/glitchtip/i18n/）
+
+# 后端（运行期变量，为空 = 不启用）：写进 backend/.env 后普通启动即可
+#   SENTRY_DSN='https://key@127.0.0.1:8070/1'
+#   SENTRY_ENVIRONMENT=production
+# 也可以临时用环境变量：SENTRY_DSN='...' ./run.sh
+
+# 前端开发：写进 frontend/.env.local（不进 git），重启 npm run dev 生效
+echo "VITE_SENTRY_DSN='https://key@127.0.0.1:8070/1'" > frontend/.env.local
+
+# 前端生产（Vite 构建期内联：带 DSN 构建，产物里才会带上报 SDK；约 +117KB gzip）
+VITE_SENTRY_DSN='https://key@127.0.0.1:8070/1' npm run build
+# Docker：compose 已接 build args，直接 VITE_SENTRY_DSN=... docker compose build frontend
+```
+
+`GET /api/readyz` 会返回 `sentry: on/off`，一眼确认是否生效。
+
 ---
 
 ## 文档
@@ -131,7 +181,14 @@ macOS 防火墙对未签名的 node 会拦外部连接 —— `scripts/dev.sh` �
 <summary><b>功能清单</b></summary>
 
 ### 数据接入
-- 数据源类型：MySQL / MariaDB / PostgreSQL / Oracle / SQL Server / TiDB / 达梦 / 人大金仓 / ClickHouse / Doris / StarRocks / Presto / Kylin / Elasticsearch 等 17+
+- 数据源类型以后端目录 `backend/app/sources/types_catalog.py` 为准，前端不硬编码：
+  - **关系型**：PostgreSQL / MySQL / MariaDB / TiDB / 人大金仓 / Oracle / Db2 / SQL Server；
+  - **OLAP**：ClickHouse / Doris / StarRocks / Presto / Impala / Hive；
+  - **云数仓**：AWS RedShift（PostgreSQL 协议）；
+  - 驱动随 `requirements.txt` 安装，可用性由后端 `find_spec` 实时探测；缺驱动时界面置灰并标「未装驱动」。
+  - 时间粒度暂只适配 PG / MySQL / ClickHouse / SQL Server / Oracle / Presto / Redshift；
+    Hive / Impala / Db2 选粒度会明确报错（不静默生成错 SQL）。
+  - 新增类型 = 目录加一条 + `TYPE_DIALECT` 加方言 + requirements 加驱动 + 真机验证，缺一不可。
 - 连接测试、SQL 查询面板、CSV / Excel 导入向导、PDD 利润表结构化导入（含 AI 列映射推断）
 - 数据表元数据自动采集（JSONB 字段信息 + pgvector 向量，供 AI 检索）
 
