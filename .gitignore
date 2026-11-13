@@ -8,6 +8,8 @@ venv/
 
 # ── 环境与密钥 ──
 .env
+.env.local
+.env.*.local
 .jwt_secret
 
 # ── 运行时数据 ──
