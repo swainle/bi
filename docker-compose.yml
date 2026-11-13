@@ -62,6 +62,9 @@ services:
       BI_ASYNC_WORKERS: ${BI_ASYNC_WORKERS:-2}
       # 异步任务执行方式：inline（默认，API 进程内）/ worker（独立 worker 容器，见 prod compose）
       BI_JOB_EXECUTOR: ${BI_JOB_EXECUTOR:-inline}
+      # 错误上报（可选）：留空 = 不启用；填了 DSN 后接口异常自动上报
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
       # 连接池（单 worker 默认 20 + 10；多 worker 部署见 docker-compose.prod.yml）
       DB_POOL_SIZE: ${DB_POOL_SIZE:-20}
       DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-10}
@@ -71,6 +74,9 @@ services:
   frontend:
     build:
       context: ./frontend
+      args:
+        # 构建期注入（Vite 内联）：留空 = 产物不带错误上报 SDK
+        VITE_SENTRY_DSN: ${VITE_SENTRY_DSN:-}
     container_name: mingzebi-frontend
     restart: unless-stopped
     depends_on:
