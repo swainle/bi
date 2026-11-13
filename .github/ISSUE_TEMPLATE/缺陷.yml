@@ -1,0 +1,56 @@
+name: 缺陷
+description: 功能异常、报错、界面错位
+title: "[缺陷] "
+labels: ["缺陷"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: 现象
+      description: 实际发生了什么？报错信息原样贴出来。
+    validations:
+      required: true
+
+  - type: textarea
+    id: expect
+    attributes:
+      label: 期望
+      description: 正常应该是什么样？
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 打开 /bi/canvas
+        2. 拖入「条形图」
+        3. …
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: 影响范围
+      description: 哪个页面 / 接口 / 数据源类型？只影响个例还是全量？
+    validations:
+      required: true
+
+  - type: input
+    id: env
+    attributes:
+      label: 环境
+      description: 浏览器、前后端版本或提交号、是否 Docker
+      placeholder: Chrome 140 / main@a1b2c3d / docker
+    validations:
+      required: false
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 截图 / 日志
+      description: 界面问题必须附截图，否则无法判断对齐与遮挡。
+    validations:
+      required: false
