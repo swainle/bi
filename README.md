@@ -1,13 +1,119 @@
-# 明策BI（MingzeBI）
+<div align="center">
 
-自研 BI 底座 —— 数据源接入、数据集、**可拖拽画布看板编辑器**、AI 生成看板、企业级权限与审计。
-与原始协作平台（MYweb）**完全解耦**，独立仓库、独立数据库、独立部署。
+# 明策BI
 
-> 图表图形内核使用 Apache ECharts；画布引擎（布局 / 渲染调度 / 状态）、数据源适配层、自然语言转 SQL 的 AI 管线、权限审计均为自研。
+**自研 BI 底座** — 数据接入 · 语义层 · 拖拽画布 · AI 生成看板
+
+全链路自研，企业级权限与审计；与旧平台解耦，独立仓库 / 数据库 / 部署。
+
+[![CI](https://github.com/cavan199/MingzeBI/actions/workflows/ci.yml/badge.svg)](https://github.com/cavan199/MingzeBI/actions/workflows/ci.yml)
+![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)
+![ECharts](https://img.shields.io/badge/Apache_ECharts-6-AA344D)
+
+[快速开始](#快速开始)　·　[能力速览](#能力速览)　·　[界面](#界面)　·　[文档](#文档)　·　[项目治理](#项目治理)
+
+</div>
+
+![明策BI 看板预览](docs/images/hero-board.jpg)
 
 ---
 
-## 技术栈
+## 能力速览
+
+| 数据接入 | 分析画布 | AI 能力 | 企业能力 |
+|:--|:--|:--|:--|
+| **17+ 数据源**<br>MySQL · PostgreSQL · ClickHouse · Doris · StarRocks · 达梦 · 人大金仓 … | **双模式布局**<br>12 列栅格 / 自由悬浮 · 磁吸吸附 · 撤销重做 | **自然语言转 SQL**<br>一键生成看板 · 三阶段 Agent 管线 | **RBAC + 行级权限**<br>字段脱敏 · 操作审计 · 版本快照 |
+
+---
+
+## 界面
+
+| 统一编辑画布 | 组件库 |
+|:--|:--|
+| <img src="docs/images/canvas-editor.jpg" width="440" alt="统一编辑画布"> | <img src="docs/images/component-library.jpg" width="440" alt="组件库"> |
+| 拖拽 + 缩放 + 8px 吸附，右侧图表类型即插即用 | 15 种图表类型，一类一个，换字段即可复用 |
+
+**明细表** —— 列宽均分、数值右对齐，缩略图直连素材目录，点图看大图
+
+![明细表](docs/images/detail-table.jpg)
+
+---
+
+## 快速开始
+
+### 方式一：Docker（推荐）
+
+```bash
+cd ~/MingzeBI
+export JWT_SECRET="$(openssl rand -base64 48)"
+docker compose up -d --build
+```
+
+- 前端：http://localhost:5300
+- 后端健康检查：http://localhost:8300/api/health
+- 首次启动自动建表 + 导入示例数据 + 创建管理员（默认 `admin` / `Admin@123456`，用 `ADMIN_PASSWORD` 覆盖）
+
+### 方式二：本地开发
+
+前置：PostgreSQL 16（需安装 pgvector 扩展）、**Python 3.10+**（3.12 推荐；系统自带 3.9 会因运行时注解语法启动失败）、Node 20+。
+
+```bash
+# 1. 建库
+createdb mingzebi
+psql mingzebi -c "CREATE EXTENSION IF NOT EXISTS vector;"
+
+# 2. 后端
+cd backend
+cp .env.example .env          # 修改 DATABASE_URL / LLM_API_KEY
+./run.sh                      # 自动建 venv、装依赖、初始化库、启动 :8300
+
+# 3. 前端（另开终端）
+cd frontend
+npm install                   # .npmrc 已配置 legacy-peer-deps
+npm run dev                   # http://localhost:5300
+```
+
+初始化动作也可以单独跑：
+
+```bash
+cd backend
+python -m app.bootstrap            # 幂等：建表 / 种子 / 管理员
+python -m app.bootstrap --reset    # 清空重建（需 ALLOW_RESET=1）
+```
+
+---
+
+## 文档
+
+| 文档 | 内容 |
+|:--|:--|
+| [更新日志](docs/更新日志.md) | 功能与界面改动日记，只追加、顶部最新 |
+| [底座优化方案](docs/底座优化方案.md) | 架构演进与待办拆解 |
+| [平台分套方案](docs/平台分套_需求与技术方案.md) | 需求端 / 榜单端分套设计 |
+| [AGENTS.md](AGENTS.md) | 开发规则：视觉令牌 · 布局算式 · 组件链路 · 数据红线 · 已知的坑 |
+
+---
+
+## 项目治理
+
+| 入口 | 用途 |
+|:--|:--|
+| [Issues](../../issues) | 需求 / 缺陷，走 `.github/ISSUE_TEMPLATE` 模板，自动带标签 |
+| [Pull Requests](../../pulls) | 变更说明，走 PR 模板（改动面 / 验证方式 / 回滚） |
+| [Actions](../../actions) | CI：后端 pytest + 前端构建与类型检查 |
+
+**提交约定**：`feat:` / `fix:` / `refactor:` / `docs:` / `chore:`，一次提交只做一件事；
+界面改动必须在 `docs/更新日志.md` 追加一条。
+
+---
+
+<details>
+<summary><b>技术栈与目录结构</b></summary>
+
+### 技术栈
 
 | 层 | 选型 |
 |---|---|
@@ -18,9 +124,9 @@
 | 可选 | Redis（布局缓存 / 分布式限流）、Doris（大表加速） |
 | AI | 任意 OpenAI 兼容接口（默认 DeepSeek） |
 
----
+> 图表图形内核使用 Apache ECharts；画布引擎（布局 / 渲染调度 / 状态）、数据源适配层、自然语言转 SQL 的 AI 管线、权限审计均为自研。
 
-## 目录结构
+### 目录结构
 
 ```
 MingzeBI/
@@ -104,15 +210,17 @@ MingzeBI/
 ├── docker-compose.yml
 ├── docs/
 │   ├── 更新日志.md                  # 功能与界面改动的日记（只追加，顶部最新）
-│   ├── _selfcheck/                 # 交付前逐屏截图自检
-│   └── 看板截图/
+│   ├── images/                     # README 用图（压缩后入库）
+│   ├── _selfcheck/                 # 交付前逐屏截图自检（不入库）
+│   └── 看板截图/                    # 过程截图（不入库）
 ├── AGENTS.md                       # 开发规则（视觉令牌 / 布局算式 / 组件链路 / 数据红线 / 已知的坑）
 └── README.md
 ```
 
----
+</details>
 
-## 端口约定
+<details>
+<summary><b>端口约定</b></summary>
 
 | 服务 | 端口 | 说明 |
 |---|---|---|
@@ -126,53 +234,10 @@ MingzeBI/
 局域网访问：前端 Vite 已监听 `0.0.0.0`，同一 WiFi / 网段内的设备用 `http://<本机局域网IP>:5300` 打开即可（后端仍只绑 `127.0.0.1:8300`，由 Vite 代理转发，无需暴露）。查本机 IP：`ipconfig getifaddr en0`。
 macOS 防火墙对未签名的 node 会拦外部连接 —— `scripts/dev.sh` 固定用 `/usr/local/bin/node`（已加入防火墙白名单）；若手动 `npm run dev` 后局域网打不开，在弹出「是否允许 node 接受传入连接」时点允许，或把该 node 路径加入防火墙。
 
----
+</details>
 
-## 快速开始
-
-### 方式一：Docker（推荐）
-
-```bash
-cd ~/MingzeBI
-export JWT_SECRET="$(openssl rand -base64 48)"
-docker compose up -d --build
-```
-
-- 前端：http://localhost:5300
-- 后端健康检查：http://localhost:8300/api/health
-- 首次启动自动建表 + 导入示例数据 + 创建管理员（默认 `admin` / `Admin@123456`，用 `ADMIN_PASSWORD` 覆盖）
-
-### 方式二：本地开发
-
-前置：PostgreSQL 16（需安装 pgvector 扩展）、**Python 3.10+**（3.12 推荐；系统自带 3.9 会因运行时注解语法启动失败）、Node 20+。
-
-```bash
-# 1. 建库
-createdb mingzebi
-psql mingzebi -c "CREATE EXTENSION IF NOT EXISTS vector;"
-
-# 2. 后端
-cd backend
-cp .env.example .env          # 修改 DATABASE_URL / LLM_API_KEY
-./run.sh                      # 自动建 venv、装依赖、初始化库、启动 :8300
-
-# 3. 前端（另开终端）
-cd frontend
-npm install                   # .npmrc 已配置 legacy-peer-deps
-npm run dev                   # http://localhost:5300
-```
-
-初始化动作也可以单独跑：
-
-```bash
-cd backend
-python -m app.bootstrap            # 幂等：建表 / 种子 / 管理员
-python -m app.bootstrap --reset    # 清空重建（需 ALLOW_RESET=1）
-```
-
----
-
-## 功能清单
+<details>
+<summary><b>功能清单</b></summary>
 
 ### 数据接入
 - 数据源类型：MySQL / MariaDB / PostgreSQL / Oracle / SQL Server / TiDB / 达梦 / 人大金仓 / ClickHouse / Doris / StarRocks / Presto / Kylin / Elasticsearch 等 17+
@@ -196,7 +261,10 @@ python -m app.bootstrap --reset    # 清空重建（需 ALLOW_RESET=1）
 - 行级权限、字段脱敏、操作审计日志、看板版本快照
 - 缓存（连接池 / 查询缓存 / 布局缓存）、物化加速、PG→Doris 同步路由
 
-### 查询契约与语义层（`app/query` · `app/semantic`）
+</details>
+
+<details>
+<summary><b>查询契约与语义层</b>（`app/query` · `app/semantic`）</summary>
 
 | 能力 | 端点 | 说明 |
 |---|---|---|
@@ -210,7 +278,10 @@ python -m app.bootstrap --reset    # 清空重建（需 ALLOW_RESET=1）
 四条链路（`/data`、`/query`、`/query_builder`、语义查询、异步任务）共用同一套实现，
 代码在 `app/security/`（`sql_guard/` 只读网关 + `rls/` 行级权限 + `masking.py` 脱敏）。
 
-### 组件库（`app/components` · `/bi/components`）
+</details>
+
+<details>
+<summary><b>组件库</b>（`app/components` · `/bi/components`）</summary>
 
 一个组件 = **图表类型 + 数据绑定 + 计算规则 + 界面样式**，存在 `bi_component.spec`（jsonb），
 渲染时经语义层取数，因此「同类型只搭一个，换字段即可复用」。
@@ -259,7 +330,10 @@ RANK_TEMPLATE_DIR=/path/to/template ./.venv/bin/python -m scripts.import_rank_bo
 启动时 `bootstrap.ensure_components()` 会自动建「榜单端·SKU」语义数据集并写入内置组件
 （幂等，不会覆盖你复制出来的自定义组件）。
 
-### 业务看板（`app/dashboards` · `/bi/dashboards`）
+</details>
+
+<details>
+<summary><b>业务看板</b>（`app/dashboards` · `/bi/dashboards`）</summary>
 
 一个看板文档 = **页面元素 + 页面参数 + 视图**，存在 `bi_canvas.doc`（jsonb, v2.1）：
 
@@ -323,7 +397,10 @@ cd backend
 ./.venv/bin/python -m scripts.smoke_dashboards      # 全部视图渲染 + 参数切换 + 浮层动作
 ```
 
-### 看板画布（`app/canvas` · `/bi/canvas`）
+</details>
+
+<details>
+<summary><b>看板画布</b>（`app/canvas` · `/bi/canvas`）</summary>
 
 一张画布 = **多张卡片自由排布**，每张卡内嵌自己的图表类型与字段配置（不额外建组件行）。
 
@@ -346,7 +423,10 @@ cd backend
 
 单卡精修仍在 `/bi/components/:id/edit`（字段 / 查询 / 样式 + 标尺画布）。
 
----
+</details>
+
+<details>
+<summary><b>数据库迁移 · 数据与安全 · 测试</b></summary>
 
 ### 数据库迁移
 
@@ -357,9 +437,7 @@ cd backend
 backend/schema/migrations/002_xxx.sql
 ```
 
----
-
-## 数据与安全
+### 数据与安全
 
 - 认证：JWT（access 24h + refresh 7 天）+ token_version 单设备登录
 - CSRF：Double Submit Cookie，前端 axios 拦截器自动附加
@@ -373,6 +451,8 @@ backend/schema/migrations/002_xxx.sql
 ```bash
 cd backend && ./.venv/bin/python -m pytest     # 83 用例：SQL 网关 / 行级权限 / 粒度 / 契约 / 语义层 / 异步
 ```
+
+</details>
 
 ---
 
