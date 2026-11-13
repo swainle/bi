@@ -13,7 +13,7 @@
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)
 ![ECharts](https://img.shields.io/badge/Apache_ECharts-6-AA344D)
 
-[快速开始](#快速开始)　·　[能力速览](#能力速览)　·　[界面](#界面)　·　[文档](#文档)　·　[项目治理](#项目治理)
+[快速开始](#快速开始)　·　[能力速览](#能力速览)　·　[界面](#界面)　·　[文档](#文档)　·　[项目治理](#项目治理)　·　[技术架构](#技术架构)
 
 </div>
 
@@ -109,115 +109,6 @@ python -m app.bootstrap --reset    # 清空重建（需 ALLOW_RESET=1）
 界面改动必须在 `docs/更新日志.md` 追加一条。
 
 ---
-
-<details>
-<summary><b>技术栈与目录结构</b></summary>
-
-### 技术栈
-
-| 层 | 选型 |
-|---|---|
-| 前端 | React 18 + TypeScript + Vite 5 + MUI 5 + ECharts 6 |
-| 布局引擎 | `@mylayout/core`（本仓库内独立包，`packages/mylayout`） |
-| 后端 | FastAPI + SQLAlchemy 2 + Pydantic 2 |
-| 数据库 | PostgreSQL 16 + pgvector（AI 元数据向量检索） |
-| 可选 | Redis（布局缓存 / 分布式限流）、Doris（大表加速） |
-| AI | 任意 OpenAI 兼容接口（默认 DeepSeek） |
-
-> 图表图形内核使用 Apache ECharts；画布引擎（布局 / 渲染调度 / 状态）、数据源适配层、自然语言转 SQL 的 AI 管线、权限审计均为自研。
-
-### 目录结构
-
-```
-MingzeBI/
-├── backend/
-│   ├── app/
-│   │   ├── main.py                 # 应用入口（中间件 / 路由 / 健康检查）
-│   │   ├── config.py               # 配置（环境变量优先）
-│   │   ├── database.py             # 引擎 / 会话 / 连接池监控
-│   │   ├── bootstrap.py            # 建表 / 示例数据 / 默认管理员（幂等）
-│   │   ├── middleware/             # auth / csrf / audit / rate-limit / logging
-│   │   ├── models/                 # users / rbac
-│   │   ├── routers/
-│   │   │   ├── auth.py             # 登录 / 刷新 / 资料 / 头像
-│   │   │   ├── bi_engine.py        # BI 引擎主体（查询 / 看板 / AI / 模板 / 权限）
-│   │   │   ├── bi_datasource.py    # 数据源连接与测试
-│   │   │   ├── bi_team.py          # 看板团队共享
-│   │   │   └── bi_admin.py         # 看板权限 + 操作审计
-│   │   └── services/
-│   │       ├── bi_ai_engine.py     # 元数据采集 / SQL 生成与校验
-│   │       ├── bi_ai_agent.py      # 三阶段管线（清洗 → 校验 → 生成）
-│   │       ├── bi_ai_phase2.py     # 布局计算 / 图表推断
-│   │       ├── bi_ai_phase3.py     # 看板组装
-│   │       ├── bi_persistence_engine.py  # 卡片批量持久化 / 快照
-│   │       ├── bi_csv_import.py    # CSV 解析导入
-│   │       ├── bi_share_links.py   # 分享链接
-│   │       └── query_router.py     # PG / Doris 路由
-│   ├── security/                   # 安全内核（独立，不依赖路由）
-│   │   ├── errors.py               # 统一异常族
-│   │   ├── denylist.py             # 危险函数 / 写节点
-│   │   ├── masking.py              # 列脱敏
-│   │   ├── sql_guard/              # 只读网关（sqlglot AST）
-│   │   └── rls/                    # 行级权限（编译 / 注入 / 指纹）
-│   ├── query/                      # 查询契约
-│   │   ├── contract.py             # QueryObject
-│   │   ├── grain.py                # 时间粒度（多方言）
-│   │   ├── builder.py              # SQL 编译（参数绑定）
-│   │   ├── executor.py             # 执行 + RLS + 脱敏
-│   │   ├── column_types.py         # 列类型（自动 cast）
-│   │   └── async_jobs/             # 异步任务（store / runner）
-│   ├── semantic/                   # 语义层
-│   │   ├── models.py               # 数据集 / 字段 / 指标
-│   │   ├── repository.py           # 仓储
-│   │   ├── validator.py            # 建模期校验
-│   │   ├── compiler.py             # 语义名 → QueryObject
-│   │   └── router*.py              # 数据集 / 字段 / 指标 API
-│   ├── schema/
-│   │   ├── schema.sql              # 38 张表 + 序列 + 索引 + 触发器
-│   │   ├── migrations/             # 增量迁移（启动时幂等执行）
-│   │   └── seed.sql                # 电商示例数据（拼多多 / 天猫 / 抖音）
-│   ├── tests/                      # pytest（83 用例）
-│   ├── requirements.txt
-│   ├── pytest.ini
-│   ├── Dockerfile
-│   ├── run.sh
-│   └── .env.example
-├── frontend/
-│   ├── src/
-│   │   ├── App.tsx                 # 路由（/login、/bi、/bi/view/:id、/bi/canvas、/bi/dashboards/:id、/bi/components、/bi/audit）
-│   │   ├── pages/
-│   │   │   ├── LoginPage.tsx
-│   │   │   ├── BiDashboardPage.tsx # 看板列表 / 数据源 / SQL 面板 / 团队共享
-│   │   │   ├── BiViewPage.tsx      # 看板查看 / 大屏 / 导入向导 / 水印
-│   │   │   ├── CanvasBoardPage.tsx # 统一编辑画布（数据集字段 / 口径 / 维度 / 指标 / 过滤 / 外观 / 运算）
-│   │   │   ├── DashboardPage.tsx   # 业务看板页（页面元素 + 卡片 + 参数筛选 + 就地编辑）
-│   │   │   ├── ComponentLibraryPage.tsx / ComponentEditorPage.tsx
-│   │   │   └── AuditLogPage.tsx
-│   │   ├── features/bi-dashboard/
-│   │   │   ├── engines/LayoutEngine.ts    # 双模式布局（12 列栅格 / 自由悬浮）
-│   │   │   ├── engines/RenderEngine.ts    # ECharts 实例池 / 节流重绘
-│   │   │   ├── engines/StateEngine.ts     # 撤销重做 / 状态
-│   │   │   ├── ChartPanel.tsx / ChartConfigPanel.tsx
-│   │   │   ├── DataSources.tsx / ImportWizard.tsx / SqlQueryPanel.tsx
-│   │   │   └── BigScreen.tsx / PddCockpitView.tsx / TeamPanel.tsx
-│   │   ├── components/             # TopBar / WatermarkOverlay / 通用组件
-│   │   ├── contexts/               # AuthContext / ThemeContext
-│   │   └── api/                    # axios 客户端（JWT + CSRF + 自动刷新）
-│   ├── packages/mylayout/          # @mylayout/core 布局引擎
-│   ├── package.json
-│   ├── Dockerfile
-│   └── nginx.conf
-├── docker-compose.yml
-├── docs/
-│   ├── 更新日志.md                  # 功能与界面改动的日记（只追加，顶部最新）
-│   ├── images/                     # README 用图（压缩后入库）
-│   ├── _selfcheck/                 # 交付前逐屏截图自检（不入库）
-│   └── 看板截图/                    # 过程截图（不入库）
-├── AGENTS.md                       # 开发规则（视觉令牌 / 布局算式 / 组件链路 / 数据红线 / 已知的坑）
-└── README.md
-```
-
-</details>
 
 <details>
 <summary><b>端口约定</b></summary>
@@ -464,3 +355,113 @@ cd backend && ./.venv/bin/python -m pytest     # 83 用例：SQL 网关 / 行级
 - OpenClaw 外部 Agent 依赖（AI 管线改为 OpenAI 兼容接口直连 + 本地规则降级）
 
 后续在本仓库独立演进。
+
+---
+
+## 技术架构
+
+前端、后端、数据库与 AI 层的选型，以及仓库的目录划分。
+
+### 技术栈
+
+| 层 | 选型 |
+|---|---|
+| 前端 | React 18 + TypeScript + Vite 5 + MUI 5 + ECharts 6 |
+| 布局引擎 | `@mylayout/core`（本仓库内独立包，`packages/mylayout`） |
+| 后端 | FastAPI + SQLAlchemy 2 + Pydantic 2 |
+| 数据库 | PostgreSQL 16 + pgvector（AI 元数据向量检索） |
+| 可选 | Redis（布局缓存 / 分布式限流）、Doris（大表加速） |
+| AI | 任意 OpenAI 兼容接口（默认 DeepSeek） |
+
+> 图表图形内核使用 Apache ECharts；画布引擎（布局 / 渲染调度 / 状态）、数据源适配层、自然语言转 SQL 的 AI 管线、权限审计均为自研。
+
+### 目录结构
+
+```
+MingzeBI/
+├── backend/
+│   ├── app/
+│   │   ├── main.py                 # 应用入口（中间件 / 路由 / 健康检查）
+│   │   ├── config.py               # 配置（环境变量优先）
+│   │   ├── database.py             # 引擎 / 会话 / 连接池监控
+│   │   ├── bootstrap.py            # 建表 / 示例数据 / 默认管理员（幂等）
+│   │   ├── middleware/             # auth / csrf / audit / rate-limit / logging
+│   │   ├── models/                 # users / rbac
+│   │   ├── routers/
+│   │   │   ├── auth.py             # 登录 / 刷新 / 资料 / 头像
+│   │   │   ├── bi_engine.py        # BI 引擎主体（查询 / 看板 / AI / 模板 / 权限）
+│   │   │   ├── bi_datasource.py    # 数据源连接与测试
+│   │   │   ├── bi_team.py          # 看板团队共享
+│   │   │   └── bi_admin.py         # 看板权限 + 操作审计
+│   │   └── services/
+│   │       ├── bi_ai_engine.py     # 元数据采集 / SQL 生成与校验
+│   │       ├── bi_ai_agent.py      # 三阶段管线（清洗 → 校验 → 生成）
+│   │       ├── bi_ai_phase2.py     # 布局计算 / 图表推断
+│   │       ├── bi_ai_phase3.py     # 看板组装
+│   │       ├── bi_persistence_engine.py  # 卡片批量持久化 / 快照
+│   │       ├── bi_csv_import.py    # CSV 解析导入
+│   │       ├── bi_share_links.py   # 分享链接
+│   │       └── query_router.py     # PG / Doris 路由
+│   ├── security/                   # 安全内核（独立，不依赖路由）
+│   │   ├── errors.py               # 统一异常族
+│   │   ├── denylist.py             # 危险函数 / 写节点
+│   │   ├── masking.py              # 列脱敏
+│   │   ├── sql_guard/              # 只读网关（sqlglot AST）
+│   │   └── rls/                    # 行级权限（编译 / 注入 / 指纹）
+│   ├── query/                      # 查询契约
+│   │   ├── contract.py             # QueryObject
+│   │   ├── grain.py                # 时间粒度（多方言）
+│   │   ├── builder.py              # SQL 编译（参数绑定）
+│   │   ├── executor.py             # 执行 + RLS + 脱敏
+│   │   ├── column_types.py         # 列类型（自动 cast）
+│   │   └── async_jobs/             # 异步任务（store / runner）
+│   ├── semantic/                   # 语义层
+│   │   ├── models.py               # 数据集 / 字段 / 指标
+│   │   ├── repository.py           # 仓储
+│   │   ├── validator.py            # 建模期校验
+│   │   ├── compiler.py             # 语义名 → QueryObject
+│   │   └── router*.py              # 数据集 / 字段 / 指标 API
+│   ├── schema/
+│   │   ├── schema.sql              # 38 张表 + 序列 + 索引 + 触发器
+│   │   ├── migrations/             # 增量迁移（启动时幂等执行）
+│   │   └── seed.sql                # 电商示例数据（拼多多 / 天猫 / 抖音）
+│   ├── tests/                      # pytest（83 用例）
+│   ├── requirements.txt
+│   ├── pytest.ini
+│   ├── Dockerfile
+│   ├── run.sh
+│   └── .env.example
+├── frontend/
+│   ├── src/
+│   │   ├── App.tsx                 # 路由（/login、/bi、/bi/view/:id、/bi/canvas、/bi/dashboards/:id、/bi/components、/bi/audit）
+│   │   ├── pages/
+│   │   │   ├── LoginPage.tsx
+│   │   │   ├── BiDashboardPage.tsx # 看板列表 / 数据源 / SQL 面板 / 团队共享
+│   │   │   ├── BiViewPage.tsx      # 看板查看 / 大屏 / 导入向导 / 水印
+│   │   │   ├── CanvasBoardPage.tsx # 统一编辑画布（数据集字段 / 口径 / 维度 / 指标 / 过滤 / 外观 / 运算）
+│   │   │   ├── DashboardPage.tsx   # 业务看板页（页面元素 + 卡片 + 参数筛选 + 就地编辑）
+│   │   │   ├── ComponentLibraryPage.tsx / ComponentEditorPage.tsx
+│   │   │   └── AuditLogPage.tsx
+│   │   ├── features/bi-dashboard/
+│   │   │   ├── engines/LayoutEngine.ts    # 双模式布局（12 列栅格 / 自由悬浮）
+│   │   │   ├── engines/RenderEngine.ts    # ECharts 实例池 / 节流重绘
+│   │   │   ├── engines/StateEngine.ts     # 撤销重做 / 状态
+│   │   │   ├── ChartPanel.tsx / ChartConfigPanel.tsx
+│   │   │   ├── DataSources.tsx / ImportWizard.tsx / SqlQueryPanel.tsx
+│   │   │   └── BigScreen.tsx / PddCockpitView.tsx / TeamPanel.tsx
+│   │   ├── components/             # TopBar / WatermarkOverlay / 通用组件
+│   │   ├── contexts/               # AuthContext / ThemeContext
+│   │   └── api/                    # axios 客户端（JWT + CSRF + 自动刷新）
+│   ├── packages/mylayout/          # @mylayout/core 布局引擎
+│   ├── package.json
+│   ├── Dockerfile
+│   └── nginx.conf
+├── docker-compose.yml
+├── docs/
+│   ├── 更新日志.md                  # 功能与界面改动的日记（只追加，顶部最新）
+│   ├── images/                     # README 用图（压缩后入库）
+│   ├── _selfcheck/                 # 交付前逐屏截图自检（不入库）
+│   └── 看板截图/                    # 过程截图（不入库）
+├── AGENTS.md                       # 开发规则（视觉令牌 / 布局算式 / 组件链路 / 数据红线 / 已知的坑）
+└── README.md
+```
