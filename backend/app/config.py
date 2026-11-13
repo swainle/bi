@@ -87,6 +87,11 @@ class Settings(BaseSettings):
     # Redis（可选：布局缓存、限流、元数据缓存）
     redis_url: str = os.getenv("REDIS_URL", "")
 
+    # 错误上报（Sentry / 自建 GlitchTip）；dsn 为空 = 不启用
+    sentry_dsn: str = os.getenv("SENTRY_DSN", "")
+    sentry_environment: str = os.getenv("SENTRY_ENVIRONMENT", "production")
+    sentry_traces_sample_rate: float = float(os.getenv("SENTRY_TRACES_SAMPLE_RATE") or 0)
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

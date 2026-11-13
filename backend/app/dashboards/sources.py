@@ -162,6 +162,117 @@ def usages_of_dataset(db: Session, dataset_id: int) -> list[dict]:
     ]
 
 
+def field_hits_in_doc(
+    doc: dict,
+    dataset_id: int,
+    field_names: Iterable[str],
+    dashboard_id: int = 0,
+    dashboard_name: str = "",
+) -> dict[str, list[dict]]:
+    """在一份看板文档里找字段使用点（纯函数，便于回归）.
+
+    使用点包括：绑定了该数据集的元素里，字段出现在 `binding.dimension / dimensions / split / metric`，
+    以及筛选栏 `filter.fields[].column`（筛选栏通过 dataset_map 或元素自身绑定挂到该数据集）。
+    """
+    wanted = {str(n) for n in field_names if n}
+    out: dict[str, list[dict]] = {name: [] for name in wanted}
+    if not wanted or not isinstance(doc, dict):
+        return out
+
+    for view in doc.get("views") or []:
+        if not isinstance(view, dict):
+            continue
+        view_key = str(view.get("key") or "")
+        for item in _view_items(view):
+            spec = _spec_of(item)
+            binding = spec.get("binding") if isinstance(spec.get("binding"), dict) else {}
+            item_key = str(item.get("key") or "")
+            kind = str(spec.get("kind") or item.get("component") or "").replace("base.", "")[:32]
+            bound_here = _as_int(binding.get("dataset_id")) == dataset_id
+
+            if bound_here:
+                dims: list[str] = []
+                for key in ("dimension", "split"):
+                    value = binding.get(key)
+                    if isinstance(value, str) and value:
+                        dims.append(value)
+                for value in binding.get("dimensions") or []:
+                    if isinstance(value, str) and value:
+                        dims.append(value)
+                metric = str(binding.get("metric") or "")
+                for name in wanted:
+                    if name in dims or metric == name:
+                        out[name].append({
+                            "dashboard_id": dashboard_id, "dashboard_name": dashboard_name,
+                            "view_key": view_key, "item_key": item_key, "item_kind": kind,
+                            "role": "metric" if metric == name else "dimension",
+                        })
+
+            for field in (spec.get("filter") or {}).get("fields") or []:
+                if not isinstance(field, dict):
+                    continue
+                column = str(field.get("column") or "")
+                if column not in wanted:
+                    continue
+                mapping = field.get("dataset_map") or {}
+                mapped = {_as_int(v) for v in mapping.values()} if isinstance(mapping, dict) else set()
+                if not bound_here and dataset_id not in mapped:
+                    continue
+                out[column].append({
+                    "dashboard_id": dashboard_id, "dashboard_name": dashboard_name,
+                    "view_key": view_key, "item_key": item_key, "item_kind": "filter",
+                    "role": f"filter:{str(field.get('label') or field.get('id') or '')[:32]}",
+                })
+    return out
+
+
+def usages_of_field(
+    db: Session,
+    dataset_id: int,
+    field_names: Iterable[str],
+) -> dict[str, list[dict]]:
+    """字段级血缘：这个数据集的字段被哪些看板 / 页面元素当维度、指标或筛选用到.
+
+    为什么要扫文档而不是只读账本：账本只记了 element → dataset（含 dimension/metric 摘要），
+    筛选栏用的是哪个字段（`filter.fields[].column`）没有单独落表；字段级要准，这里直接按文档解析。
+    数据量是「在用看板数」，量级很小；返回 `{字段名: [使用点…]}`。
+    """
+    wanted = {str(n) for n in field_names if n}
+    if not wanted:
+        return {}
+
+    rows = db.execute(
+        text("SELECT id, name, doc FROM bi_canvas WHERE deleted_at IS NULL")
+    ).fetchall()
+    out: dict[str, list[dict]] = {name: [] for name in wanted}
+
+    for dashboard_id, dashboard_name, doc in rows:
+        if isinstance(doc, str):
+            try:
+                import json
+
+                doc = json.loads(doc)
+            except ValueError:
+                continue
+        for name, items in field_hits_in_doc(
+            doc, dataset_id, wanted, dashboard_id, dashboard_name or ""
+        ).items():
+            out[name].extend(items)
+
+    # 同一使用点去重（筛选栏按平台映射可能命中多次）
+    for name, items in out.items():
+        seen = set()
+        unique = []
+        for item in items:
+            key = (item["dashboard_id"], item["view_key"], item["item_key"], item["role"])
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(item)
+        out[name] = unique
+    return out
+
+
 def drop_for(db: Session, dashboard_id: int) -> None:
     """看板删除时清掉它的账本行（软删的看板不再算「在用」）."""
     db.execute(text("DELETE FROM bi_dash_item_source WHERE dashboard_id = :id"), {"id": dashboard_id})

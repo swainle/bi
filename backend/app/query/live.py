@@ -93,6 +93,16 @@ def engine_for_source(src: dict) -> Engine:
         }
     elif url.startswith("mysql"):
         kwargs["connect_args"] = {"connect_timeout": 8, "read_timeout": STATEMENT_TIMEOUT_MS // 1000}
+    elif url.startswith("clickhouse+native"):
+        # ClickHouse 默认会拿 SELECT 别名去替换同名源列（时间粒度 `toStartOfMonth(dt) AS dt`
+        # 时 GROUP BY / ORDER BY 会报 NOT_AN_AGGREGATE），这里统一让列名优先于别名
+        kwargs["connect_args"] = {
+            "connect_timeout": 8,
+            "settings": {"prefer_column_name_to_alias": 1},
+        }
+    elif url.startswith("mssql+pyodbc"):
+        # pyodbc 的登录超时（秒）；查询超时由 QueryObject / 调用方控制
+        kwargs["connect_args"] = {"timeout": 8}
     try:
         eng = create_engine(url, **kwargs)
     except ModuleNotFoundError as exc:
@@ -143,6 +153,7 @@ def run_live(
     *,
     max_rows: int = MAX_ROWS,
     apply_row_level: bool = True,
+    dataset_id: int | None = None,
 ) -> QueryResult:
     """在源库上执行一次契约查询."""
     eng = engine_for_source(src)
@@ -160,11 +171,16 @@ def run_live(
     if apply_row_level:
         decision = rls_decide(db, table, user)
         rls_conditions = list(decision.conditions)
+        # 数据集级行级规则（与表级同时 AND；模板副本也按 dataset_id 生效）
+        from app.security import dataset_rules
+
+        rls_conditions.extend(dataset_rules.row_conditions(db, dataset_id, user))
 
     built = build(query, allowed_tables=None, rls_conditions=rls_conditions, column_types={})
 
     user_id = getattr(user, "id", None)
-    ckey = _cache_key(int(src["id"]), user_id, built.sql, built.params)
+    # 数据集不同 → 行级条件 / 脱敏可能不同，缓存键必须带 dataset_id
+    ckey = _cache_key(int(src["id"]), (user_id, dataset_id), built.sql, built.params)
     with _lock:
         hit = _cache.get(ckey)
     if hit and time.time() - hit[2] < _CACHE_TTL:
@@ -188,6 +204,9 @@ def run_live(
                    elapsed_ms=elapsed, sql=built.sql, source="live")
 
     rows = apply_masks(table, rows, db)
+    from app.security import dataset_rules
+
+    rows = dataset_rules.apply_dataset_masks(db, dataset_id, rows)
     if rows:
         with _lock:
             if len(_cache) >= _CACHE_MAX:

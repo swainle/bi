@@ -23,6 +23,7 @@ from app.database import get_db
 from app.middleware.auth import get_current_user
 from app.models.user import User
 from app.sources import repository as repo
+from app.sources import types_catalog
 
 router = APIRouter(prefix="/bi/sources", tags=["BI数据源"])
 
@@ -31,6 +32,18 @@ def _guard(exc: Exception) -> HTTPException:
     if isinstance(exc, repo.SourceError):
         return HTTPException(400, str(exc))
     return HTTPException(400, f"数据源操作失败：{str(exc)[:200]}")
+
+
+@router.get("/types")
+def list_source_types(
+    current_user: User = Depends(get_current_user),
+):
+    """数据源类型清单（唯一事实来源：`sources/types_catalog.py`）.
+
+    驱动没装的类型也会返回，但 `available=false` 且带 `reason`，
+    前端据此置灰，避免「界面能选、点了报不支持」。
+    """
+    return {"types": types_catalog.list_types()}
 
 
 @router.get("")

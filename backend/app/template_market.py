@@ -265,6 +265,26 @@ def _copy_dataset(db: Session, src, template_id: int, template_name: str) -> int
                 for m in src.metrics
             ],
         )
+    # 行列权限跟着数据集走：模板副本换了物理表（bi_tpl_*），表级规则会失效，
+    # 这里按 dataset_id 把行级 / 列级规则整组复制过去（P4）。
+    db.execute(
+        text(
+            "INSERT INTO bi_dataset_row_rule "
+            "  (dataset_id, user_id, role_name, filter_rule, note, created_by) "
+            "SELECT :new, user_id, role_name, filter_rule, note, created_by "
+            "FROM bi_dataset_row_rule WHERE dataset_id = :old"
+        ),
+        {"new": dataset_id, "old": src.id},
+    )
+    db.execute(
+        text(
+            "INSERT INTO bi_dataset_column_mask "
+            "  (dataset_id, column_name, mask_type, mask_pattern, created_by) "
+            "SELECT :new, column_name, mask_type, mask_pattern, created_by "
+            "FROM bi_dataset_column_mask WHERE dataset_id = :old"
+        ),
+        {"new": dataset_id, "old": src.id},
+    )
     return dataset_id
 
 

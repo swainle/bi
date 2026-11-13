@@ -580,6 +580,7 @@ class ChartSpec(BaseModel):
     hbar_highlight: str = "violet"    # 达标项配色
     smooth: bool = True               # 折线平滑
     label_format: Literal["auto", "int", "w", "k", "pct"] = "auto"
+    cloud_palette: str = "潮彩"        # 词云主题色（前端 CLOUD_PALETTES 的 name）
 
     # ── 散点：点 / 气泡 / 四象限 ──
     scatter_mode: Literal["point", "bubble", "quadrant"] = "point"
@@ -616,6 +617,11 @@ class ChartSpec(BaseModel):
     @classmethod
     def _axis_title(cls, v: str) -> str:
         return (v or "")[:24]
+
+    @field_validator("cloud_palette")
+    @classmethod
+    def _cloud_palette(cls, v: str) -> str:
+        return (v or "潮彩")[:12]
 
     @field_validator("pie_inner")
     @classmethod

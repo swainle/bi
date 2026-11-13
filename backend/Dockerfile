@@ -6,8 +6,23 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential libpq-dev curl \
+    build-essential libpq-dev curl gnupg ca-certificates unixodbc unixodbc-dev \
     chromium fonts-noto-cjk && \
+    rm -rf /var/lib/apt/lists/*
+
+# SQL Server 连接器走 pyodbc，需要系统 ODBC 驱动；MS 源不可达时跳过，其它数据源不受影响
+RUN set -eux; \
+    . /etc/os-release; \
+    if curl -fsSL https://packages.microsoft.com/keys/microsoft.asc \
+         | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg \
+       && echo "deb [signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/${ID}/${VERSION_ID}/prod ${VERSION_CODENAME} main" \
+            > /etc/apt/sources.list.d/mssql-release.list \
+       && apt-get update \
+       && ACCEPT_EULA=Y apt-get install -y --no-install-recommends msodbcsql18; then \
+      echo "msodbcsql18 installed"; \
+    else \
+      echo "warn: msodbcsql18 未安装，该镜像内 SQL Server 数据源不可用"; \
+    fi; \
     rm -rf /var/lib/apt/lists/*
 
 # 定时报表 PDF / PNG 由无头 Chromium 渲染（app/reports/browser.py）；CJK 字体保证中文不出现方块

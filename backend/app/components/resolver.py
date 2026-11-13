@@ -49,10 +49,10 @@ def _execute_dataset(db: Session, dataset, query, user):
         if src is None:
             raise ComponentSpecError(f"直连数据集绑定的数据源不存在：{dataset.source_id}")
         try:
-            return run_live(db, query, user, src)
+            return run_live(db, query, user, src, dataset_id=dataset.id)
         except LiveQueryError as exc:
             raise ComponentSpecError(f"{dataset.name}：{exc}") from exc
-    return execute_query(db, query, user, allowed_tables=ALLOWED_TABLES)
+    return execute_query(db, query, user, allowed_tables=ALLOWED_TABLES, dataset_id=dataset.id)
 
 
 def _metric_items(spec: ComponentSpec) -> list[dict]:
@@ -146,7 +146,10 @@ def _request_for(spec: ComponentSpec, kind: str) -> dict:
         if thumb_key and all(col["name"] != thumb_key for col in raw_columns):
             raw_columns.append({"name": thumb_key}) 
     if b.series and kind != "rank_list":
-        dims.append({"name": b.series})
+        # 词云的「颜色（分类）」允许选跟词同一列（帆软也是这么给的）：同一个字段不重复分组，
+        # 前端看到「颜色 == 词」就给每个词一个固定颜色（按词名散列），换权重也不变色
+        if not (kind == "wordcloud" and b.series == b.dimension):
+            dims.append({"name": b.series})
 
     tags_key = spec.rank.tags_key if kind == "rank_list" else ""
     if tags_key and tags_key not in (b.dimension, b.series):
@@ -274,6 +277,17 @@ def _normalize(kind: str, rows: list[dict], spec: ComponentSpec) -> list[dict]:
     if kind == "table":
         return list(rows)
 
+    # 词云带「颜色（分类）」= 两个维度 + 权重（+ 可能出现次数）：词 / 分类 / 权重 分开取
+    # 颜色选了跟词同一列时（b.series == b.dimension）SQL 里只有一列词，按普通词云处理
+    if kind == "wordcloud" and b.series and b.series != b.dimension and len(keys) >= 3:
+        grouped = []
+        for row in rows:
+            item = {"name": row.get(keys[0]), "value": row.get(keys[2]), "group": row.get(keys[1])}
+            for extra in keys[3:]:
+                item[extra] = row.get(extra)
+            grouped.append(item)
+        return grouped
+
     name_key = keys[0] if len(keys) > 1 else None
     value_key = keys[-1] if len(keys) > 1 else keys[0]
     if b.metric and len(keys) > 1:
@@ -287,7 +301,10 @@ def _normalize(kind: str, rows: list[dict], spec: ComponentSpec) -> list[dict]:
             item[extra] = row.get(extra)
         out.append(item)
 
-    out.sort(key=lambda r: r.get("value") or 0, reverse=(b.sort == "desc"))
+    # 时间序列 / 有序类目（order_by_dimension）：保留 SQL 里「按维度升序」的顺序，
+    # 不能再按指标值重排 —— 否则折线图是「值最大的几个点」、时间轴乱跳（2026-11-13 踩过）
+    if not getattr(b, "order_by_dimension", False):
+        out.sort(key=lambda r: r.get("value") or 0, reverse=(b.sort == "desc"))
     return out
 
 
@@ -541,12 +558,24 @@ def _resolve_bound(
             request["dimensions"] = [{"name": dim_field.name}]
             if request.get("metrics"):
                 request["order_by"] = [{"name": request["metrics"][0]["name"], "desc": True}]
+    # 词云 + 拆词（a/b/c 这种一格多词）：SQL 里额外带一列「出现次数」，
+    # 让「选哪些词」按出现次数走（换权重只变字号、不变词集），见 compute.explode_tokens
+    if kind == "wordcloud" and spec.binding.split and request.get("metrics") and request.get("dimensions"):
+        dim_name = request["dimensions"][0]["name"]
+        fields = list(getattr(dataset, "fields", None) or [])
+        counter = next((f.name for f in fields if f.name != dim_name and getattr(f, "role", "") in ("measure", "metric")), None) \
+            or next((f.name for f in fields if f.name != dim_name and getattr(f, "role", "") in ("dimension", "time", "")), None)
+        if counter:
+            request["metrics"] = list(request["metrics"]) + [
+                {"name": counter, "agg": "COUNT", "alias": "出现次数"},
+            ]
     # 词云绑了词、没绑权重：按词出现次数计数（否则行值是字符串，算总和会报类型错）
     if kind == "wordcloud" and not request.get("metrics") and request.get("dimensions"):
         dim_name = request["dimensions"][0]["name"]
         fields = list(getattr(dataset, "fields", None) or [])
         # 换个不重名的列来 COUNT（别名 = 列名，与维度同名会让 SQL 的 ORDER BY 有歧义）
-        counter = next((f.name for f in fields if f.name != dim_name and getattr(f, "role", "") == "metric"), None) \
+        counter = next((f.name for f in fields if f.name != dim_name and getattr(f, "role", "") in ("measure", "metric")), None) \
+            or next((f.name for f in fields if f.name != dim_name and getattr(f, "role", "") in ("dimension", "time", "")), None) \
             or next((f.name for f in fields if f.name != dim_name), None)
         if counter:
             # 词云前端会按 value 自己排序，这里不必给 ORDER BY（避免别名排序校验）
@@ -584,6 +613,7 @@ def _resolve_bound(
         "kind": kind,
         "dimension_label": binding.dimension,
         "metric_label": binding.metric,
+        "series_label": binding.series,
         "component_kind": kind,
         "title": spec.title,
         "subtitle": spec.subtitle,

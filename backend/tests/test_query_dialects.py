@@ -38,6 +38,14 @@ def test_quote_by_dialect() -> None:
     # MariaDB / Doris / StarRocks 走 MySQL 语义
     assert quote("store", "mariadb") == "`store`"
     assert quote("store", "doris") == "`store`"
+    # Hive / Impala 用反引号（双引号在两者里是字符串字面量）
+    assert quote("store", "hive") == "`store`"
+    assert quote("store", "impala") == "`store`"
+    assert quote("dm.v_bangdan", "impala") == "`dm`.`v_bangdan`"
+    # Presto / Oracle / Redshift（PG 协议）用双引号
+    assert quote("store", "presto") == '"store"'
+    assert quote("store", "oracle") == '"store"'
+    assert quote("store", "postgresql") == '"store"'
 
 
 def test_mysql_build_uses_backticks_like_and_no_nulls_last() -> None:
@@ -77,14 +85,15 @@ def test_mysql_time_grain_uses_date_format() -> None:
             dialect="mysql",
             dimensions=[{"column": "dt", "grain": "month"}],
             metrics=[{"column": "gmv", "agg": "SUM", "alias": "g"}],
+            order_by=[{"column": "dt", "desc": False}],
         ),
         allowed_tables=ALLOWED,
     )
     assert "DATE_FORMAT(`dt`, '%Y-%m-01')" in built.sql
     assert "GROUP BY DATE_FORMAT(`dt`, '%Y-%m-01')" in built.sql
     assert "date_trunc" not in built.sql
-    # 粒度别名不能再补 (col IS NULL)：MySQL 会解析成源列，ONLY_FULL_GROUP_BY 报错
-    assert "IS NULL, `dt`" not in built.sql
+    # 按粒度表达式排序（不是别名）：MySQL / ClickHouse 会把别名解析成源列
+    assert "ORDER BY DATE_FORMAT(`dt`, '%Y-%m-01') IS NULL, DATE_FORMAT(`dt`, '%Y-%m-01') ASC" in built.sql
 
 
 def test_mssql_build_uses_brackets_and_no_nulls_last() -> None:

@@ -51,6 +51,10 @@ class DatasetMetric:
     expression: str
     format: str = "number"
     description: str = ""
+    certified: bool = False
+    certified_by: int | None = None
+    certified_at: Any = None
+    version: int = 1
 
     @classmethod
     def from_row(cls, row: Any) -> "DatasetMetric":
@@ -59,12 +63,20 @@ class DatasetMetric:
             id=m["id"], dataset_id=m["dataset_id"], name=m["name"],
             expression=m["expression"], format=m["format"],
             description=m["description"] or "",
+            certified=bool(m.get("certified") or False),
+            certified_by=m.get("certified_by"),
+            certified_at=m.get("certified_at"),
+            version=int(m.get("version") or 1),
         )
 
     def to_dict(self) -> dict:
         return {
             "id": self.id, "name": self.name, "expression": self.expression,
             "format": self.format, "description": self.description,
+            "certified": self.certified,
+            "certified_by": self.certified_by,
+            "certified_at": str(self.certified_at or ""),
+            "version": self.version,
         }
 
 
@@ -79,6 +91,7 @@ class Dataset:
     sql_text: str = ""
     conn_mode: str = "extract"      # extract 抽取 / live 直连
     source_id: int | None = None    # live 模式下绑定的数据源
+    is_sandbox: bool = False        # 「测试数据集」页自建的公共测试数据集
     updated_at: Any = None
     field_count: int = 0
     metric_count: int = 0
@@ -95,6 +108,7 @@ class Dataset:
             sql_text=m.get("sql_text") or "",
             conn_mode=(m.get("conn_mode") or "extract"),
             source_id=m.get("source_id"),
+            is_sandbox=bool(m.get("is_sandbox") or False),
             updated_at=m.get("updated_at"),
             field_count=int(m.get("field_count") or 0),
             metric_count=int(m.get("metric_count") or 0),
@@ -116,6 +130,7 @@ class Dataset:
             "is_virtual": bool(self.sql_text),
             "conn_mode": self.conn_mode or "extract",
             "source_id": self.source_id,
+            "is_sandbox": bool(self.is_sandbox),
             "updated_at": str(self.updated_at or ""),
             "field_count": self.field_count or len(self.fields),
             "metric_count": self.metric_count or len(self.metrics),

@@ -171,6 +171,16 @@ def datasets_status(
     }}
 
 
+@router.get("/datasets/sandbox")
+def list_sandbox_datasets(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """「测试数据集」页里自建的测试数据集（is_sandbox，公共、跟随项目）."""
+    items = [d for d in repo.list_datasets(db) if getattr(d, "is_sandbox", False)]
+    return {"datasets": [d.to_dict(with_items=False) for d in items]}
+
+
 @router.get("/datasets/templates")
 def list_template_datasets(
     current_user: User = Depends(get_current_user),
@@ -206,10 +216,16 @@ def create_dataset(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """创建数据集：物理表 / 自定义 SQL（虚拟数据集）/ 直连源库表."""
+    """创建数据集：物理表 / 自定义 SQL（虚拟数据集）/ 直连源库表.
+
+    `sandbox: true` = 「测试数据集」页自建的公共测试数据集（owner 为空、跟着项目走，只有管理员能建 / 删）。
+    """
     mode = str(payload.get("conn_mode") or "extract").strip().lower()
     source_id = payload.get("source_id")
     virtual = str(payload.get("sql") or "").strip()
+    sandbox = bool(payload.get("sandbox"))
+    if sandbox and current_user.role not in ("admin", "super_admin"):
+        raise HTTPException(403, "「测试数据集」是公共数据，只有管理员可以新建")
 
     if mode == "live":
         # 直连：表名按源库原样写（可带 schema），白名单交给源库存在性校验
@@ -231,11 +247,12 @@ def create_dataset(
             db,
             name=str(payload.get("name", "")).strip(),
             physical_table=table,
-            owner_id=current_user.id,
+            owner_id=None if sandbox else current_user.id,
             description=str(payload.get("description", "")),
             sql_text=sql_text,
             conn_mode=mode,
             source_id=int(source_id) if source_id not in (None, "") else None,
+            sandbox=sandbox,
         )
         if sql_text and not payload.get("fields"):
             # 虚拟数据集：按 SQL 的输出列自动建字段
@@ -321,12 +338,12 @@ def rename_dataset(
     与 PATCH /datasets/{id} 的区别：这条路径在 SQL 层面只写 name 一列，
     物理表、取数方式、绑定的数据源、自定义 SQL 一律不动 —— 改名不可能影响数据库连接。
     """
-    from app.components.seed_demo import DATASET_NAME as TEST_DATASET_NAME
+    from app.components.seed_demo import TABLE as TEST_DATASET_TABLE
 
     dataset = _require_dataset(db, dataset_id)
     if not _can_rename(dataset, current_user):
         raise HTTPException(403, "只能修改自己创建的数据集的名称")
-    if dataset.name == TEST_DATASET_NAME:
+    if dataset.physical_table == TEST_DATASET_TABLE:
         raise HTTPException(403, "「测试数据集」是组件库预览用的公共资产，不支持改名")
     try:
         renamed = repo.rename_dataset(db, dataset_id, payload.get("name"))
@@ -381,8 +398,8 @@ def delete_dataset(
 ):
     dataset = _require_dataset(db, dataset_id)
     # 「测试数据集」是组件库预览用的公共数据，跟着项目走：只有管理员能删
-    from app.components.seed_demo import DATASET_NAME as TEST_DATASET_NAME
-    if dataset.name == TEST_DATASET_NAME and current_user.role not in ("admin", "super_admin"):
+    from app.components.seed_demo import TABLE as TEST_DATASET_TABLE
+    if dataset.physical_table == TEST_DATASET_TABLE and current_user.role not in ("admin", "super_admin"):
         raise HTTPException(403, "「测试数据集」是组件库预览用的公共数据，只有管理员可以删除")
     # 模板库的数据副本：模板还在用它，只有管理员能删（删了模板就取不到数）
     from app import template_market
@@ -419,9 +436,10 @@ def query_dataset(
         query: QueryObject = compile_query(dataset, payload or {})
         if (dataset.conn_mode or "extract") == "live":
             src = _live_source(db, dataset)
-            result = run_live(db, query, current_user, src)
+            result = run_live(db, query, current_user, src, dataset_id=dataset.id)
         else:
-            result = execute_query(db, query, current_user, allowed_tables=ALLOWED_TABLES)
+            result = execute_query(db, query, current_user, allowed_tables=ALLOWED_TABLES,
+                                   dataset_id=dataset.id)
     except RlsBlockedError as exc:
         raise HTTPException(exc.http_status, exc.message) from exc
     except Exception as exc:

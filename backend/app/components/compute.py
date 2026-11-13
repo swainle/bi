@@ -80,22 +80,43 @@ def _bucket_label(lo: float, hi: float, last: bool) -> str:
     return f"{lo:g}-{hi - 1:g}" if float(hi - 1).is_integer() else f"{lo:g}-{hi:g}"
 
 
-def explode_tokens(rows: list[dict], split: str) -> list[dict]:
-    """把「a / b/c」这类标签列拆成词频（卖点云 / 痛点云）."""
+def explode_tokens(rows: list[dict], split: str, freq_key: str = "出现次数") -> list[dict]:
+    """把「a / b/c」这类标签列拆成词（卖点云 / 痛点云）.
+
+    一行可能拆出多个词，所以每个词要拿两样东西：
+      · value = 权重（SUM(指标)），决定字号；
+      · freq  = 出现次数（COUNT），决定「进不进前 N」。
+    选词用出现次数、字号用权重 —— 这样换个权重指标只变大小，不会换掉一批词（2026-11-13 用户实测后定）。
+    """
     if not split:
         return rows
-    seps = [s for s in split if s.strip()] or ["/"]
-    counter: dict[str, float] = {}
+    weight_sum: dict[str, float] = {}
+    freq_sum: dict[str, float] = {}
+    group_sum: dict[str, dict[str, float]] = {}
     for row in rows:
         text = str(row.get("name") or "")
         tokens: list[str] = []
         for chunk in text.replace("／", "/").split("/"):
             tokens.extend(part.strip() for part in chunk.split("、") if part.strip())
         weight = float(row.get("value") or 1)
+        freq = float(row.get(freq_key) or 1)
+        group = str(row.get("group") or "")
         for token in set(tokens):
-            counter[token] = counter.get(token, 0) + weight
-    ordered = sorted(counter.items(), key=lambda kv: kv[1], reverse=True)
-    return [{"name": k, "value": v} for k, v in ordered]
+            weight_sum[token] = weight_sum.get(token, 0) + weight
+            freq_sum[token] = freq_sum.get(token, 0) + freq
+            if group:
+                bucket = group_sum.setdefault(token, {})
+                bucket[group] = bucket.get(group, 0) + weight
+    items = []
+    for name in weight_sum:
+        item = {"name": name, "value": weight_sum[name], "freq": freq_sum[name]}
+        if name in group_sum:
+            # 一个词出现在多个分类里：取权重最大的分类决定颜色
+            item["group"] = max(group_sum[name].items(), key=lambda kv: kv[1])[0]
+        items.append(item)
+    # 出现次数相同的词按名字排，保证「换权重不换词」——用权重做次序会让边界上的词抖动
+    items.sort(key=lambda it: (-it["freq"], str(it["name"])))
+    return items
 
 
 def headline_value(rows: list[dict], spec: ComponentSpec) -> Any:
@@ -205,7 +226,14 @@ def build_payload(kind: str, rows: list[dict], spec: ComponentSpec) -> dict:
 
     series = rows
     if kind == "wordcloud" and spec.binding.split:
-        series = explode_tokens(rows, spec.binding.split)
+        exploded = explode_tokens(rows, spec.binding.split)
+        # 选词：按出现次数取前 N（词集稳定）；展示：按权重从大到小
+        kept = sorted(exploded[: spec.binding.top_n], key=lambda it: it.get("value") or 0, reverse=True)
+        payload["series"] = kept
+        total = sum(item.get("value") or 0 for item in kept)
+        payload["total"] = total
+        payload["top_share"] = _pct(kept[0].get("value") or 0, total) if kept else 0
+        return payload
 
     payload["series"] = series[: spec.binding.top_n]
     total = sum(item.get("value") or 0 for item in series)

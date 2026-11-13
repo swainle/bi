@@ -22,6 +22,14 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.database import Base, engine
+from app.observability import init_sentry
+
+# 来源：环境变量或 backend/.env（Settings 读 .env）；为空 = 不启用，写错也不影响启动
+SENTRY_ENABLED = init_sentry(
+    settings.sentry_dsn,
+    settings.sentry_environment,
+    settings.sentry_traces_sample_rate,
+)
 
 
 @asynccontextmanager
@@ -156,6 +164,65 @@ app.include_router(errors_router.router, prefix="/api")
 
 
 # ── 健康检查 ───────────────────────────────────────────────────
+def _probe_database() -> bool:
+    """一条 `SELECT 1`：只看连接能不能用，不查业务表."""
+    from sqlalchemy import text
+
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        return True
+    except Exception:
+        return False
+
+
+def _probe_redis() -> str:
+    """返回 up / down / disabled.
+
+    Redis 是可选依赖（连不上回退进程内缓存），所以 down 不影响就绪判定；
+    但要在探针里如实报出来，排障时一眼能看出「慢是因为缓存没了」。
+    """
+    if not (os.getenv("REDIS_URL") or "").strip():
+        return "disabled"
+    from app.query import redis_bus
+
+    client = redis_bus.client()
+    if client is None:
+        return "down"
+    try:
+        client.ping()
+        return "up"
+    except Exception:
+        redis_bus.reset()  # 下次探测重新建连，恢复后能自动变回 up
+        return "down"
+
+
+@app.get("/api/livez", tags=["系统"])
+def livez():
+    """存活探针：只证明进程还能响应，不碰数据库.
+
+    数据库抖动 / 慢查询不应该让 K8s 重启 API（那会把正在跑的请求全打断），
+    所以存活与就绪必须分开。
+    """
+    return {"status": "alive"}
+
+
+@app.get("/api/readyz", tags=["系统"])
+def readyz():
+    """就绪探针：数据库不可用 → 503（从 Service 摘掉；Redis 挂了不影响就绪）."""
+    db_ok = _probe_database()
+    redis_state = _probe_redis()
+    payload = {
+        "status": "ready" if db_ok else "not_ready",
+        "database": "up" if db_ok else "down",
+        "redis": redis_state,
+        "sentry": "on" if SENTRY_ENABLED else "off",
+        "app": settings.app_name,
+        "version": settings.app_version,
+    }
+    return JSONResponse(payload, status_code=200 if db_ok else 503)
+
+
 @app.get("/api/health", tags=["系统"])
 def health():
     from sqlalchemy import text

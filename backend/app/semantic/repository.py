@@ -63,6 +63,7 @@ def create_dataset(
     sql_text: str = "",
     conn_mode: str = "extract",
     source_id: int | None = None,
+    sandbox: bool = False,
 ) -> Dataset:
     mode = (conn_mode or "extract").strip().lower()
     if mode not in ("extract", "live"):
@@ -83,11 +84,12 @@ def create_dataset(
     row = db.execute(
         text(
             "INSERT INTO bi_dataset "
-            "  (name, physical_table, description, owner_id, sql_text, conn_mode, source_id) "
-            "VALUES (:n, :t, :d, :o, :sql, :mode, :sid) RETURNING *"
+            "  (name, physical_table, description, owner_id, sql_text, conn_mode, source_id, is_sandbox) "
+            "VALUES (:n, :t, :d, :o, :sql, :mode, :sid, :sandbox) RETURNING *"
         ),
         {"n": name, "t": physical_table, "d": description, "o": owner_id,
-         "sql": sql_text or None, "mode": mode, "sid": source_id if mode == "live" else None},
+         "sql": sql_text or None, "mode": mode, "sid": source_id if mode == "live" else None,
+         "sandbox": bool(sandbox)},
     ).fetchone()
     db.commit()
     return Dataset.from_row(row)
@@ -178,12 +180,15 @@ def add_metric(
     expression: str,
     fmt: str = "number",
     description: str = "",
+    *,
+    changed_by: int | None = None,
+    changed_by_name: str = "",
 ) -> DatasetMetric:
     row = db.execute(
         text(
             "INSERT INTO bi_dataset_metric "
-            "(dataset_id, name, expression, format, description) "
-            "VALUES (:d, :n, :e, :f, :desc) RETURNING *"
+            "(dataset_id, name, expression, format, description, version) "
+            "VALUES (:d, :n, :e, :f, :desc, 1) RETURNING *"
         ),
         {
             "d": dataset.id, "n": name,
@@ -191,8 +196,108 @@ def add_metric(
             "f": validate_format(fmt), "desc": description,
         },
     ).fetchone()
+    metric = DatasetMetric.from_row(row)
+    _record_metric_version(db, metric, changed_by, changed_by_name, "新建指标")
+    db.commit()
+    return metric
+
+
+def _record_metric_version(
+    db: Session,
+    metric: DatasetMetric,
+    changed_by: int | None,
+    changed_by_name: str,
+    note: str = "",
+) -> None:
+    """给指标留一版快照（唯一键 metric_id + version，重复写入自动忽略）."""
+    db.execute(
+        text(
+            "INSERT INTO bi_metric_version "
+            "  (metric_id, dataset_id, version, name, expression, format, description, "
+            "   changed_by, changed_by_name, note) "
+            "VALUES (:mid, :did, :v, :n, :e, :f, :desc, :by, :by_name, :note) "
+            "ON CONFLICT (metric_id, version) DO NOTHING"
+        ),
+        {
+            "mid": metric.id, "did": metric.dataset_id, "v": metric.version,
+            "n": metric.name, "e": metric.expression, "f": metric.format,
+            "desc": metric.description, "by": changed_by,
+            "by_name": (changed_by_name or "")[:80], "note": (note or "")[:200],
+        },
+    )
+
+
+def list_metric_versions(db: Session, metric_id: int) -> list[dict]:
+    rows = db.execute(
+        text(
+            "SELECT * FROM bi_metric_version WHERE metric_id = :id ORDER BY version DESC"
+        ),
+        {"id": metric_id},
+    ).fetchall()
+    return [
+        {
+            "version": int(r._mapping["version"]),
+            "name": r._mapping["name"], "expression": r._mapping["expression"],
+            "format": r._mapping["format"], "description": r._mapping["description"] or "",
+            "changed_by": r._mapping["changed_by"],
+            "changed_by_name": r._mapping["changed_by_name"] or "",
+            "changed_at": str(r._mapping["changed_at"] or ""),
+            "note": r._mapping["note"] or "",
+        }
+        for r in rows
+    ]
+
+
+def certify_metric(
+    db: Session,
+    dataset_id: int,
+    metric_id: int,
+    certified: bool,
+    user_id: int | None,
+) -> DatasetMetric:
+    """认证 / 取消认证（认证代表口径已确认；口径后再改会自动掉认证）."""
+    row = db.execute(
+        text(
+            "UPDATE bi_dataset_metric SET "
+            "  certified = :c, "
+            "  certified_by = CASE WHEN :c THEN :u ELSE NULL END, "
+            "  certified_at = CASE WHEN :c THEN now() ELSE NULL END "
+            "WHERE id = :id AND dataset_id = :d RETURNING *"
+        ),
+        {"c": bool(certified), "u": user_id, "id": metric_id, "d": dataset_id},
+    ).fetchone()
+    if row is None:
+        raise SemanticError(f"指标不存在：{metric_id}")
     db.commit()
     return DatasetMetric.from_row(row)
+
+
+def metric_usages(db: Session, dataset_id: int, metric_name: str) -> dict:
+    """影响分析：哪些看板 / 元素引用了这个指标（来自 bi_dash_item_source 账本）."""
+    rows = db.execute(
+        text(
+            "SELECT s.dashboard_id, c.name, s.view_key, s.item_key, s.item_kind, s.item_type, s.role "
+            "FROM bi_dash_item_source s "
+            "JOIN bi_canvas c ON c.id = s.dashboard_id AND c.deleted_at IS NULL "
+            "WHERE s.dataset_id = :d AND s.metric = :m "
+            "ORDER BY s.dashboard_id, s.view_key, s.item_key"
+        ),
+        {"d": dataset_id, "m": metric_name},
+    ).fetchall()
+    usages = [
+        {
+            "dashboard_id": r[0], "dashboard_name": r[1] or "",
+            "view_key": r[2], "item_key": r[3], "item_kind": r[4],
+            "item_type": r[5], "role": r[6],
+        }
+        for r in rows
+    ]
+    return {
+        "metric": metric_name,
+        "count": len(usages),
+        "dashboard_count": len({u["dashboard_id"] for u in usages}),
+        "usages": usages,
+    }
 
 
 def delete_metric(db: Session, dataset_id: int, metric_id: int) -> bool:
@@ -331,32 +436,52 @@ def update_field(
     return DatasetField.from_row(row) if row else None
 
 
+def metric_spec_changed(current: DatasetMetric, expression: str, fmt: str) -> bool:
+    """口径是否变了（只看聚合表达式 + 格式；改名 / 改描述不算口径变更）."""
+    return (expression, fmt) != (current.expression, current.format)
+
+
 def update_metric(
     db: Session,
     dataset: Dataset,
     metric_id: int,
     payload: dict,
+    *,
+    changed_by: int | None = None,
+    changed_by_name: str = "",
 ) -> DatasetMetric | None:
+    """改指标；聚合表达式 / 格式变了才算口径变更（版本 +1、自动掉认证、留快照）."""
     current = next((m for m in list_metrics(db, dataset.id) if m.id == metric_id), None)
     if current is None:
         raise SemanticError(f"指标不存在：{metric_id}")
 
+    new_name = str(payload.get("name", current.name)).strip() or current.name
+    new_expr = validate_metric_expression(str(payload.get("expression", current.expression)))
+    new_fmt = validate_format(payload.get("format", current.format))
+    new_desc = str(payload.get("description", current.description) or "")
+    spec_changed = metric_spec_changed(current, new_expr, new_fmt)
+
     row = db.execute(
         text(
             "UPDATE bi_dataset_metric SET name = :n, expression = :e, format = :f, "
-            " description = :desc WHERE id = :id AND dataset_id = :d RETURNING *"
+            " description = :desc, version = version + :bump, "
+            " certified = CASE WHEN :bump > 0 THEN false ELSE certified END, "
+            " certified_by = CASE WHEN :bump > 0 THEN NULL ELSE certified_by END, "
+            " certified_at = CASE WHEN :bump > 0 THEN NULL ELSE certified_at END "
+            "WHERE id = :id AND dataset_id = :d RETURNING *"
         ),
         {
-            "n": str(payload.get("name", current.name)).strip() or current.name,
-            "e": validate_metric_expression(str(payload.get("expression", current.expression))),
-            "f": validate_format(payload.get("format", current.format)),
-            "desc": str(payload.get("description", current.description) or ""),
+            "n": new_name, "e": new_expr, "f": new_fmt, "desc": new_desc,
+            "bump": 1 if spec_changed else 0,
             "id": metric_id, "d": dataset.id,
         },
     ).fetchone()
+    metric = DatasetMetric.from_row(row) if row else None
+    if metric and spec_changed:
+        _record_metric_version(db, metric, changed_by, changed_by_name, "口径变更")
     db.commit()
     _touch(db, dataset.id)
-    return DatasetMetric.from_row(row) if row else None
+    return metric
 
 
 def _touch(db: Session, dataset_id: int) -> None:

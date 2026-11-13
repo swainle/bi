@@ -175,6 +175,7 @@ def run(
     apply_row_level: bool = True,
     max_rows: int = 5000,
     query_id: str | None = None,
+    dataset_id: int | None = None,
 ) -> QueryResult:
     """执行一次查询。异常：
         RlsBlockedError  行级规则损坏 → fail-closed
@@ -185,6 +186,12 @@ def run(
     if apply_row_level and allowed_tables is not None:
         decision = rls_decide(db, query.table, user)
         rls_conditions = list(decision.conditions)
+
+    # 数据集级行级规则：与表级规则同时 AND 进 WHERE（见 security/dataset_rules.py）
+    from app.security import dataset_rules
+
+    if apply_row_level and dataset_id:
+        rls_conditions.extend(dataset_rules.row_conditions(db, dataset_id, user))
 
     types = _column_types(db, query.table)
     built = build(
@@ -234,6 +241,8 @@ def run(
 
     rows = [dict(r._mapping) for r in result][:max_rows]
     rows = apply_masks(query.table, rows, db)
+    # 数据集级脱敏（同一列以数据集规则为准，覆盖表级规则）
+    rows = dataset_rules.apply_dataset_masks(db, dataset_id, rows)
 
     return QueryResult(
         sql=built.sql,

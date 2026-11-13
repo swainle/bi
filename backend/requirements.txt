@@ -17,10 +17,29 @@ psycopg2-binary==2.9.9
 # MySQL 家族（MySQL / MariaDB / TiDB / Doris / StarRocks）走 PyMySQL；
 # 注意版本按发行版（pip）写，PyMySQL.__version__ 是历史遗留值（2.2.8），不是包版本
 PyMySQL==1.2.4
+# ClickHouse：clickhouse-sqlalchemy 提供 `clickhouse+native://`（9000）与 `clickhouse+http://`（8123）
+clickhouse-sqlalchemy==0.3.2
+clickhouse-driver==0.2.11
+# SQL Server：SQLAlchemy `mssql+pyodbc://` + 系统 ODBC 驱动
+# （驱动名自动探测 ODBC Driver 18/17 或 FreeTDS，可用 BI_MSSQL_DRIVER 覆盖）
+pyodbc==5.2.0
 
 # ── 认证 ──
 python-jose[cryptography]==3.3.0
 bcrypt==4.1.0
+
+# ── 企业连接器（Oracle / Db2 / Presto / Hive / Impala）──
+# Redshift 走 PostgreSQL 协议（psycopg2），不需要额外驱动
+oracledb==26.1.0
+ibm-db-sa==0.4.4
+PyHive==0.7.0
+thrift==0.25.0
+thrift_sasl==0.4.3
+pure-sasl==0.6.2
+impyla==0.24.0
+
+# ── 错误上报（Sentry / 自建 GlitchTip；SENTRY_DSN 为空时不启用）──
+sentry-sdk[fastapi]==2.19.2
 
 # ── 数据处理 / 导入导出（Excel、CSV、聚合计算）──
 pandas==2.2.2

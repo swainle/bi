@@ -20,6 +20,7 @@ import time
 from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any
+from urllib.parse import quote_plus
 
 import pandas as pd
 from sqlalchemy import MetaData, Numeric, Table, create_engine, inspect, select, text
@@ -50,7 +51,8 @@ TYPE_DIALECT: dict[str, str] = {
     "oracle": "oracle",
     "db2": "ibm_db_sa",
     "kingbase": "postgresql",
-    "redshift": "redshift_connector",
+    # Redshift 走 PostgreSQL 协议（psycopg2），不额外装第三方方言
+    "redshift": "postgresql",
     "presto": "presto",
     "hive": "hive",
     "impala": "impala",
@@ -183,9 +185,69 @@ def _remote_columns(eng: Engine, table: str) -> list[dict]:
 # 仓库只带纯 Python 的 PyMySQL，所以统一拼 mysql+pymysql://
 _MYSQL_FAMILY = {"mysql", "mariadb", "tidb", "doris", "starrocks"}
 
+# SQL Server：统一走 pyodbc，驱动名按本机实际安装的 ODBC 驱动选
+_MSSQL_FAMILY = {"mssql", "sqlserver", "tsql"}
+_MSSQL_DEFAULT_DRIVER = "ODBC Driver 18 for SQL Server"
 
-def _mysql_driver(dialect: str) -> str:
-    return "mysql+pymysql" if dialect in _MYSQL_FAMILY else dialect
+
+def mssql_driver() -> str:
+    """SQL Server 用的 ODBC 驱动名.
+
+    顺序：`BI_MSSQL_DRIVER` 显式指定 → 本机已注册的 Microsoft 驱动（18 / 17）→ FreeTDS。
+    一个都没注册时仍返回 MS 驱动名，让 pyodbc 抛 IM002（「未找到数据源」），
+    比报「方言不存在」更贴近真实原因。
+    """
+    override = (os.environ.get("BI_MSSQL_DRIVER") or "").strip()
+    if override:
+        return override
+    try:
+        import pyodbc
+
+        installed = list(pyodbc.drivers())
+    except Exception:  # 驱动包没装 / 非 pyodbc 环境
+        installed = []
+    for name in ("ODBC Driver 18 for SQL Server", "ODBC Driver 17 for SQL Server"):
+        if name in installed:
+            return name
+    if "FreeTDS" in installed:
+        return "FreeTDS"
+    return _MSSQL_DEFAULT_DRIVER
+
+
+def _with_mssql_driver(url: str) -> str:
+    """给 mssql+pyodbc 连接串补 driver 参数（已有则原样返回）."""
+    if "driver=" in url.lower():
+        return url
+    driver = mssql_driver()
+    extra = f"{'&' if '?' in url else '?'}driver={quote_plus(driver)}"
+    if driver.lower().startswith("odbc driver"):
+        # MS 驱动 18 默认强制加密，内网自签证书会握手失败
+        extra += "&TrustServerCertificate=yes"
+    return url + extra
+
+
+def _driver_scheme(dialect: str, port: Any = None) -> str:
+    """方言 → SQLAlchemy 连接串 scheme（驱动差异）.
+
+    · MySQL 家族统一 `mysql+pymysql`（`mysql://` 默认要 MySQLdb）；
+    · ClickHouse：8123 走 HTTP（`clickhouse+http`），其余按原生 9000（`clickhouse+native`）；
+    · SQL Server 统一 `mssql+pyodbc`（driver 参数见 `_with_mssql_driver`）；
+    · Oracle 统一 `oracle+oracledb`（`oracle://` 默认要 cx_Oracle，本仓库装的是 python-oracledb）；
+    · Redshift 走 PostgreSQL 方言（TYPE_DIALECT 已收敛成 postgresql）；
+      手填 URI 的照原样用。
+    """
+    if dialect in _MYSQL_FAMILY:
+        return "mysql+pymysql"
+    if dialect == "clickhouse":
+        try:
+            return "clickhouse+http" if int(port or 0) == 8123 else "clickhouse+native"
+        except (TypeError, ValueError):
+            return "clickhouse+native"
+    if dialect in _MSSQL_FAMILY:
+        return "mssql+pyodbc"
+    if dialect == "oracle":
+        return "oracle+oracledb"
+    return dialect
 
 
 def _normalize_driver(url: str) -> str:
@@ -194,6 +256,18 @@ def _normalize_driver(url: str) -> str:
     for scheme in ("mysql", "mariadb"):
         if lowered.startswith(f"{scheme}://"):
             return "mysql+pymysql://" + url[len(scheme) + 3:]
+    if lowered.startswith("clickhouse://"):
+        return "clickhouse+native://" + url[len("clickhouse://"):]
+    if lowered.startswith(("sqlserver://", "mssql://")):
+        return _with_mssql_driver("mssql+pyodbc://" + url.split("://", 1)[1])
+    if lowered.startswith("mssql+pyodbc://"):
+        return _with_mssql_driver(url)
+    # Oracle 只装了 python-oracledb；`oracle://` 会去找 cx_Oracle
+    if lowered.startswith("oracle://"):
+        return "oracle+oracledb://" + url[len("oracle://"):]
+    # Redshift 走 PostgreSQL 协议
+    if lowered.startswith(("redshift://", "redshift+psycopg2://", "redshift+redshift_connector://")):
+        return "postgresql://" + url.split("://", 1)[1]
     return url
 
 
@@ -202,16 +276,25 @@ def build_url(src: dict) -> str:
     if (src.get("uri") or "").strip():
         return _normalize_driver(src["uri"].strip())
     ds_type = str(src.get("ds_type") or "").strip()
+    if not ds_type:
+        raise SourceError("请选择数据源类型，或直接填写连接串 URI")
     if ds_type not in TYPE_DIALECT:
-        raise SourceError(f"不支持的数据源类型：{ds_type}")
+        raise SourceError(f"暂未适配的数据源类型：{ds_type}（可在连接串 URI 里直连）")
     dialect = TYPE_DIALECT[ds_type]
     password = decrypt(src.get("password") or "")
+    if password == "(无法解密)":
+        raise SourceError("数据源密码无法解密（服务密钥可能变过），请重新填写密码")
     user = str(src.get("username") or "").strip()
-    auth = f"{user}:{password}@" if user else ""
+    # 空密码不能拼成 `user:@host`：PyHive（Presto / Hive）会把空串当密码，
+    # 报「Protocol must be https when passing a password」这类与真实原因无关的错
+    auth = f"{user}:{password}@" if (user and password) else (f"{user}@" if user else "")
     host = str(src.get("host") or "127.0.0.1").strip()
     port = f":{int(src['port'])}" if src.get("port") else ""
     db_name = str(src.get("db_name") or "").strip()
-    return f"{_mysql_driver(dialect)}://{auth}{host}{port}/{db_name}"
+    url = f"{_driver_scheme(dialect, src.get('port'))}://{auth}{host}{port}/{db_name}"
+    if dialect in _MSSQL_FAMILY:
+        url = _with_mssql_driver(url)
+    return url
 
 
 def engine_for(src: dict) -> Engine:
@@ -232,6 +315,15 @@ def engine_for(src: dict) -> Engine:
         kwargs: dict[str, Any] = {"pool_pre_ping": True, "pool_recycle": 1800}
         if url.startswith(("postgresql", "mysql")):
             kwargs["connect_args"] = {"connect_timeout": 8}
+        elif url.startswith("clickhouse+native"):
+            kwargs["connect_args"] = {
+                "connect_timeout": 8,
+                # 列名优先于别名：否则 `toStartOfMonth(dt) AS dt` 的 GROUP BY/ORDER BY 会报错
+                "settings": {"prefer_column_name_to_alias": 1},
+            }
+        elif url.startswith("mssql+pyodbc"):
+            # pyodbc 的登录超时（秒），单位与 connect_timeout 不同
+            kwargs["connect_args"] = {"timeout": 8}
         eng = create_engine(url, **kwargs)
     except ModuleNotFoundError as exc:
         raise SourceError(f"该类型的驱动未安装：{exc.name}（装好驱动后重试）") from exc
@@ -746,7 +838,7 @@ def create_source(db: Session, payload: dict, owner_id: int | None) -> dict:
     if not name:
         raise SourceError("数据源名称不能为空")
     if ds_type not in TYPE_DIALECT and not str(payload.get("uri") or "").strip():
-        raise SourceError(f"不支持的数据源类型：{ds_type}")
+        raise SourceError(f"暂未适配的数据源类型：{ds_type}（可在连接串 URI 里直连）")
     exists = db.execute(text("SELECT 1 FROM bi_source WHERE name = :n"), {"n": name}).fetchone()
     if exists:
         raise SourceError(f"数据源名称已存在：{name}")

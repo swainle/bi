@@ -248,10 +248,11 @@ def preview_component(
 
 def _demo_dataset_id(db: Session) -> int | None:
     """组件库模板不写死数据集（见 AGENTS §5），卡片墙预览兜底用「演示数据集」."""
-    from app.components.seed_demo import DATASET_NAME
+    from app.components.seed_demo import TABLE as DEMO_TABLE
     from app.semantic import repository as semantic_repo
 
-    hit = next((d for d in semantic_repo.list_datasets(db) if d.name == DATASET_NAME), None)
+    # 按物理表认（这行数据集允许改名），别再按 name 认 —— 改名后会找不到、卡片墙就没缩略图了
+    hit = next((d for d in semantic_repo.list_datasets(db) if d.physical_table == DEMO_TABLE), None)
     return hit.id if hit is not None else None
 
 

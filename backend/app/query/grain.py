@@ -53,7 +53,19 @@ _EXPRESSIONS: dict[str, dict[str, str]] = {
         "quarter": "TRUNC({col}, 'Q')",
         "year": "TRUNC({col}, 'YYYY')",
     },
+    # Presto / Trino：date_trunc 与 PostgreSQL 同形
+    "presto": {
+        "hour": "date_trunc('hour', {col})",
+        "day": "date_trunc('day', {col})",
+        "week": "date_trunc('week', {col})",
+        "month": "date_trunc('month', {col})",
+        "quarter": "date_trunc('quarter', {col})",
+        "year": "date_trunc('year', {col})",
+    },
 }
+
+# 暂未适配时间粒度的方言：宁可明确报错，也不静默回退 PG 生成错 SQL
+_UNSUPPORTED_DIALECTS = {"hive", "impala", "ibm_db_sa"}
 
 # 常见别名收敛
 _DIALECT_ALIASES = {
@@ -119,8 +131,12 @@ def grain_expression(
     value = validate_grain(grain)
     if value is None:
         return column_sql
+    key = normalize_dialect(dialect)
+    # 这几个方言没有可用的 date_trunc 写法，静默回退 PG 会生成必然失败的 SQL
+    if key in _UNSUPPORTED_DIALECTS:
+        raise UnsupportedGrainError(f"{dialect} 暂未适配时间粒度，请先按明细或不聚合时间")
     expr = cast_to_timestamp(column_sql, dialect) if cast else column_sql
-    table = _EXPRESSIONS.get(normalize_dialect(dialect), _EXPRESSIONS["postgres"])
+    table = _EXPRESSIONS.get(key, _EXPRESSIONS["postgres"])
     template = table.get(value)
     if not template:
         raise UnsupportedGrainError(f"方言 {dialect} 不支持粒度 {value}")

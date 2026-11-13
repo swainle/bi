@@ -29,6 +29,22 @@ def test_clickhouse_uses_to_start_of() -> None:
     assert "toStartOfMonth" in grain_expression('"d"', "month", "clickhouse")
 
 
+def test_presto_uses_date_trunc() -> None:
+    assert "date_trunc('month'" in grain_expression('"d"', "month", "presto")
+
+
+def test_redshift_follows_postgres_protocol() -> None:
+    # TYPE_DIALECT 把 redshift 收敛成 postgresql，粒度表达式应与 PG 一致
+    assert "date_trunc('month'" in grain_expression('"d"', "month", "postgresql")
+
+
+@pytest.mark.parametrize("dialect", ["hive", "impala", "ibm_db_sa"])
+def test_unadapted_dialects_raise_clear_error(dialect: str) -> None:
+    """未适配时间粒度的方言必须明确报错，不能生成一段必然失败的 SQL."""
+    with pytest.raises(UnsupportedGrainError):
+        grain_expression('"d"', "month", dialect)
+
+
 def test_dialect_alias_normalized() -> None:
     assert normalize_dialect("PostgreSQL") == "postgres"
     assert normalize_dialect("mariadb") == "mysql"

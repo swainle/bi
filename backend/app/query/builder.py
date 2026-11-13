@@ -28,12 +28,12 @@ def quote(ident: str, dialect: str = "postgresql") -> str:
     """标识符加引号（调用前必须已通过 contract 的标识符校验）.
 
     带 schema 的表名（直连模式如 dm.v_bangdan）逐段加引号，避免整体当成一个标识符。
-    方言差异：MySQL 用反引号、SQL Server 用方括号，其余（PG / ClickHouse / Oracle…）用双引号。
+    方言差异：MySQL / Hive / Impala 用反引号、SQL Server 用方括号，其余（PG / ClickHouse / Oracle…）用双引号。
     先经 `normalize_dialect` 收敛别名（postgresql→postgres、sqlserver/mssql→tsql、mariadb/doris→mysql），
     否则同一个库换个写法引号就错了。
     """
     family = normalize_dialect(dialect)
-    if family == "mysql":
+    if family in {"mysql", "hive", "impala"}:
         open_q, close_q = "`", "`"
     elif family == "tsql":
         open_q, close_q = "[", "]"
@@ -44,7 +44,8 @@ def quote(ident: str, dialect: str = "postgresql") -> str:
 
 # 这些方言没有 ILIKE / NULLS LAST，直接生成会语法错误（MySQL 默认排序规则本身不区分大小写）
 _NO_ILIKE = {"mysql", "tsql", "oracle", "ibm_db_sa", "presto", "hive", "impala"}
-_NO_NULLS_LAST = {"mysql", "tsql"}
+# Impala 的 ORDER BY 不支持 NULLS LAST（Hive 2.1+ / Db2 / Presto 支持）
+_NO_NULLS_LAST = {"mysql", "tsql", "impala"}
 
 
 # SUM / AVG 只对数值列成立；文本 / 时间列要先拦下来，别把 psycopg 的报错甩给用户
@@ -180,22 +181,25 @@ def build(
     having_clauses = _compile_filters(query.having, params, "h", dialect)
 
     order_parts: list[str] = []
-    # 时间粒度维度在 SELECT 里是表达式（别名与源列同名时），MySQL 的
-    # `alias IS NULL` 会被解析成源列 → ONLY_FULL_GROUP_BY 直接报错；
-    # 这类列不补空值排序键，只按别名排序（MySQL 对裸别名会正确用别名）。
-    grain_aliases = {d.output_name for d in query.dimensions if d.grain}
+    # 时间粒度维度在 SELECT 里是表达式（别名可能与源列同名）。MySQL / ClickHouse 的
+    # `ORDER BY 别名` 会解析成源列（前者 ONLY_FULL_GROUP_BY 报错、后者 NOT_AN_AGGREGATE），
+    # 所以按「粒度表达式」排序，而不是别名。
+    grain_exprs = {
+        d.output_name: grain_expression(
+            quote(d.column, dialect), d.grain, dialect, cast=needs_cast(types.get(d.column))
+        )
+        for d in query.dimensions if d.grain
+    }
     for order in query.order_by:
         # NULLS LAST：PostgreSQL 的 DESC 默认 NULLS FIRST，会把空值排到最前面，
         # 导致「取最大值」拿到一整页 NULL（搜索增速 / 需求供给比都踩过）。
         # MySQL / SQL Server 不支持该语法 → 用 (col IS NULL) 当第一排序键，效果等价。
-        col = quote(order.column, dialect)
+        expr = grain_exprs.get(order.column) or quote(order.column, dialect)
         direction = "DESC" if order.desc else "ASC"
-        if family not in _NO_NULLS_LAST:
-            order_parts.append(f"{col} {direction} NULLS LAST")
-        elif order.column in grain_aliases:
-            order_parts.append(f"{col} {direction}")
+        if family in _NO_NULLS_LAST:
+            order_parts.append(f"{expr} IS NULL, {expr} {direction}")
         else:
-            order_parts.append(f"{col} IS NULL, {col} {direction}")
+            order_parts.append(f"{expr} {direction} NULLS LAST")
 
     sql = f"SELECT {', '.join(select_parts)} FROM {from_clause}"
     if where_clauses:

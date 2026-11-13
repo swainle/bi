@@ -75,8 +75,10 @@ def compile_query(dataset: Dataset, request: dict) -> QueryObject:
             continue
         # 未登记指标：允许按「字段 + 聚合」临时组合（仍是白名单内的列）
         field = _field(dataset, name)
-        if field.role == "id":
-            raise SemanticError(f"标识字段不能聚合：{field.name}")
+        agg_name = str(item.get("agg", "SUM")).upper()
+        # 标识字段只有「计数」有意义（词云按词出现次数、明细行数）；SUM/AVG 这类一律拒绝
+        if field.role == "id" and agg_name not in ("COUNT", "COUNT_DISTINCT"):
+            raise SemanticError(f"标识字段不能聚合：{field.name}（只能计数）")
         metrics.append(
             MetricSpec(
                 column=field.source_column,
