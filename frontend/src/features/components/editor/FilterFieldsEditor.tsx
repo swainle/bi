@@ -430,6 +430,13 @@ export default function FilterFieldsEditor({ fields, platform, fieldsMap, column
       updateField(index, patch);
       return;
     }
+    /* 这一列在当前数据集里根本不存在（多半拖的是另一张表的字段）：先把话说清楚，别发一个必然失败的请求 */
+    if (columns.length > 0 && !columns.includes(column)) {
+      /* 选项是上一列留下的，别跟着串到新列上 */
+      updateField(index, { ...patch, options: [], default: "" });
+      setOptionCount((prev) => ({ ...prev, [index]: -2 }));
+      return;
+    }
     setLoadingIndex(index);
     try {
       const res = await client.post(`/bi/semantic/datasets/${datasetId}/query`, {
@@ -449,12 +456,18 @@ export default function FilterFieldsEditor({ fields, platform, fieldsMap, column
       updateField(index, { ...patch, options, default: options.some((o) => o.v === String(field.default)) ? field.default : "" });
       setOptionCount((prev) => ({ ...prev, [index]: options.length }));
     } catch {
-      updateField(index, patch);
+      /* 取不到就清空候选值：旧的选项属于上一列，留着会张冠李戴 */
+      updateField(index, { ...patch, options: [], default: "" });
       setOptionCount((prev) => ({ ...prev, [index]: -1 }));
     } finally {
       setLoadingIndex(null);
     }
   };
+
+  /** 换了数据集：上次的「已取到 N 个 / 失败」一律作废，免得串到新数据集上误导人 */
+  useEffect(() => {
+    setOptionCount({});
+  }, [datasetId]);
 
   const label = (text: string) => (
     <Typography sx={{ fontSize: 11, color: "#94A3B8", mb: 0.5 }}>{text}</Typography>
@@ -687,9 +700,10 @@ export default function FilterFieldsEditor({ fields, platform, fieldsMap, column
           )}
 
           {/* 拖入框：把左栏字段拖进来 = 把这个筛选绑到那一列（绑过就直接取该列的候选值）。
-              只保留拖放这一条入口，原来的「绑定字段」输入框 + 快捷填入已按用户要求去掉。 */}
-          {!switchMode && (
-            <Box
+              只保留拖放这一条入口，原来的「绑定字段」输入框 + 快捷填入已按用户要求去掉。
+              平台切换字段（配了数据集映射）也要能绑：绑了「平台」列，切平台时卡片只显示这个平台的行，
+              否则用户会以为「选了平台却没过滤」（2026-11-13 用户实测反馈）。 */}
+          <Box
               onDragOver={(e) => {
                 e.preventDefault();
                 e.dataTransfer.dropEffect = "copy";
@@ -717,8 +731,7 @@ export default function FilterFieldsEditor({ fields, platform, fieldsMap, column
               }}
             >
               {field.column ? `已绑定：${field.column}` : "把左侧字段拖到这里（或点击）"}
-            </Box>
-          )}
+          </Box>
 
 
           {!switchMode && field.type !== "search" && field.type !== "date" && (() => {
@@ -726,11 +739,13 @@ export default function FilterFieldsEditor({ fields, platform, fieldsMap, column
             const open = !!openOptions[field.id];
             const status = loadingIndex === index
               ? "正在取该列的值…"
-              : optionCount[index] === -1
-                ? "取候选值失败"
-                : optionCount[index] !== undefined
-                  ? `已取到 ${optionCount[index]} 个值`
-                  : "";
+              : optionCount[index] === -2
+                ? `当前数据集没有「${field.column || ""}」列`
+                : optionCount[index] === -1
+                  ? "取候选值失败 · 点这里重试"
+                  : optionCount[index] !== undefined
+                    ? `已取到 ${optionCount[index]} 个值`
+                    : "";
             return (
             <Box>
               <Box
@@ -742,11 +757,20 @@ export default function FilterFieldsEditor({ fields, platform, fieldsMap, column
                 }}>
                 <Typography sx={{ fontSize: 11, color: "#94A3B8", flexShrink: 0 }}>选项</Typography>
                 <Typography sx={{ fontSize: 10.5, color: "#B6C2D2", flexShrink: 0 }}>{options.length}</Typography>
-                <Typography sx={{
-                  flex: 1, minWidth: 0, fontSize: 10.5, textAlign: "right",
-                  color: loadingIndex === index ? "#2563EB" : "#B6C2D2",
-                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                }}>
+                <Typography
+                  onClick={(e) => {
+                    /* 失败可点重试：多半是列还没绑上 / CSRF 还没就绪 / 数据集刚切过 */
+                    if (optionCount[index] !== -1) return;
+                    e.stopPropagation();
+                    void bindColumn(index, field.column ?? "", { type: field.type });
+                  }}
+                  sx={{
+                    flex: 1, minWidth: 0, fontSize: 10.5, textAlign: "right",
+                    color: loadingIndex === index ? "#2563EB" : (optionCount[index] === -1 ? "#B45309" : "#B6C2D2"),
+                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                    cursor: optionCount[index] === -1 ? "pointer" : "default",
+                    "&:hover": optionCount[index] === -1 ? { color: "#92400E", textDecoration: "underline" } : {},
+                  }}>
                   {status}
                 </Typography>
                 <ExpandMore sx={{

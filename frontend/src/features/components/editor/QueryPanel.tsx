@@ -308,8 +308,8 @@ export default function QueryPanel({
    *  或「前N合计/平均/计数」副标题时，本质是多行里挑一行 —— 这时维度槽自动出现 */
   /* 指标卡就是一个数：面板永远只有「指标 + 聚合」。
      需要按维度看，请用柱状图 / 饼图 / 明细表 —— 免得旧卡残留的维度让人以为界面还是旧版。 */
-  /* 词云没有「维度」槽：只有一个指标槽（拖列进去当词） */
-  const needsDimension = !["kpi", "insight", "section", "wordcloud", "gauge"].includes(kind);
+  /* 词云要「词（维度）+ 权重（指标）」两个槽（对齐 Superset / Tableau 的做法） */
+  const needsDimension = !["kpi", "insight", "section", "gauge"].includes(kind);
   /** 切到明细表：老的「维度 + 指标」直接变成列（不再聚合），面板和卡片才一致 */
   useEffect(() => {
     if (kind !== "table") return;
@@ -326,6 +326,25 @@ export default function QueryPanel({
 
   const patch = (key: string, value: unknown) =>
     onChange({ ...spec, binding: { ...spec.binding, [key]: value } });
+
+  /** 词云的「拆词」分隔符：编辑态用本地草稿，失焦/回车再落到 spec（不每敲一个字就重算） */
+  const [splitDraft, setSplitDraft] = useState(b.split ?? "");
+  useEffect(() => { setSplitDraft(b.split ?? ""); }, [b.split]);
+  const commitSplit = () => {
+    const next = splitDraft.replace(/\s+/g, "");
+    if ((b.split ?? "") !== next) patch("split", next || null);
+  };
+
+  /* 词云的老卡如果被塞了「标识字段」当权重（SUM(产品id) 这种），后端会报「标识字段不能聚合」，
+     打开面板时直接清掉，卡片立刻恢复；标识字段本来也不该当权重 */
+  useEffect(() => {
+    if (kind !== "wordcloud") return;
+    const idNames = new Set((identifierOptions || []).map((f) => f.name));
+    if (spec.binding.metric && idNames.has(spec.binding.metric)) {
+      onChange({ ...spec, binding: { ...spec.binding, metric: null } });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kind, spec.binding.metric, identifierOptions]);
 
   // ── 拖拽落点：字段拖进来即绑定 ──
   const [dragOver, setDragOver] = useState<string | null>(null);
@@ -910,6 +929,8 @@ export default function QueryPanel({
             )}
           </Slot>
         ) : b.dimension ? (
+          /* 词云也走「词（维度）+ 权重（指标）」两槽，和 Superset / Tableau 一致
+             （2026-11-13 用户先要求去掉维度、看过市面做法后又让配回来） */
           <Slot label={axis.dimension}>
             <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
               <Typography sx={{ fontSize: 12.5, color: "#334155", flex: 1, minWidth: 0 }} noWrap>
@@ -925,10 +946,10 @@ export default function QueryPanel({
         <Slot label={axis.metric}>
           <Box data-drop="metric" {...dropZone("metric")} sx={{ ...zoneSx("metric"), p: 0.25 }}>
           {b.metric ? (
-            <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1, alignItems: "center", mb: 1 }}>
+            <Box sx={{ display: "flex", flexWrap: "nowrap", gap: 1, alignItems: "center", mb: 1 }}>
               <TextField select size="small" value={b.metric}
                 onChange={(e) => patch("metric", e.target.value)}
-                sx={{ flex: "1 1 150px", minWidth: 130, "& .MuiOutlinedInput-root": { borderRadius: 2, fontSize: 12.5 } }}>
+                sx={{ flex: "1 1 auto", minWidth: 92, "& .MuiOutlinedInput-root": { borderRadius: 2, fontSize: 12.5 } }}>
                 {metricOptions.map((f) => (
                   <MenuItem key={f.name} value={f.name} sx={{ fontSize: 12.5 }}>{f.name}</MenuItem>
                 ))}
@@ -938,12 +959,12 @@ export default function QueryPanel({
               </TextField>
               <TextField select size="small" label="聚合" value={b.agg}
                 onChange={(e) => patch("agg", e.target.value)}
-                sx={{ width: 110, flexShrink: 0, "& .MuiOutlinedInput-root": { borderRadius: 2, fontSize: 12.5 } }}>
+                sx={{ width: 96, flexShrink: 0, "& .MuiOutlinedInput-root": { borderRadius: 2, fontSize: 12.5 } }}>
                 {AGG.map((a) => (
                   <MenuItem key={a} value={a} sx={{ fontSize: 12.5 }}>{a}</MenuItem>
                 ))}
               </TextField>
-              <IconButton size="small" onClick={() => patch("metric", null)}>
+              <IconButton size="small" sx={{ flexShrink: 0 }} onClick={() => patch("metric", null)}>
                 <Close sx={{ fontSize: 15 }} />
               </IconButton>
             </Box>
@@ -951,6 +972,31 @@ export default function QueryPanel({
             <Box sx={dash}>把左侧「指标」拖到这里（或点击）</Box>
           )}
           </Box>
+
+          {kind === "wordcloud" && (
+            <Slot label="颜色（分类）">
+              <TextField select size="small" fullWidth value={b.series ?? ""}
+                onChange={(e) => patch("series", e.target.value || null)}
+                sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2, fontSize: 12.5 } }}>
+                <MenuItem value="" sx={{ fontSize: 12.5 }}>不用</MenuItem>
+                {dimensionOptions.map((f) => (
+                  <MenuItem key={f.name} value={f.name} sx={{ fontSize: 12.5 }}>{f.name}</MenuItem>
+                ))}
+              </TextField>
+            </Slot>
+          )}
+
+          {kind === "wordcloud" && (
+            /* 拆词：一格里有「颗粒碎末多 / 分量不足」这种多词时，按分隔符拆成一个个词（空 = 不拆） */
+            <Slot label="拆词">
+              <TextField size="small" fullWidth placeholder="分隔符，如 /（留空 = 不拆）"
+                value={splitDraft}
+                onChange={(e) => setSplitDraft(e.target.value)}
+                onBlur={() => commitSplit()}
+                onKeyDown={(e) => { if (e.key === "Enter") commitSplit(); }}
+                sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2, fontSize: 12.5 } }} />
+            </Slot>
+          )}
 
           {kind === "combo" && (
             <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1, alignItems: "center", mt: 2 }}>

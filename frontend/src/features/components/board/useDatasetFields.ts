@@ -9,13 +9,17 @@ const EMPTY: FieldGroup = { metrics: [], dimensions: [], identifiers: [] };
 export function useDatasetFields(datasetId?: number | null) {
   const [groups, setGroups] = useState<FieldGroup>(EMPTY);
   const [datasetName, setDatasetName] = useState("");
+  /** groups 对应的数据集 id —— 切换数据集时 groups 会短暂是上一份，用它判断「这批字段能不能当依据」 */
+  const [loadedId, setLoadedId] = useState<number | null>(null);
 
   useEffect(() => {
     if (!datasetId) {
       setGroups(EMPTY);
       setDatasetName("");
+      setLoadedId(null);
       return;
     }
+    setLoadedId(null);
     client.get(`/bi/semantic/datasets/${datasetId}`).then((res) => {
       setDatasetName(res.data?.name || "");
       const raw: { name: string; role: string }[] = res.data?.fields || [];
@@ -28,8 +32,9 @@ export function useDatasetFields(datasetId?: number | null) {
         dimensions: raw.filter((f) => f.role !== "measure" && f.role !== "id"),
         identifiers: raw.filter((f) => f.role === "id"),
       });
-    }).catch(() => setGroups(EMPTY));
+      setLoadedId(datasetId);
+    }).catch(() => { setGroups(EMPTY); setLoadedId(null); });
   }, [datasetId]);
 
-  return { groups, datasetName };
+  return { groups, datasetName, datasetId: loadedId };
 }

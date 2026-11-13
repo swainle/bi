@@ -1,5 +1,4 @@
 // ====== 类型 ======
-import { Box } from "@mui/material";
 import {
   AccountBalance, Store, ShoppingCart, MusicNote, Pets as PetsIcon,
 } from "@mui/icons-material";
@@ -38,83 +37,9 @@ export interface TeamDashboard {
 }
 export interface UserBrief { id: number; username: string }
 
-// ====== 数据源类型定义（DataEase 全量覆盖） ======
-export interface DsConfig { id: string; type: string; name: string; host?: string; port?: number; dbName?: string; username?: string; password?: string; url?: string; filePath?: string; createdAt: number; }
-export type DsCategory = "OLTP" | "OLAP" | "数据湖" | "API数据" | "文件";
-
-export interface DsTypeDef {
-  id: string; label: string; desc: string; category: DsCategory; icon: JSX.Element;
-  fields: ("host" | "port" | "dbName" | "username" | "password" | "url" | "filePath")[];
-  defaultPort: number;
-}
-
-// ====== 数据库图标（彩色字母徽标） ======
-export function DbIcon({ type }: { type: string }) {
-  const colors: Record<string, string> = {
-    mysql: "#4479A1", mariadb: "#C0765A", oracle: "#F80000", postgresql: "#336791",
-    sqlserver: "#CC2927", db2: "#054ADA", tidb: "#E6007A", dm: "#DA291C",
-    kingbase: "#C8102E", mongodb: "#47A248", mongodb_bi: "#3FA037",
-    clickhouse: "#FFCC02", doris: "#1677FF", starrocks: "#F85A40", impala: "#EA6B00",
-    presto: "#5890FF", kylin: "#FF8C00", elasticsearch: "#00BFB3",
-    redshift: "#CC0000", hive: "#FCCE00", maxcompute: "#FF6A00",
-    api: "#6366F1", excel: "#217346", csv: "#1E8E3E",
-  };
-  const labels: Record<string, string> = {
-    mysql: "MY", mariadb: "MA", oracle: "OR", postgresql: "PG",
-    sqlserver: "MS", db2: "DB", tidb: "TD", dm: "DM", kingbase: "KB",
-    mongodb: "MG", mongodb_bi: "MB", clickhouse: "CH", doris: "DR",
-    starrocks: "SR", impala: "IM", presto: "PR", kylin: "KY", elasticsearch: "ES",
-    redshift: "RS", hive: "HV", maxcompute: "MC", api: "API", excel: "XL", csv: "CV",
-  };
-  return (
-    <Box sx={{
-      width: 30, height: 30, borderRadius: 2, flexShrink: 0,
-      bgcolor: colors[type] || "#999", color: "#fff",
-      display: "flex", alignItems: "center", justifyContent: "center",
-      fontSize: 12, fontWeight: 800,
-    }}>{labels[type] || "?"}</Box>
-  );
-}
-
-export const DS_TYPES: DsTypeDef[] = [
-  // ====== OLTP 关系型数据库 ======
-  { id: "mysql", label: "MySQL", desc: "开源关系型数据库", category: "OLTP", icon: <DbIcon type="mysql" />, fields: ["host","port","dbName","username","password"], defaultPort: 3306 },
-  { id: "mariadb", label: "MariaDB", desc: "MySQL 分支", category: "OLTP", icon: <DbIcon type="mariadb" />, fields: ["host","port","dbName","username","password"], defaultPort: 3306 },
-  { id: "oracle", label: "Oracle", desc: "企业级关系型数据库", category: "OLTP", icon: <DbIcon type="oracle" />, fields: ["host","port","dbName","username","password"], defaultPort: 1521 },
-  { id: "postgresql", label: "PostgreSQL", desc: "高级开源关系型数据库", category: "OLTP", icon: <DbIcon type="postgresql" />, fields: ["host","port","dbName","username","password"], defaultPort: 5432 },
-  { id: "sqlserver", label: "SQL Server", desc: "微软关系型数据库", category: "OLTP", icon: <DbIcon type="sqlserver" />, fields: ["host","port","dbName","username","password"], defaultPort: 1433 },
-  { id: "db2", label: "Db2", desc: "IBM 企业级数据库", category: "OLTP", icon: <DbIcon type="db2" />, fields: ["host","port","dbName","username","password"], defaultPort: 50000 },
-  { id: "tidb", label: "TiDB", desc: "分布式 HTAP 数据库", category: "OLTP", icon: <DbIcon type="tidb" />, fields: ["host","port","dbName","username","password"], defaultPort: 4000 },
-  { id: "dm", label: "达梦 DM", desc: "国产关系型数据库", category: "OLTP", icon: <DbIcon type="dm" />, fields: ["host","port","dbName","username","password"], defaultPort: 5236 },
-  { id: "kingbase", label: "人大金仓", desc: "国产关系型数据库", category: "OLTP", icon: <DbIcon type="kingbase" />, fields: ["host","port","dbName","username","password"], defaultPort: 54321 },
-  { id: "mongodb", label: "MongoDB", desc: "文档型 NoSQL 数据库", category: "OLTP", icon: <DbIcon type="mongodb" />, fields: ["host","port","dbName","username","password"], defaultPort: 27017 },
-  { id: "mongodb_bi", label: "MongoDB-BI", desc: "BI Connector 连接", category: "OLTP", icon: <DbIcon type="mongodb_bi" />, fields: ["host","port","dbName","username","password"], defaultPort: 3307 },
-  // ====== OLAP 分析型数据库 ======
-  { id: "clickhouse", label: "ClickHouse", desc: "列式 OLAP 引擎", category: "OLAP", icon: <DbIcon type="clickhouse" />, fields: ["host","port","dbName","username","password"], defaultPort: 8123 },
-  { id: "doris", label: "Apache Doris", desc: "MPP 实时分析数据库", category: "OLAP", icon: <DbIcon type="doris" />, fields: ["host","port","dbName","username","password"], defaultPort: 9030 },
-  { id: "starrocks", label: "StarRocks", desc: "极速全场景 MPP 数据库", category: "OLAP", icon: <DbIcon type="starrocks" />, fields: ["host","port","dbName","username","password"], defaultPort: 9030 },
-  { id: "impala", label: "Apache Impala", desc: "实时 SQL 查询引擎", category: "OLAP", icon: <DbIcon type="impala" />, fields: ["host","port","dbName","username","password"], defaultPort: 21050 },
-  { id: "presto", label: "Presto", desc: "分布式 SQL 查询引擎", category: "OLAP", icon: <DbIcon type="presto" />, fields: ["host","port","dbName","username","password"], defaultPort: 8080 },
-  { id: "kylin", label: "Apache Kylin", desc: "OLAP 多维分析引擎", category: "OLAP", icon: <DbIcon type="kylin" />, fields: ["host","port","dbName","username","password"], defaultPort: 7070 },
-  { id: "elasticsearch", label: "Elasticsearch", desc: "分布式搜索分析引擎", category: "OLAP", icon: <DbIcon type="elasticsearch" />, fields: ["host","port","username","password"], defaultPort: 9200 },
-  // ====== 数据仓库 / 数据湖 ======
-  { id: "redshift", label: "AWS RedShift", desc: "云端 PB 级数仓", category: "数据湖", icon: <DbIcon type="redshift" />, fields: ["host","port","dbName","username","password"], defaultPort: 5439 },
-  { id: "hive", label: "Apache Hive", desc: "Hadoop 数据仓库", category: "数据湖", icon: <DbIcon type="hive" />, fields: ["host","port","dbName","username","password"], defaultPort: 10000 },
-  { id: "maxcompute", label: "MaxCompute", desc: "阿里云大数据平台", category: "数据湖", icon: <DbIcon type="maxcompute" />, fields: ["url","username","password"], defaultPort: 0 },
-  // ====== API 数据源 ======
-  { id: "api", label: "RESTful API", desc: "HTTP 接口数据源", category: "API数据", icon: <DbIcon type="api" />, fields: ["url","username","password"], defaultPort: 0 },
-  // ====== 文件 ======
-  { id: "excel", label: "Excel", desc: ".xlsx / .xls 文件", category: "文件", icon: <DbIcon type="excel" />, fields: ["filePath"], defaultPort: 0 },
-  { id: "csv", label: "CSV", desc: "逗号分隔值文件", category: "文件", icon: <DbIcon type="csv" />, fields: ["filePath"], defaultPort: 0 },
-];
-
-export const DS_CATEGORIES: { key: DsCategory; label: string; color: string }[] = [
-  { key: "OLTP", label: "OLTP 关系型数据库", color: "#2563EB" },
-  { key: "OLAP", label: "OLAP 分析型数据库", color: "#7C3AED" },
-  { key: "数据湖", label: "数据仓库 / 数据湖", color: "#059669" },
-  { key: "API数据", label: "API 数据源", color: "#D97706" },
-  { key: "文件", label: "文件数据源", color: "#DC2626" },
-];
+// ====== 数据源类型不再在前端硬编码 ======
+// 唯一事实来源：后端 `app/sources/types_catalog.py`，经 `GET /bi/sources/types` 下发。
+// 前端只负责渲染，避免「界面能选、后端报不支持」的两份清单。
 
 // ====== 电商数据模板 ======
 export const TEMPLATES: Template[] = [

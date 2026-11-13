@@ -54,16 +54,45 @@ export const KPI_INK: Record<Accent, string> = {
 };
 
 /** 词云配色：高频红 → 中频深蓝灰 → 低频浅灰 */
-export const CLOUD_COLORS = ["#E11D48", "#BE123C", "#1E293B", "#334155", "#475569", "#64748B", "#94A3B8"];
+/* 词云主题色（2026-11-13 用户要求「颜色丰富一些」并按参考图给多套配色）：
+   6 套 × 8 色，整套都压过饱和度，放在白卡片上不刺眼；尾部按排名混白，保住「大字重、小字轻」的层次。 */
+export const CLOUD_PALETTES: { name: string; colors: string[] }[] = [
+  { name: "潮彩", colors: ["#0EA5A5", "#3E7BFA", "#7C6CE0", "#F2A03D", "#3FB984", "#E2607D", "#5B8DEF", "#8C7AE6"] },
+  { name: "甜韵", colors: ["#35C9A5", "#4FC3E8", "#A98BE8", "#F48FB1", "#6ED9B8", "#F5B971", "#F2994A", "#4C7DF0"] },
+  { name: "希翼", colors: ["#12B3C9", "#1F6FEB", "#22A67A", "#2E3A8C", "#7A5AF8", "#F2994A", "#56CCF2", "#8FA3BF"] },
+  { name: "谷韵", colors: ["#0F5132", "#116B5A", "#1F8A70", "#3DA58A", "#6FBF9B", "#9AD0B4", "#A8C0CE", "#7E94A8"] },
+  { name: "复古", colors: ["#8C6D46", "#C7A17A", "#6B705C", "#A5A58D", "#B7B7A4", "#7D8CA3", "#9C6644", "#CB997E"] },
+  { name: "炽情", colors: ["#E11D48", "#F97316", "#EAB308", "#DC2626", "#9333EA", "#2563EB", "#059669", "#334155"] },
+];
 
-export function cloudColor(rank: number, total: number): string {
-  if (total <= 1) return CLOUD_COLORS[0];
+/** 默认色板（「潮彩」）—— 老调用只用到这里 */
+export const CLOUD_COLORS = CLOUD_PALETTES[0].colors;
+
+/** 按名字取色板，名字不认识就回落到默认 */
+export function cloudPalette(name?: string | null): string[] {
+  return CLOUD_PALETTES.find((p) => p.name === name)?.colors ?? CLOUD_COLORS;
+}
+
+/** 往白色里混，做「轻量版」颜色（避免再引依赖，自己算 hex） */
+function lighten(hex: string, amount: number): string {
+  const clean = hex.replace("#", "");
+  const value = parseInt(clean.length === 3 ? clean.split("").map((c) => c + c).join("") : clean, 16);
+  const mix = (channel: number) => Math.round(channel + (255 - channel) * amount);
+  const r = mix((value >> 16) & 255);
+  const g = mix((value >> 8) & 255);
+  const b = mix(value & 255);
+  return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
+}
+
+/** 词色：按名次轮转主题色色板；越靠后越淡，最大那一批最饱和 */
+export function cloudColor(rank: number, total: number, colors?: string[]): string {
+  const palette = colors?.length ? colors : CLOUD_COLORS;
+  const base = palette[((rank % palette.length) + palette.length) % palette.length];
+  if (total <= 1) return base;
   const ratio = rank / Math.max(1, total - 1);
-  if (ratio < 0.12) return CLOUD_COLORS[0];
-  if (ratio < 0.3) return CLOUD_COLORS[2];
-  if (ratio < 0.55) return CLOUD_COLORS[3];
-  if (ratio < 0.8) return CLOUD_COLORS[4];
-  return CLOUD_COLORS[6];
+  if (ratio < 0.3) return base;
+  if (ratio < 0.65) return lighten(base, 0.2);
+  return lighten(base, 0.4);
 }
 
 /** 统一 tooltip 皮肤 */

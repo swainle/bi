@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Box, MenuItem, Stack, Switch, TextField, Typography } from "@mui/material";
+import { CLOUD_PALETTES } from "../skin/tokens";
 import type { Accent, ComponentKind, ComponentSpec } from "../types";
 
 const ACCENTS: [Accent, string][] = [
@@ -41,6 +42,8 @@ export default function StylePanel({ kind, spec, onChange, height, onResize }: P
     onChange({ ...spec, ui: { ...spec.ui, ...patch } });
   const setCompute = (patch: Partial<ComponentSpec["compute"]>) =>
     onChange({ ...spec, compute: { ...spec.compute, ...patch } });
+  const setChart = (patch: Partial<ComponentSpec["chart"]>) =>
+    onChange({ ...spec, chart: { ...spec.chart, ...patch } });
 
   // 圆角：只对头标卡开放（其余卡片形状是写死的）
   const currentRadius = Math.round(spec.ui.radius ?? 12);
@@ -143,6 +146,43 @@ export default function StylePanel({ kind, spec, onChange, height, onResize }: P
           />
         ))}
       </Box>
+
+      {kind === "wordcloud" && (
+        <Box sx={{ mb: 2 }}>
+          <Typography sx={{ fontSize: 11.5, fontWeight: 600, color: "#64748B", mb: 1 }}>主题色</Typography>
+          <Box sx={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 1 }}>
+            {CLOUD_PALETTES.map((palette) => {
+              const active = (spec.chart.cloud_palette || CLOUD_PALETTES[0].name) === palette.name;
+              return (
+                <Box
+                  key={palette.name}
+                  onClick={() => setChart({ cloud_palette: palette.name })}
+                  sx={{
+                    px: 1, py: 0.75, borderRadius: 1.5, cursor: "pointer",
+                    border: `1px solid ${active ? "#4F46E5" : "#D8E2F5"}`,
+                    bgcolor: active ? "rgba(79,70,229,0.04)" : "#fff",
+                    transition: "border-color .14s, background-color .14s, transform .14s",
+                    "&:hover": { borderColor: "#4F46E5", transform: "translateY(-1px)" },
+                  }}
+                >
+                  <Box sx={{ display: "flex", gap: "3px", mb: 0.5 }}>
+                    {palette.colors.slice(0, 6).map((color, index) => (
+                      <Box key={`${palette.name}-${index}`}
+                        sx={{ flex: 1, height: 6, borderRadius: "3px", bgcolor: color }} />
+                    ))}
+                  </Box>
+                  <Typography sx={{
+                    fontSize: 11, textAlign: "center",
+                    color: active ? "#4F46E5" : "#64748B", fontWeight: active ? 600 : 400,
+                  }}>
+                    {palette.name}
+                  </Typography>
+                </Box>
+              );
+            })}
+          </Box>
+        </Box>
+      )}
 
       <Stack direction="row" spacing={1} sx={{ mb: 1.75 }}>
         {kind !== "section" && (

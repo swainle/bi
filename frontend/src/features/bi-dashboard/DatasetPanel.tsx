@@ -9,10 +9,12 @@ import {
   Typography,
 } from "@mui/material";
 import {
-  Add, Close, DeleteOutline, Edit, PlayArrow, Refresh, Search, TableChart, VisibilityOutlined,
+  Add, Close, DeleteOutline, Edit, History, Hub, PlayArrow, Refresh, Search,
+  TableChart, UploadFileOutlined, VerifiedUser, VerifiedUserOutlined, VisibilityOutlined,
 } from "@mui/icons-material";
 import client from "../../api/client";
 import { useNavigate } from "react-router-dom";
+import ModelImportDialog from "./ModelImportDialog";
 
 const ROLES = [
   { v: "dimension", l: "维度" },
@@ -34,6 +36,15 @@ interface Field {
 }
 interface Metric {
   id: number; name: string; expression: string; format: string; description: string;
+  certified?: boolean; certified_at?: string; version?: number;
+}
+interface MetricVersion {
+  version: number; name: string; expression: string; format: string;
+  changed_by_name: string; changed_at: string; note: string;
+}
+interface MetricUsage {
+  dashboard_id: number; dashboard_name: string; view_key: string;
+  item_key: string; item_kind: string; item_type: string; role: string;
 }
 interface Dataset {
   id: number; name: string; physical_table: string; description: string;
@@ -46,6 +57,8 @@ interface Dataset {
   /** 模板库复制出来的数据集：只出现在「测试数据集」页 */
   template_id?: number;
   template_name?: string;
+  /** 「测试数据集」页自建的公共测试数据集：同样不进「数据集」页 */
+  is_sandbox?: boolean;
 }
 interface PhysTable {
   table: string; rows: number; columns: { name: string; type: string }[];
@@ -249,6 +262,7 @@ export default function DatasetPanel() {
     () => items
       .filter((d) => d.physical_table !== DEMO_TABLE)
       .filter((d) => !d.template_id)
+      .filter((d) => !d.is_sandbox)
       .filter((d) => (keyword.trim() ? d.name.includes(keyword.trim()) : true)),
     [items, keyword],
   );
@@ -648,7 +662,14 @@ function DatasetEditor({
   const [busy, setBusy] = useState(false);
   const [fieldDialog, setFieldDialog] = useState<Field | "new" | null>(null);
   const [metricDialog, setMetricDialog] = useState<Metric | "new" | null>(null);
+  const [versionsFor, setVersionsFor] = useState<Metric | null>(null);
+  const [usagesFor, setUsagesFor] = useState<Metric | null>(null);
   const [physColumns, setPhysColumns] = useState<{ name: string; type: string }[]>([]);
+  const [fieldUsage, setFieldUsage] = useState<{
+    counts: Record<string, number>; usages: Record<string, MetricUsage[]>;
+  } | null>(null);
+  const [usageField, setUsageField] = useState<{ name: string; items: MetricUsage[] } | null>(null);
+  const [modelImportOpen, setModelImportOpen] = useState(false);
 
   const load = useCallback(async () => {
     const res = await client.get(`/bi/semantic/datasets/${datasetId}`);
@@ -658,6 +679,14 @@ function DatasetEditor({
   }, [datasetId]);
 
   useEffect(() => { load().catch(() => setError("数据集加载失败")); }, [load]);
+
+  // 字段血缘：进「字段」页签时拉一次（看板数不多，直接整表算）
+  useEffect(() => {
+    if (tab !== 0) return;
+    client.get(`/bi/semantic/datasets/${datasetId}/fields/usages`)
+      .then((res) => setFieldUsage(res.data || null))
+      .catch(() => setFieldUsage(null));
+  }, [tab, datasetId]);
 
   // 物理表的列（添加字段时直接挑，不用手打列名）
   useEffect(() => {
@@ -740,6 +769,19 @@ function DatasetEditor({
     }
   };
 
+  const toggleCertify = async (m: Metric) => {
+    try {
+      const res = await client.post(
+        `/bi/semantic/datasets/${datasetId}/metrics/${m.id}/certify`,
+        { certified: !m.certified },
+      );
+      await load();
+      toast(res.data?.certified ? `「${m.name}」已认证` : `「${m.name}」已取消认证`, true);
+    } catch (e: any) {
+      toast(e?.response?.data?.detail || "认证失败");
+    }
+  };
+
   const changed = !!data && (description !== (data.description || "")
     || (!!data.is_virtual && sqlDraft !== (data.sql_text || "")));
 
@@ -782,6 +824,7 @@ function DatasetEditor({
               `字段 ${data?.fields.length ?? 0}`,
               `指标 ${data?.metrics.length ?? 0}`,
               "数据预览",
+              "权限",
               "基本信息",
             ].map((label) => (
               <Tab key={label} label={label}
@@ -804,23 +847,42 @@ function DatasetEditor({
                   sx={{ textTransform: "none", fontSize: 12, borderRadius: 1.5 }}>添加字段</Button>
               </Box>
               <MiniTable
-                head={["字段名", "来源列", "角色", "类型", "筛选", "分组", ""]}
-                rows={data.fields.map((f) => [
-                  <span key="n" style={{ fontWeight: 600 }}>{f.name}</span>,
-                  <code key="c" style={{ fontSize: 11.5, color: "#64748B" }}>{f.source_column}</code>,
-                  ROLES.find((r) => r.v === f.role)?.l || f.role,
-                  f.data_type,
-                  f.is_filterable ? "✓" : "—",
-                  f.is_groupable ? "✓" : "—",
-                  <Box key="a" sx={{ textAlign: "right" }}>
-                    <IconButton size="small" onClick={() => setFieldDialog(f)} sx={{ p: 0.5 }}>
-                      <Edit sx={{ fontSize: 15 }} />
-                    </IconButton>
-                    <IconButton size="small" onClick={() => removeField(f)} sx={{ p: 0.5, color: "error.main" }}>
-                      <DeleteOutline sx={{ fontSize: 15 }} />
-                    </IconButton>
-                  </Box>,
-                ])}
+                head={["字段名", "来源列", "角色", "类型", "筛选", "分组", "使用", ""]}
+                rows={data.fields.map((f) => {
+                  const count = fieldUsage?.counts?.[f.name] || 0;
+                  return [
+                    <span key="n" style={{ fontWeight: 600 }}>{f.name}</span>,
+                    <code key="c" style={{ fontSize: 11.5, color: "#64748B" }}>{f.source_column}</code>,
+                    ROLES.find((r) => r.v === f.role)?.l || f.role,
+                    f.data_type,
+                    f.is_filterable ? "✓" : "—",
+                    f.is_groupable ? "✓" : "—",
+                    <Box key="u">
+                      {count > 0 ? (
+                        <Chip
+                          label={`使用 ${count}`} size="small"
+                          aria-label={`${f.name} 的使用位置`}
+                          onClick={() => setUsageField({
+                            name: f.name, items: fieldUsage?.usages?.[f.name] || [],
+                          })}
+                          sx={{
+                            height: 19, fontSize: 10.5, cursor: "pointer",
+                            color: "#4F46E5", bgcolor: "rgba(99,102,241,0.10)",
+                          }} />
+                      ) : (
+                        <span style={{ color: "#CBD5E1" }}>—</span>
+                      )}
+                    </Box>,
+                    <Box key="a" sx={{ textAlign: "right" }}>
+                      <IconButton size="small" onClick={() => setFieldDialog(f)} sx={{ p: 0.5 }}>
+                        <Edit sx={{ fontSize: 15 }} />
+                      </IconButton>
+                      <IconButton size="small" onClick={() => removeField(f)} sx={{ p: 0.5, color: "error.main" }}>
+                        <DeleteOutline sx={{ fontSize: 15 }} />
+                      </IconButton>
+                    </Box>,
+                  ];
+                })}
                 empty="还没有字段，点「同步物理列」从表里导入"
               />
             </>
@@ -828,17 +890,52 @@ function DatasetEditor({
             <>
               <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1.25 }}>
                 <Box sx={{ flex: 1 }} />
+                <Button size="small" variant="outlined" startIcon={<UploadFileOutlined sx={{ fontSize: 15 }} />}
+                  onClick={() => setModelImportOpen(true)}
+                  sx={{ textTransform: "none", fontSize: 12, borderRadius: 1.5 }}>导入模型</Button>
                 <Button size="small" variant="outlined" startIcon={<Add sx={{ fontSize: 15 }} />}
                   onClick={() => setMetricDialog("new")}
                   sx={{ textTransform: "none", fontSize: 12, borderRadius: 1.5 }}>添加指标</Button>
               </Box>
               <MiniTable
-                head={["指标名", "表达式", "格式", ""]}
+                head={["指标名", "表达式", "格式", "状态", ""]}
                 rows={data.metrics.map((m) => [
                   <span key="n" style={{ fontWeight: 600 }}>{m.name}</span>,
                   <code key="e" style={{ fontSize: 11.5, color: "#475569" }}>{m.expression}</code>,
                   FORMATS.find((f) => f.v === m.format)?.l || m.format,
-                  <Box key="a" sx={{ textAlign: "right" }}>
+                  <Box key="s" sx={{ display: "flex", alignItems: "center", gap: 0.6 }}>
+                    <Chip
+                      label={m.certified ? "已认证" : "未认证"}
+                      size="small"
+                      onClick={() => toggleCertify(m)}
+                      sx={{
+                        height: 19, fontSize: 10.5, cursor: "pointer",
+                        color: m.certified ? "#0E7490" : "#64748B",
+                        bgcolor: m.certified ? "rgba(8,145,178,0.10)" : "rgba(100,116,139,0.10)",
+                      }} />
+                    <Typography sx={{ fontSize: 10.5, color: "text.disabled" }}>v{m.version || 1}</Typography>
+                  </Box>,
+                  <Box key="a" sx={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                    <Tooltip title={m.certified ? "取消认证" : "认证（确认口径）"}>
+                      <IconButton size="small" aria-label={m.certified ? "取消认证" : "认证指标"}
+                        onClick={() => toggleCertify(m)} sx={{ p: 0.5 }}>
+                        {m.certified
+                          ? <VerifiedUser sx={{ fontSize: 15, color: "#0E7490" }} />
+                          : <VerifiedUserOutlined sx={{ fontSize: 15, color: "#94A3B8" }} />}
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title="版本历史">
+                      <IconButton size="small" aria-label="版本历史"
+                        onClick={() => setVersionsFor(m)} sx={{ p: 0.5 }}>
+                        <History sx={{ fontSize: 15 }} />
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title="影响分析（哪些看板在用）">
+                      <IconButton size="small" aria-label="影响分析"
+                        onClick={() => setUsagesFor(m)} sx={{ p: 0.5 }}>
+                        <Hub sx={{ fontSize: 15 }} />
+                      </IconButton>
+                    </Tooltip>
                     <IconButton size="small" onClick={() => setMetricDialog(m)} sx={{ p: 0.5 }}>
                       <Edit sx={{ fontSize: 15 }} />
                     </IconButton>
@@ -852,6 +949,8 @@ function DatasetEditor({
             </>
           ) : tab === 2 ? (
             <PreviewPane dataset={data} />
+          ) : tab === 3 ? (
+            <DatasetSecurityPanel datasetId={datasetId} fields={data.fields} />
           ) : (
             <Box sx={{ maxWidth: 460 }}>
               <TextField fullWidth size="small" label={data.is_virtual ? "类型" : "物理表"}
@@ -891,6 +990,22 @@ function DatasetEditor({
         <MetricDialog datasetId={datasetId} source={metricDialog}
           onClose={() => setMetricDialog(null)}
           onSaved={async () => { setMetricDialog(null); await load(); onChanged(); }} />
+      )}
+      {versionsFor && (
+        <MetricVersionsDialog datasetId={datasetId} metric={versionsFor}
+          onClose={() => setVersionsFor(null)} />
+      )}
+      {usagesFor && (
+        <MetricUsagesDialog datasetId={datasetId} metric={usagesFor}
+          onClose={() => setUsagesFor(null)} />
+      )}
+      {usageField && (
+        <FieldUsagesDialog field={usageField} onClose={() => setUsageField(null)} />
+      )}
+      {modelImportOpen && (
+        <ModelImportDialog datasetId={datasetId}
+          onClose={() => setModelImportOpen(false)}
+          onImported={async () => { await load(); onChanged(); }} />
       )}
 
       <Toast msg={error} onClose={() => setError("")} />
@@ -1110,6 +1225,368 @@ function MetricDialog({
         <Button onClick={onClose} sx={{ textTransform: "none" }}>取消</Button>
         <Button variant="contained" onClick={submit} disabled={busy || !name.trim() || !expression.trim()}
           sx={{ bgcolor: "#6366F1", textTransform: "none", borderRadius: 2 }}>保存</Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
+/* ── 指标版本历史 ──────────────────────────────────────── */
+function MetricVersionsDialog({
+  datasetId, metric, onClose,
+}: { datasetId: number; metric: Metric; onClose: () => void }) {
+  const [rows, setRows] = useState<MetricVersion[] | null>(null);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    client.get(`/bi/semantic/datasets/${datasetId}/metrics/${metric.id}/versions`)
+      .then((res) => setRows(res.data?.versions || []))
+      .catch((e) => setErr(e?.response?.data?.detail || "版本历史加载失败"));
+  }, [datasetId, metric.id]);
+
+  return (
+    <Dialog open onClose={onClose} maxWidth="sm" fullWidth>
+      <DialogTitle sx={{ fontSize: 15.5, fontWeight: 700 }}>
+        版本历史 · {metric.name}
+        <Typography component="span" sx={{ ml: 1, fontSize: 11.5, color: "text.secondary" }}>
+          当前 v{metric.version || 1}
+        </Typography>
+      </DialogTitle>
+      <DialogContent sx={{ pt: 0.5 }}>
+        {err && <Alert severity="error" sx={{ mb: 1, fontSize: 12 }}>{err}</Alert>}
+        {rows === null ? (
+          <Box sx={{ py: 4, textAlign: "center" }}><CircularProgress size={22} /></Box>
+        ) : rows.length === 0 ? (
+          <Typography sx={{ py: 3, fontSize: 12.5, color: "text.secondary" }}>
+            还没有历史版本
+          </Typography>
+        ) : (
+          <Box sx={{ border: "1px solid #EEF3FB", borderRadius: 2, overflow: "hidden" }}>
+            {rows.map((v) => (
+              <Box key={v.version}
+                sx={{ px: 1.5, py: 1, borderBottom: "1px solid #EEF3FB", "&:last-child": { borderBottom: 0 } }}>
+                <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                  <Chip label={`v${v.version}`} size="small"
+                    sx={{ height: 18, fontSize: 10.5, bgcolor: "rgba(99,102,241,0.10)", color: "#4F46E5" }} />
+                  <Typography sx={{ fontSize: 12, fontWeight: 600, flex: 1 }}>{v.name}</Typography>
+                  <Typography sx={{ fontSize: 11, color: "text.secondary" }}>
+                    {v.changed_by_name || "—"} · {v.changed_at.slice(0, 16)}
+                  </Typography>
+                </Box>
+                <Typography sx={{ mt: 0.4, fontSize: 11.5, fontFamily: "ui-monospace", color: "#475569" }}>
+                  {v.expression}
+                </Typography>
+                {v.note && (
+                  <Typography sx={{ mt: 0.2, fontSize: 10.5, color: "text.disabled" }}>{v.note}</Typography>
+                )}
+              </Box>
+            ))}
+          </Box>
+        )}
+      </DialogContent>
+      <DialogActions sx={{ px: 3, pb: 2.5 }}>
+        <Button onClick={onClose} sx={{ textTransform: "none" }}>关闭</Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
+/* ── 指标影响分析 ──────────────────────────────────────── */
+function MetricUsagesDialog({
+  datasetId, metric, onClose,
+}: { datasetId: number; metric: Metric; onClose: () => void }) {
+  const [data, setData] = useState<{ count: number; dashboard_count: number; usages: MetricUsage[] } | null>(null);
+  const [err, setErr] = useState("");
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    client.get(`/bi/semantic/datasets/${datasetId}/metrics/${metric.id}/usages`)
+      .then((res) => setData(res.data))
+      .catch((e) => setErr(e?.response?.data?.detail || "影响分析加载失败"));
+  }, [datasetId, metric.id]);
+
+  return (
+    <Dialog open onClose={onClose} maxWidth="sm" fullWidth>
+      <DialogTitle sx={{ fontSize: 15.5, fontWeight: 700 }}>
+        影响分析 · {metric.name}
+      </DialogTitle>
+      <DialogContent sx={{ pt: 0.5 }}>
+        {err && <Alert severity="error" sx={{ mb: 1, fontSize: 12 }}>{err}</Alert>}
+        {data === null ? (
+          <Box sx={{ py: 4, textAlign: "center" }}><CircularProgress size={22} /></Box>
+        ) : data.count === 0 ? (
+          <Typography sx={{ py: 3, fontSize: 12.5, color: "text.secondary" }}>
+            还没有卡片引用这个指标
+          </Typography>
+        ) : (
+          <>
+            <Typography sx={{ mb: 1, fontSize: 12, color: "text.secondary" }}>
+              {data.dashboard_count} 个看板 · {data.count} 个元素
+            </Typography>
+            <Box sx={{ border: "1px solid #EEF3FB", borderRadius: 2, overflow: "hidden" }}>
+              {data.usages.map((u) => (
+                <Box key={`${u.dashboard_id}-${u.view_key}-${u.item_key}`}
+                  sx={{
+                    px: 1.5, py: 0.9, borderBottom: "1px solid #EEF3FB", cursor: "pointer",
+                    "&:hover": { bgcolor: "rgba(15,23,42,0.035)" },
+                    "&:last-child": { borderBottom: 0 },
+                  }}
+                  onClick={() => navigate(`/bi/dashboards/${u.dashboard_id}`)}>
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                    <Typography sx={{ fontSize: 12.5, fontWeight: 600, flex: 1 }}>
+                      {u.dashboard_name || `看板 #${u.dashboard_id}`}
+                    </Typography>
+                    <Typography sx={{ fontSize: 10.5, color: "text.disabled" }}>
+                      {u.item_kind || u.item_type || "元素"}
+                    </Typography>
+                  </Box>
+                  <Typography sx={{ fontSize: 11, color: "text.secondary", fontFamily: "ui-monospace" }}>
+                    {u.view_key} / {u.item_key}
+                  </Typography>
+                </Box>
+              ))}
+            </Box>
+          </>
+        )}
+      </DialogContent>
+      <DialogActions sx={{ px: 3, pb: 2.5 }}>
+        <Button onClick={onClose} sx={{ textTransform: "none" }}>关闭</Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
+/* ── 数据集行列权限 ────────────────────────────────────── */
+interface RowRule {
+  id: number; user_id: number | null; username: string;
+  role_name: string; filter_rule: string; note: string;
+}
+interface ColumnMask {
+  id: number; column_name: string; mask_type: string; mask_pattern: string;
+}
+
+const RULE_ROLES = [
+  { v: "", l: "所有人" },
+  { v: "member", l: "成员" },
+  { v: "admin", l: "管理员" },
+];
+const MASK_OPTIONS = [
+  { v: "phone", l: "手机号" },
+  { v: "id_card", l: "身份证" },
+  { v: "email", l: "邮箱" },
+  { v: "custom", l: "自定义" },
+];
+
+function DatasetSecurityPanel({ datasetId, fields }: { datasetId: number; fields: Field[] }) {
+  const [rules, setRules] = useState<RowRule[]>([]);
+  const [masks, setMasks] = useState<ColumnMask[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState("");
+
+  const [role, setRole] = useState("");
+  const [condition, setCondition] = useState("");
+  const [maskField, setMaskField] = useState(fields[0]?.name || "");
+  const [maskType, setMaskType] = useState("phone");
+  const [maskPattern, setMaskPattern] = useState("{val}");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await client.get(`/bi/semantic/datasets/${datasetId}/security`);
+      setRules(res.data?.row_rules || []);
+      setMasks(res.data?.masks || []);
+    } catch (e: any) {
+      setErr(e?.response?.data?.detail || "权限配置加载失败");
+    } finally {
+      setLoading(false);
+    }
+  }, [datasetId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const addRule = async () => {
+    if (!condition.trim()) return;
+    try {
+      await client.post(`/bi/semantic/datasets/${datasetId}/security/row-rules`, {
+        role_name: role, filter_rule: condition.trim(),
+      });
+      setCondition("");
+      await load();
+    } catch (e: any) {
+      setErr(e?.response?.data?.detail || "添加行级规则失败");
+    }
+  };
+
+  const removeRule = async (rule: RowRule) => {
+    try {
+      await client.delete(`/bi/semantic/datasets/${datasetId}/security/row-rules/${rule.id}`);
+      await load();
+    } catch (e: any) {
+      setErr(e?.response?.data?.detail || "删除规则失败");
+    }
+  };
+
+  const addMask = async () => {
+    if (!maskField) return;
+    try {
+      await client.post(`/bi/semantic/datasets/${datasetId}/security/masks`, {
+        column_name: maskField, mask_type: maskType,
+        mask_pattern: maskType === "custom" ? maskPattern : "",
+      });
+      await load();
+    } catch (e: any) {
+      setErr(e?.response?.data?.detail || "添加脱敏失败");
+    }
+  };
+
+  const removeMask = async (mask: ColumnMask) => {
+    try {
+      await client.delete(`/bi/semantic/datasets/${datasetId}/security/masks/${encodeURIComponent(mask.column_name)}`);
+      await load();
+    } catch (e: any) {
+      setErr(e?.response?.data?.detail || "删除脱敏失败");
+    }
+  };
+
+  if (loading) {
+    return <Box sx={{ py: 6, textAlign: "center" }}><CircularProgress size={22} /></Box>;
+  }
+
+  return (
+    <Box sx={{ maxWidth: 880 }}>
+      {err && <Alert severity="error" onClose={() => setErr("")} sx={{ mb: 1.5, fontSize: 12 }}>{err}</Alert>}
+
+      <Typography sx={{ fontSize: 13, fontWeight: 700, mb: 0.4 }}>行级规则</Typography>
+      <Typography sx={{ fontSize: 11.5, color: "text.secondary", mb: 1 }}>
+        按角色或所有人限制可见行，和表级规则同时生效；模板复制时一并带走
+      </Typography>
+      <Box sx={{ display: "flex", gap: 1, mb: 1 }}>
+        <TextField select size="small" label="范围" value={role}
+          onChange={(e) => setRole(e.target.value)}
+          sx={{ width: 130, "& .MuiOutlinedInput-root": { borderRadius: 2 } }}>
+          {RULE_ROLES.map((r) => <MenuItem key={r.v} value={r.v} sx={{ fontSize: 13 }}>{r.l}</MenuItem>)}
+        </TextField>
+        <TextField size="small" label="条件" value={condition}
+          onChange={(e) => setCondition(e.target.value)}
+          placeholder="platform = '拼多多'"
+          InputProps={{ sx: { fontFamily: "ui-monospace", fontSize: 12 } }}
+          sx={{ flex: 1, "& .MuiOutlinedInput-root": { borderRadius: 2 } }} />
+        <Button size="small" variant="outlined" onClick={addRule} disabled={!condition.trim()}
+          sx={{ textTransform: "none", fontSize: 12, borderRadius: 1.5, height: 38 }}>添加</Button>
+      </Box>
+      <MiniTable
+        head={["范围", "条件", "备注", ""]}
+        rows={rules.map((r) => [
+          <span key="s" style={{ fontWeight: 600 }}>
+            {r.user_id ? `用户 ${r.username || r.user_id}` : (RULE_ROLES.find((x) => x.v === r.role_name)?.l || r.role_name)}
+          </span>,
+          <code key="c" style={{ fontSize: 11.5, color: "#475569" }}>{r.filter_rule}</code>,
+          <span key="n" style={{ color: "#94A3B8" }}>{r.note || "—"}</span>,
+          <Box key="a" sx={{ textAlign: "right" }}>
+            <IconButton size="small" aria-label="删除行级规则" onClick={() => removeRule(r)} sx={{ p: 0.5, color: "error.main" }}>
+              <DeleteOutline sx={{ fontSize: 15 }} />
+            </IconButton>
+          </Box>,
+        ])}
+        empty="还没有行级规则（默认全量可见）"
+      />
+
+      <Typography sx={{ fontSize: 13, fontWeight: 700, mt: 2.5, mb: 0.4 }}>列级脱敏</Typography>
+      <Typography sx={{ fontSize: 11.5, color: "text.secondary", mb: 1 }}>
+        查询结果落到前端之前按列替换；自定义模板用 {"{val}"} 占位
+      </Typography>
+      <Box sx={{ display: "flex", gap: 1, mb: 1 }}>
+        <TextField select size="small" label="字段" value={maskField}
+          onChange={(e) => setMaskField(e.target.value)}
+          sx={{ width: 170, "& .MuiOutlinedInput-root": { borderRadius: 2 } }}>
+          {fields.map((f) => <MenuItem key={f.id} value={f.name} sx={{ fontSize: 13 }}>{f.name}</MenuItem>)}
+        </TextField>
+        <TextField select size="small" label="方式" value={maskType}
+          onChange={(e) => setMaskType(e.target.value)}
+          sx={{ width: 130, "& .MuiOutlinedInput-root": { borderRadius: 2 } }}>
+          {MASK_OPTIONS.map((o) => <MenuItem key={o.v} value={o.v} sx={{ fontSize: 13 }}>{o.l}</MenuItem>)}
+        </TextField>
+        {maskType === "custom" && (
+          <TextField size="small" label="模板" value={maskPattern}
+            onChange={(e) => setMaskPattern(e.target.value)}
+            sx={{ width: 160, "& .MuiOutlinedInput-root": { borderRadius: 2 } }} />
+        )}
+        <Box sx={{ flex: 1 }} />
+        <Button size="small" variant="outlined" onClick={addMask} disabled={!maskField}
+          sx={{ textTransform: "none", fontSize: 12, borderRadius: 1.5, height: 38 }}>添加</Button>
+      </Box>
+      <MiniTable
+        head={["字段", "方式", "模板", ""]}
+        rows={masks.map((m) => [
+          <span key="c" style={{ fontWeight: 600 }}>{m.column_name}</span>,
+          MASK_OPTIONS.find((o) => o.v === m.mask_type)?.l || m.mask_type,
+          <code key="p" style={{ fontSize: 11.5, color: "#64748B" }}>{m.mask_pattern || "—"}</code>,
+          <Box key="a" sx={{ textAlign: "right" }}>
+            <IconButton size="small" aria-label="删除脱敏" onClick={() => removeMask(m)} sx={{ p: 0.5, color: "error.main" }}>
+              <DeleteOutline sx={{ fontSize: 15 }} />
+            </IconButton>
+          </Box>,
+        ])}
+        empty="还没有脱敏规则"
+      />
+    </Box>
+  );
+}
+
+/* ── 字段血缘（哪些看板用了这个字段）──────────────────── */
+const FIELD_ROLE_LABEL: Record<string, string> = {
+  dimension: "维度",
+  metric: "指标",
+};
+
+function FieldUsagesDialog({
+  field, onClose,
+}: { field: { name: string; items: MetricUsage[] }; onClose: () => void }) {
+  const navigate = useNavigate();
+  return (
+    <Dialog open onClose={onClose} maxWidth="sm" fullWidth>
+      <DialogTitle sx={{ fontSize: 15.5, fontWeight: 700 }}>
+        字段使用 · {field.name}
+      </DialogTitle>
+      <DialogContent sx={{ pt: 0.5 }}>
+        {field.items.length === 0 ? (
+          <Typography sx={{ py: 3, fontSize: 12.5, color: "text.secondary" }}>
+            还没有卡片用到这个字段
+          </Typography>
+        ) : (
+          <>
+            <Typography sx={{ mb: 1, fontSize: 12, color: "text.secondary" }}>
+              {new Set(field.items.map((u) => u.dashboard_id)).size} 个看板 · {field.items.length} 处
+            </Typography>
+            <Box sx={{ border: "1px solid #EEF3FB", borderRadius: 2, overflow: "hidden" }}>
+              {field.items.map((u, idx) => (
+                <Box key={`${u.dashboard_id}-${u.view_key}-${u.item_key}-${idx}`}
+                  sx={{
+                    px: 1.5, py: 0.9, borderBottom: "1px solid #EEF3FB", cursor: "pointer",
+                    "&:hover": { bgcolor: "rgba(15,23,42,0.035)" },
+                    "&:last-child": { borderBottom: 0 },
+                  }}
+                  onClick={() => navigate(`/bi/dashboards/${u.dashboard_id}`)}>
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                    <Typography sx={{ fontSize: 12.5, fontWeight: 600, flex: 1 }}>
+                      {u.dashboard_name || `看板 #${u.dashboard_id}`}
+                    </Typography>
+                    <Typography sx={{ fontSize: 10.5, color: "text.disabled" }}>
+                      {u.role?.startsWith("filter:")
+                        ? `筛选 · ${u.role.slice(7)}`
+                        : (FIELD_ROLE_LABEL[u.role] || u.item_kind || "元素")}
+                    </Typography>
+                  </Box>
+                  <Typography sx={{ fontSize: 11, color: "text.secondary", fontFamily: "ui-monospace" }}>
+                    {u.view_key} / {u.item_key}
+                  </Typography>
+                </Box>
+              ))}
+            </Box>
+          </>
+        )}
+      </DialogContent>
+      <DialogActions sx={{ px: 3, pb: 2.5 }}>
+        <Button onClick={onClose} sx={{ textTransform: "none" }}>关闭</Button>
       </DialogActions>
     </Dialog>
   );

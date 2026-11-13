@@ -7,7 +7,9 @@ import {
   Menu, MenuItem, Snackbar, Tab, Tabs, TextField, ToggleButton, ToggleButtonGroup, Typography,
 } from "@mui/material";
 import {
-  Add, ChevronLeft, ChevronRight, Close, CloudUpload, ContentCopy, CropFree, CropSquare, DeleteOutline, ExpandMore,
+  Add, AlignHorizontalCenter, AlignHorizontalLeft, AlignHorizontalRight, AlignVerticalBottom,
+  AlignVerticalCenter, AlignVerticalTop,
+  ChevronLeft, ChevronRight, Close, CloudUpload, ContentCopy, CropFree, CropSquare, DeleteOutline, ExpandMore,
   Redo, Save, TextFields, Title as TitleIcon, Tune, Undo, Visibility,
 } from "@mui/icons-material";
 import client from "../api/client";
@@ -37,6 +39,28 @@ import type {
 interface DashboardBrief { id: number; name: string; updated_at?: string }
 
 const ACCENTS = ["indigo", "teal", "amber", "rose", "violet", "slate", "sky"] as const;
+
+/** 多选对齐的 6 个方向（图标 + 提示语） */
+const ALIGN_ACTIONS = [
+  { mode: "left", tip: "左对齐" },
+  { mode: "hcenter", tip: "水平居中" },
+  { mode: "right", tip: "右对齐" },
+  { mode: "top", tip: "顶对齐" },
+  { mode: "vcenter", tip: "垂直居中" },
+  { mode: "bottom", tip: "底对齐" },
+] as const;
+
+/** 等间距图标：MUI 没有现成的，按设计软件的「三块等距」手写一个 */
+function DistributeIcon({ axis }: { axis: "x" | "y" }) {
+  const stops = [2.5, 8, 13.5];
+  return (
+    <Box component="svg" viewBox="0 0 18 18" sx={{ width: 17, height: 17, display: "block" }}>
+      {stops.map((p, i) => (axis === "x"
+        ? <rect key={i} x={p} y={2.5} width={2} height={13} rx={1} fill="currentColor" />
+        : <rect key={i} x={2.5} y={p} width={13} height={2} rx={1} fill="currentColor" />))}
+    </Box>
+  );
+}
 
 function newKey(prefix: string) {
   return `${prefix}_${Date.now().toString(36)}${Math.floor(Math.random() * 99)}`;
@@ -134,6 +158,59 @@ function emptyBannerSpec(): ComponentSpec {
   };
   spec.ui = { ...spec.ui, min_height: 200, radius: 12 };
   return spec;
+}
+
+/** 组件库模板拖进画布时按目标数据集自检：引用了不存在的字段就清掉，绝不让卡片带着死字段上线
+ *  （2026-11-13 用户要求「字段不能固定写死」：模板里的维度 / 指标 / 图表轴 / 表格列一律以数据集为准） */
+function pruneSpecFields(spec: ComponentSpec, allowed: Set<string>): ComponentSpec {
+  if (!allowed.size) return spec;
+  const keep = (v: unknown) => (typeof v === "string" && v && !allowed.has(v) ? "" : v);
+  const binding: Record<string, unknown> = { ...(spec.binding as unknown as Record<string, unknown>) };
+  for (const key of ["dimension", "series", "metric"]) {
+    if (typeof binding[key] === "string" && binding[key] && !allowed.has(binding[key] as string)) binding[key] = null;
+  }
+  if (Array.isArray(binding.dimensions)) {
+    binding.dimensions = (binding.dimensions as unknown[])
+      .map((x) => (typeof x === "string" ? x : (x as { name?: string })?.name))
+      .filter((x): x is string => !!x && allowed.has(x));
+  }
+  if (Array.isArray(binding.metrics)) {
+    binding.metrics = (binding.metrics as { name?: string }[]).filter((m) => !!m?.name && allowed.has(m.name));
+  }
+  const chart: Record<string, unknown> = { ...(spec.chart as unknown as Record<string, unknown>) };
+  for (const key of ["x_key", "y_key", "size_key", "hbar_threshold_key"]) {
+    if (key in chart) chart[key] = keep(chart[key]);
+  }
+  const rank: Record<string, unknown> = { ...(spec.rank as unknown as Record<string, unknown>) };
+  for (const key of ["value_key", "x_key", "y_key", "cvr_key", "tags_key"]) {
+    if (key in rank) rank[key] = keep(rank[key]);
+  }
+  const table = spec.table_view ? { ...spec.table_view } : null;
+  if (table) {
+    if (Array.isArray(table.columns)) {
+      table.columns = (table.columns as unknown[]).filter((c) => {
+        const key = typeof c === "string" ? c : (c as { key?: string })?.key;
+        return !!key && allowed.has(key);
+      }) as unknown as typeof table.columns;
+    }
+    if (table.thumb_key && !allowed.has(table.thumb_key)) table.thumb_key = "";
+  }
+  const filter = spec.filter ? { ...spec.filter } : null;
+  if (filter && Array.isArray(filter.fields)) {
+    filter.fields = filter.fields.map((f) => {
+      const col = (f.column || "").trim();
+      if (col && !allowed.has(col)) return { ...f, column: "", options: [], default: "" };
+      return f;
+    });
+  }
+  return {
+    ...spec,
+    binding: binding as unknown as ComponentSpec["binding"],
+    chart: chart as unknown as ComponentSpec["chart"],
+    rank: rank as unknown as ComponentSpec["rank"],
+    ...(table ? { table_view: table as ComponentSpec["table_view"] } : {}),
+    ...(filter ? { filter: filter as ComponentSpec["filter"] } : {}),
+  };
 }
 
 /** 文档里的 spec 可能是残缺的（导入 / 手工写入），按默认值补齐再进画布 */
@@ -1290,10 +1367,17 @@ export default function CanvasBoardPage() {
         { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity },
       )
     : null;
+  /** 只有「数据类元素」（type=chart）才用自己绑定的数据集决定左栏 —— 筛选栏 / 标题 / 文字 / 形状 / 画板
+   *  这些非数据元素如果也拿自己的 binding.dataset_id 说话，左栏会被钉死在旧数据集上、点下拉没反应
+   *  （2026-11-13 用户实测：「数据集被固定在榜单端-天猫」）。*/
+  const selectedChartDatasetId = selectedItem && (selectedItem.type || "chart") === "chart"
+    ? (selectedItem.spec?.binding?.dataset_id ?? null)
+    : null;
+
   /** 选中卡片在当前平台下真正读的那张表 —— 绑的表在切换映射里就按当前参数换过去，
    *  左侧数据集、指标/维度列表、口径提示都跟着它，避免「卡读拼多多、面板却列天猫字段」。*/
   const followedDatasetId = useMemo(() => {
-    const base = selectedItem?.spec?.binding?.dataset_id;
+    const base = selectedChartDatasetId;
     if (!base) return null;
     for (const def of paramDefs) {
       const map = def.dataset_map;
@@ -1304,12 +1388,12 @@ export default function CanvasBoardPage() {
       if (target) return target;
     }
     return null;
-  }, [selectedItem, paramDefs, params]);
+  }, [selectedChartDatasetId, paramDefs, params]);
 
   useEffect(() => {
-    const id = followedDatasetId ?? selectedItem?.spec?.binding?.dataset_id;
+    const id = followedDatasetId ?? selectedChartDatasetId;
     if (id) setActiveDatasetId(id);
-  }, [selected, selectedKeys.length, followedDatasetId]);
+  }, [selected, selectedKeys.length, followedDatasetId, selectedChartDatasetId]);
 
   /** 数据集默认跟当前看板走（第一张图绑的数据集），而不是列表第一个 */
   useEffect(() => {
@@ -1321,7 +1405,7 @@ export default function CanvasBoardPage() {
   }, [datasets, activeDatasetId, items]);
 
   const fieldDatasetId = followedDatasetId
-    ?? selectedItem?.spec?.binding?.dataset_id
+    ?? selectedChartDatasetId
     ?? activeDatasetId
     ?? datasets[0]?.id
     ?? null;
@@ -1330,6 +1414,8 @@ export default function CanvasBoardPage() {
     ? docSources.filter((row) => row.dataset_id === fieldDatasetId).length
     : 0;
   const { groups, datasetName } = useDatasetFields(fieldDatasetId);
+  /** 拖进来的组件会落到 activeDatasetId 上：按它的字段自检（groups 尚未加载完时不动，别拿错依据） */
+  const insertFields = useDatasetFields(activeDatasetId);
 
   /** 拖/选字段就把卡片标题换成该字段名 —— 标题已有名字也照换（用户要的是「填字段即得名」，
    *  不满意再自己改）；只改标题，不动用户手写的副标题。
@@ -1361,6 +1447,69 @@ export default function CanvasBoardPage() {
     setItems((prev) => prev.map((i) => (i.key === key ? { ...i, ...patch } : i)));
     setDirty(true);
   };
+
+  /** 多选对齐：以选中集合的外接矩形为基准（与设计软件一致，不需要栅格） */
+  const alignSelection = useCallback((mode: (typeof ALIGN_ACTIONS)[number]["mode"]) => {
+    if (selectedKeys.length < 2) return;
+    setItems((prev) => {
+      const chosen = prev.filter((i) => selectedKeys.includes(i.key));
+      if (chosen.length < 2) return prev;
+      const minX = Math.min(...chosen.map((i) => i.x));
+      const maxX = Math.max(...chosen.map((i) => i.x + i.w));
+      const minY = Math.min(...chosen.map((i) => i.y));
+      const maxY = Math.max(...chosen.map((i) => i.y + i.h));
+      return prev.map((item) => {
+        if (!selectedKeys.includes(item.key)) return item;
+        switch (mode) {
+          case "left": return { ...item, x: minX };
+          case "right": return { ...item, x: maxX - item.w };
+          case "hcenter": return { ...item, x: Math.round(minX + (maxX - minX - item.w) / 2) };
+          case "top": return { ...item, y: minY };
+          case "bottom": return { ...item, y: maxY - item.h };
+          case "vcenter": return { ...item, y: Math.round(minY + (maxY - minY - item.h) / 2) };
+          default: return item;
+        }
+      });
+    });
+    setDirty(true);
+  }, [selectedKeys]);
+
+  /** 等间距分布：**两端固定不动**，只把中间元素按相等间隙重排（≥3 个才生效） */
+  const distributeSelection = useCallback((axis: "x" | "y") => {
+    if (selectedKeys.length < 3) return;
+    setItems((prev) => {
+      const chosen = prev.filter((i) => selectedKeys.includes(i.key))
+        .sort((a, b) => (axis === "x" ? a.x - b.x : a.y - b.y));
+      if (chosen.length < 3) return prev;
+      const first = chosen[0];
+      const last = chosen[chosen.length - 1];
+      const start = axis === "x" ? first.x : first.y;
+      const end = axis === "x" ? last.x + last.w : last.y + last.h;
+      const total = chosen.reduce((sum, i) => sum + (axis === "x" ? i.w : i.h), 0);
+      const gap = (end - start - total) / (chosen.length - 1);
+      let cursor = start;
+      const next = new Map<string, number>();
+      chosen.forEach((i, index) => {
+        /* 首位固定、末位精确贴住终点，中间按未取整游标落位 —— 避免逐个 round 累积出 1px 误差 */
+        const size = axis === "x" ? i.w : i.h;
+        const pos = index === 0
+          ? start
+          : index === chosen.length - 1 ? end - size : cursor;
+        next.set(i.key, pos);
+        cursor += size + gap;
+      });
+      return prev.map((item) => {
+        const pos = next.get(item.key);
+        if (pos === undefined) return item;
+        /* 保留 0.1px 精度：画布本身会按 stageScale 缩放，取整反而让间隙忽大忽小（11/12 交替） */
+        const precise = Math.round(pos * 10) / 10;
+        return axis === "x"
+          ? { ...item, x: precise }
+          : { ...item, y: Math.max(0, precise) };
+      });
+    });
+    setDirty(true);
+  }, [selectedKeys]);
 
   /** 明细表「行详情」里正在编辑的组件卡片 */
   const [detailCardKey, setDetailCardKey] = useState("");
@@ -1671,6 +1820,16 @@ export default function CanvasBoardPage() {
     /* 组件库模板里绑的是「演示数据集」；画布上有当前数据集时一律以用户的数据集为准 */
     const datasetId = activeDatasetId ?? datasets[0]?.id;
     if (datasetId) spec.binding.dataset_id = datasetId;
+    /* 换了数据集，模板里那些字段名可能这张表没有 —— 拖进来之前先自检清掉，别让卡带着死字段
+       （只有「这套字段确实属于要用的数据集」时才清，字段还没加载完就不动） */
+    if (datasetId && insertFields.datasetId === datasetId) {
+      const allowed = new Set([
+        ...insertFields.groups.dimensions,
+        ...insertFields.groups.metrics,
+        ...insertFields.groups.identifiers,
+      ].map((f) => f.name));
+      Object.assign(spec, pruneSpecFields(spec, allowed));
+    }
     /* 指标卡 / 结论卡 / 分节标题没有维度概念：模板里若还留着维度，这里清掉 */
     if (["kpi", "insight", "section"].includes(kind)) spec.binding.dimension = null;
     /* 落进画板：宽度贴着画板内宽、位置夹在画板里（大组件如明细表不再撑出画板） */
@@ -1934,6 +2093,52 @@ export default function CanvasBoardPage() {
 
         {/* 编辑功能区（可拖到画布）：放在文档 chip 与右侧操作之间居中，窄屏也不会压到 chip */}
         <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, flexShrink: 0 }}>
+          {/* 多选对齐（选中 ≥2 个才出现）：6 向对齐 + 两种等间距，两端固定 */}
+          {selectedKeys.length >= 2 && (
+            <Box sx={{ display: "flex", alignItems: "center", gap: 0.25, mr: 0.25 }}>
+              {ALIGN_ACTIONS.map((action, index) => (
+                <Box key={action.mode} sx={{ display: "flex", alignItems: "center" }}>
+                  {index === 3 && <Divider orientation="vertical" flexItem sx={{ my: 1.5, mx: 0.25, borderColor: "#EEF3FB" }} />}
+                  <IconButton
+                    size="small"
+                    title={action.tip}
+                    aria-label={action.tip}
+                    onClick={() => alignSelection(action.mode)}
+                    sx={{
+                      width: 26, height: 26, borderRadius: 1.25, color: "#334155",
+                      "&:hover": { bgcolor: "rgba(15,23,42,0.05)" },
+                    }}
+                  >
+                    {action.mode === "left" && <AlignHorizontalLeft sx={{ fontSize: 17 }} />}
+                    {action.mode === "hcenter" && <AlignHorizontalCenter sx={{ fontSize: 17 }} />}
+                    {action.mode === "right" && <AlignHorizontalRight sx={{ fontSize: 17 }} />}
+                    {action.mode === "top" && <AlignVerticalTop sx={{ fontSize: 17 }} />}
+                    {action.mode === "vcenter" && <AlignVerticalCenter sx={{ fontSize: 17 }} />}
+                    {action.mode === "bottom" && <AlignVerticalBottom sx={{ fontSize: 17 }} />}
+                  </IconButton>
+                </Box>
+              ))}
+              <Divider orientation="vertical" flexItem sx={{ my: 1.5, mx: 0.25, borderColor: "#EEF3FB" }} />
+              {([{ axis: "x", tip: "水平等距（两端不动）" }, { axis: "y", tip: "垂直等距（两端不动）" }] as const).map((entry) => (
+                <IconButton
+                  key={entry.axis}
+                  size="small"
+                  title={selectedKeys.length >= 3 ? entry.tip : "选 3 个以上才能等距"}
+                  aria-label={entry.axis === "x" ? "水平等距" : "垂直等距"}
+                  disabled={selectedKeys.length < 3}
+                  onClick={() => distributeSelection(entry.axis)}
+                  sx={{
+                    width: 26, height: 26, borderRadius: 1.25, color: "#334155",
+                    "&:hover": { bgcolor: "rgba(15,23,42,0.05)" },
+                    "&.Mui-disabled": { color: "#CBD5E1" },
+                  }}
+                >
+                  <DistributeIcon axis={entry.axis} />
+                </IconButton>
+              ))}
+              <Divider orientation="vertical" flexItem sx={{ my: 1.5, mx: 0.5, borderColor: "#EEF3FB" }} />
+            </Box>
+          )}
           {([
             { type: "heading", label: "标题", icon: <TitleIcon sx={{ fontSize: 16 }} /> },
             { type: "text", label: "文字", icon: <TextFields sx={{ fontSize: 16 }} /> },
@@ -2326,7 +2531,7 @@ export default function CanvasBoardPage() {
             <FilterFieldsEditor
               item={selectedItem}
               platform={activePlatform}
-              columns={groups.dimensions.map((f) => f.name)}
+              columns={[...groups.dimensions, ...groups.metrics, ...groups.identifiers].map((f) => f.name)}
               datasetId={fieldDatasetId}
               onChange={(spec) => patchItem(selectedItem.key, { spec })}
               onEmpty={() => {

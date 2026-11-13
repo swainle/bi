@@ -277,6 +277,8 @@ export interface ChartSpec {
   pie_label: "name_pct" | "pct" | "name" | "value" | "none";
   pie_gap: boolean;
   pie_rose: boolean;
+  /** 词云主题色（CLOUD_PALETTES 里的 name，缺省「潮彩」） */
+  cloud_palette?: string;
   /** 排行条阈值染色 */
   hbar_threshold_key: string;
   hbar_threshold_gte: number | null;
@@ -381,6 +383,8 @@ export interface RenderPayload {
   compute?: ComputeSpec;
   ui?: UiSpec;
   metric_label?: string | null;
+  /** 词云的「颜色（分类）」字段名（未设置时为空） */
+  series_label?: string | null;
   params_used?: Record<string, unknown>;
   error?: string;
 

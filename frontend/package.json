@@ -28,6 +28,7 @@
     "@mui/icons-material": "^5.15.0",
     "@mui/material": "^5.15.0",
     "@mylayout/core": "file:./packages/mylayout",
+    "@sentry/react": "^8.45.0",
     "axios": "^1.7.0",
     "echarts": "^6.1.0",
     "echarts-for-react": "^3.0.6",

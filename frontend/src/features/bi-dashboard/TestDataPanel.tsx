@@ -5,10 +5,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
-  Alert, Box, Button, Chip, CircularProgress, IconButton, MenuItem, Paper, Stack,
+  Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle,
+  IconButton, MenuItem, Paper, Stack, Tab, Tabs,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Tooltip, Typography,
 } from "@mui/material";
-import { ArrowBack, ChevronRight, Refresh, TableChart } from "@mui/icons-material";
+import { Add, ArrowBack, ChevronRight, DeleteOutline, Refresh, TableChart, UploadFile } from "@mui/icons-material";
 import client from "../../api/client";
 
 interface Field { id: number; name: string; source_column?: string; data_type: string; role: string; description?: string }
@@ -17,6 +18,8 @@ interface DatasetRow {
   field_count: number; metric_count: number; updated_at?: string;
   /** 模板库复制出来的数据集：属于哪个模板 */
   template_id?: number; template_name?: string;
+  /** 「测试数据集」页自建的公共测试数据集 */
+  is_sandbox?: boolean;
 }
 interface DatasetInfo extends DatasetRow { description?: string; fields: Field[] }
 interface QueryResult { columns: string[]; rows: Record<string, unknown>[]; elapsed_ms?: number }
@@ -24,6 +27,8 @@ interface QueryResult { columns: string[]; rows: Record<string, unknown>[]; elap
 const ROLES = [{ v: "dimension", l: "维度" }, { v: "time", l: "时间" }, { v: "measure", l: "度量" }, { v: "id", l: "标识" }];
 const TYPES = ["text", "integer", "numeric", "date", "datetime", "bool"];
 const NUMERIC = new Set(["numeric", "integer", "number", "float", "double", "decimal"]);
+/** 预览一次取多少行：表格是整表渲染，给个上限防止宽表把页面卡死（180 行的演示表能全看到） */
+const ROW_LIMIT = 1000;
 const td = { fontSize: 12, py: 0.7, borderColor: "#F1F5F9" } as const;
 const th = { fontSize: 11.5, fontWeight: 600, color: "#64748B", py: 0.85, bgcolor: "#F8F9FC", borderColor: "#EEF3FB" } as const;
 
@@ -48,19 +53,36 @@ export default function TestDataPanel() {
   const [editOpen, setEditOpen] = useState(false);
   const [fieldId, setFieldId] = useState<number | null>(null);
   const [draft, setDraft] = useState({ name: "", data_type: "text", role: "dimension", description: "" });
+  /** 只有管理员能建 / 删「测试数据集」里的自建数据（公共、跟随项目） */
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<DatasetRow | null>(null);
 
-  /** 列表：测试数据集 + 模板库复制出来的数据集（缺了会自动重建测试数据集） */
+  useEffect(() => {
+    client.get("/auth/me")
+      .then((res) => setIsAdmin(["admin", "super_admin"].includes(res.data?.data?.role)))
+      .catch(() => setIsAdmin(false));
+  }, []);
+
+  /** 列表：内置测试数据集 + 自建测试数据集 + 模板库复制出来的数据集（缺了会自动重建测试数据集） */
   const loadList = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const [ensured, templateRes] = await Promise.all([
+      const [ensured, templateRes, sandboxRes] = await Promise.all([
         client.post("/bi/semantic/datasets/test", {}),
         client.get("/bi/semantic/datasets/templates"),
+        client.get("/bi/semantic/datasets/sandbox"),
       ]);
       const detail = await client.get(`/bi/semantic/datasets/${ensured.data?.id}`);
       const templateRows = (templateRes.data?.datasets || []) as DatasetRow[];
-      setDatasets([...(detail.data ? [detail.data as DatasetRow] : []), ...templateRows]);
+      const sandboxRows = ((sandboxRes.data?.datasets || []) as DatasetRow[])
+        .filter((d) => d.id !== ensured.data?.id);
+      setDatasets([
+        ...(detail.data ? [detail.data as DatasetRow] : []),
+        ...sandboxRows,
+        ...templateRows,
+      ]);
     } catch (e: any) {
       setError(e?.response?.data?.detail || "测试数据集加载失败");
     } finally {
@@ -90,7 +112,7 @@ export default function TestDataPanel() {
       try {
         const res = await client.post(`/bi/semantic/datasets/${id}/query`, {
           dimensions: (ds.fields || []).map((f) => f.name),
-          limit: 100,
+          limit: ROW_LIMIT,
         });
         setData(res.data);
       } catch (e: any) {
@@ -144,6 +166,23 @@ export default function TestDataPanel() {
     setBusy(false);
   };
 
+  /** 删自建测试数据集：只删数据集（字段 / 指标跟着删），导入的物理表留在「数据源」里 */
+  const removeSandbox = async () => {
+    if (!deleteTarget) return;
+    setBusy(true);
+    try {
+      await client.delete(`/bi/semantic/datasets/${deleteTarget.id}`);
+      setDeleteTarget(null);
+      if (activeId === deleteTarget.id) setActiveId(null);
+      await loadList();
+    } catch (e: any) {
+      setError(e?.response?.data?.detail || "删除失败");
+      setDeleteTarget(null);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const rows = data?.rows || [];
   const columns = data?.columns || [];
   const activeField = (info?.fields || []).find((f) => f.id === fieldId) || null;
@@ -177,7 +216,7 @@ export default function TestDataPanel() {
             <Chip label="组件预览 / 模板库专用" size="small"
               sx={{ mb: 0.6, fontSize: 10.5, height: 20, bgcolor: "rgba(37,99,235,0.10)", color: "#2563EB", fontWeight: 600 }} />
             <Typography sx={{ mb: 0.7, fontSize: 11.5, color: "#94A3B8" }}>
-              组件库缩略图 + 模板库数据副本 · 公共、跟随项目 · 仅管理员可删
+              组件库缩略图 + 模板库数据副本 + 自建测试数据 · 公共、跟随项目 · 仅管理员可建可删
             </Typography>
           </>
         )}
@@ -193,6 +232,14 @@ export default function TestDataPanel() {
           sx={{ textTransform: "none", fontSize: 12.5, borderRadius: 2, color: "#475569", borderColor: "#D8E2F5", height: 36 }}>
           {busy ? "处理中…" : activeId === null ? "刷新" : "刷新数据"}
         </Button>
+        {/* 主操作放最右（新建数据集） */}
+        {activeId === null && isAdmin && (
+          <Button variant="contained" size="small" startIcon={<Add sx={{ fontSize: 16 }} />}
+            onClick={() => setCreateOpen(true)}
+            sx={{ bgcolor: "#6366F1", textTransform: "none", fontSize: 12.5, borderRadius: 2, px: 2, height: 36 }}>
+            新建数据集
+          </Button>
+        )}
       </Box>
 
       {loading && activeId === null ? (
@@ -238,6 +285,9 @@ export default function TestDataPanel() {
                       {d.template_id ? (
                         <Chip label={`模板 · ${d.template_name || d.template_id}`} size="small"
                           sx={{ fontSize: 10.5, height: 20, bgcolor: "rgba(79,70,229,0.08)", color: "#4F46E5", maxWidth: 180 }} />
+                      ) : d.is_sandbox ? (
+                        <Chip label="自建 · 测试" size="small"
+                          sx={{ fontSize: 10.5, height: 20, bgcolor: "rgba(16,185,129,0.10)", color: "#059669", fontWeight: 600 }} />
                       ) : (
                         <Chip label="组件预览" size="small"
                           sx={{ fontSize: 10.5, height: 20, bgcolor: "#F1F5F9", color: "#475569" }} />
@@ -250,7 +300,17 @@ export default function TestDataPanel() {
                     <TableCell sx={{ ...td, textAlign: "right", color: "#475569" }}>{d.field_count}</TableCell>
                     <TableCell sx={{ ...td, textAlign: "right", color: "#475569" }}>{d.metric_count}</TableCell>
                     <TableCell sx={{ ...td, color: "text.secondary" }}>{d.updated_at?.slice(0, 16) || ""}</TableCell>
-                    <TableCell sx={{ ...td, pr: 2, textAlign: "right" }}>
+                    <TableCell sx={{ ...td, pr: 2, textAlign: "right", whiteSpace: "nowrap" }}>
+                      {d.is_sandbox && isAdmin && (
+                        <Tooltip title="删除这个测试数据集（物理表保留在数据源里）">
+                          <IconButton size="small"
+                            onClick={(e) => { e.stopPropagation(); setDeleteTarget(d); }}
+                            sx={{ width: 28, height: 28, mr: 0.5, color: "#94A3B8",
+                              "&:hover": { color: "#DC2626", bgcolor: "rgba(220,38,38,0.06)" } }}>
+                            <DeleteOutline sx={{ fontSize: 16 }} />
+                          </IconButton>
+                        </Tooltip>
+                      )}
                       <Button size="small" endIcon={<ChevronRight sx={{ fontSize: 16 }} />}
                         onClick={(e) => {
                           e.stopPropagation();
@@ -267,7 +327,8 @@ export default function TestDataPanel() {
           </TableContainer>
 
           <Typography sx={{ fontSize: 11.5, color: "#94A3B8" }}>
-            组件预览那份只给缩略图看效果；模板那份是看板分享到模板库时复制的数据，克隆模板生成的看板直接用它。
+            组件预览那份只给缩略图看效果；自建那份是你上传 / 选的表，组件和看板都能拿它取数；
+            模板那份是看板分享到模板库时复制的数据，克隆模板生成的看板直接用它。
           </Typography>
         </Stack>
       ) : (
@@ -405,15 +466,181 @@ export default function TestDataPanel() {
               </TableContainer>
 
               <Box sx={{ display: "flex", alignItems: "center", gap: 2, fontSize: 11.5, color: "#94A3B8" }}>
-                <span>共 {rows.length} 行 · {columns.length} 列</span>
+                <span>
+                  {rows.length >= ROW_LIMIT ? `已显示前 ${ROW_LIMIT} 行` : `共 ${rows.length} 行`} · {columns.length} 列
+                </span>
                 {data?.elapsed_ms !== undefined && <span>{Math.round(data.elapsed_ms)} ms</span>}
                 <Box sx={{ flex: 1 }} />
-                <span>前 100 行</span>
               </Box>
             </>
           )}
         </Stack>
       )}
+
+      {createOpen && (
+        <CreateTestDatasetDialog
+          onClose={() => setCreateOpen(false)}
+          onCreated={async (id) => {
+            setCreateOpen(false);
+            await loadList();
+            if (id) void openDataset(id, null);
+          }}
+          onError={(msg) => setError(msg)}
+        />
+      )}
+
+      <Dialog open={!!deleteTarget} onClose={() => (busy ? null : setDeleteTarget(null))} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontSize: 15, fontWeight: 700 }}>删除测试数据集</DialogTitle>
+        <DialogContent>
+          <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>
+            「{deleteTarget?.name}」的字段 / 指标会一起删掉；导入的物理表仍留在「数据源」里。
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setDeleteTarget(null)} disabled={busy} sx={{ textTransform: "none" }}>取消</Button>
+          <Button variant="contained" onClick={() => void removeSandbox()} disabled={busy}
+            sx={{ bgcolor: "#DC2626", textTransform: "none", "&:hover": { bgcolor: "#B91C1C" } }}>
+            {busy ? "删除中…" : "删除"}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
+  );
+}
+
+/* ── 新建测试数据集：上传 CSV / Excel，或挑一张已有物理表 ───────────────── */
+function CreateTestDatasetDialog({
+  onClose, onCreated, onError,
+}: {
+  onClose: () => void;
+  onCreated: (id: number) => void;
+  onError: (msg: string) => void;
+}) {
+  const [mode, setMode] = useState<"file" | "table">("file");
+  const [name, setName] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [tables, setTables] = useState<{ table: string; rows: number; columns: string[] }[]>([]);
+  const [table, setTable] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [stage, setStage] = useState("");
+
+  useEffect(() => {
+    client.get("/bi/semantic/tables")
+      .then((res) => setTables(res.data?.tables || []))
+      .catch(() => setTables([]));
+  }, []);
+
+  /** 建数据集（sandbox）+ 从物理表同步字段 */
+  const build = async (physicalTable: string, datasetName: string) => {
+    setStage("建数据集…");
+    const res = await client.post("/bi/semantic/datasets", {
+      name: datasetName, physical_table: physicalTable, sandbox: true,
+    });
+    const id = Number(res.data?.id || 0);
+    if (!id) throw new Error("创建失败");
+    setStage("导入字段…");
+    await client.post(`/bi/semantic/datasets/${id}/sync`);
+    return id;
+  };
+
+  const submit = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      if (mode === "file") {
+        if (!file) return;
+        setStage("上传中…");
+        const form = new FormData();
+        form.append("file", file);
+        const up = await client.post("/bi/sources/upload", form, {
+          headers: { "Content-Type": "multipart/form-data" },
+        });
+        const localTable = String(up.data?.local_table || "");
+        if (!localTable) throw new Error("上传失败");
+        const fallback = (file.name || "测试数据").replace(/\.[^.]+$/, "");
+        const id = await build(localTable, name.trim() || fallback);
+        onCreated(id);
+      } else {
+        if (!table) return;
+        const id = await build(table, name.trim() || table);
+        onCreated(id);
+      }
+    } catch (e: any) {
+      onError(e?.response?.data?.detail || e?.message || "创建失败");
+    } finally {
+      setStage("");
+      setBusy(false);
+    }
+  };
+
+  const canSubmit = mode === "file" ? !!file : !!table;
+
+  return (
+    <Dialog open onClose={() => (busy ? null : onClose())} maxWidth="sm" fullWidth>
+      <DialogTitle sx={{ fontSize: 16, fontWeight: 700 }}>新建测试数据集</DialogTitle>
+      <DialogContent sx={{ pt: 1 }}>
+        <Tabs value={mode} onChange={(_, v) => setMode(v)} sx={{ mt: 1, minHeight: 32 }}
+          TabIndicatorProps={{ sx: { height: 2, borderRadius: 1 } }}>
+          <Tab value="file" label="上传文件" sx={{ textTransform: "none", fontSize: 12.5, minHeight: 32, fontWeight: 600 }} />
+          <Tab value="table" label="已有物理表" sx={{ textTransform: "none", fontSize: 12.5, minHeight: 32, fontWeight: 600 }} />
+        </Tabs>
+
+        <TextField fullWidth size="small" label="数据集名称" value={name} autoFocus
+          placeholder={mode === "file" ? "留空则用文件名" : "留空则用表名"}
+          onChange={(e) => setName(e.target.value)}
+          sx={{ mt: 2, "& .MuiOutlinedInput-root": { borderRadius: 2 } }} />
+
+        {mode === "file" ? (
+          <Box sx={{ mt: 2 }}>
+            <Button component="label" variant="outlined" size="small" startIcon={<UploadFile sx={{ fontSize: 16 }} />}
+              disabled={busy}
+              sx={{ textTransform: "none", fontSize: 12.5, borderRadius: 2, borderColor: "#D8E2F5", color: "#475569", height: 36 }}>
+              选择 CSV / Excel
+              <input type="file" hidden accept=".csv,.tsv,.txt,.xlsx,.xls,.json"
+                onChange={(e) => {
+                  const picked = e.target.files?.[0] || null;
+                  setFile(picked);
+                  if (picked && !name.trim()) setName(picked.name.replace(/\.[^.]+$/, ""));
+                }} />
+            </Button>
+            <Typography sx={{ mt: 1, fontSize: 11.5, color: "#94A3B8" }}>
+              {file ? `${file.name} · ${(file.size / 1024).toFixed(0)} KB` : "表头即字段名，第一行别放标题以外的说明"}
+            </Typography>
+          </Box>
+        ) : (
+          <TextField fullWidth select size="small" label="物理表" value={table}
+            onChange={(e) => {
+              const next = e.target.value;
+              setTable(next);
+              if (!name.trim()) setName(next);
+            }}
+            sx={{ mt: 2, "& .MuiOutlinedInput-root": { borderRadius: 2 } }}>
+            {tables.map((t) => (
+              <MenuItem key={t.table} value={t.table} sx={{ fontSize: 13 }}>
+                {t.table} · {t.rows} 行
+              </MenuItem>
+            ))}
+          </TextField>
+        )}
+
+        <Typography sx={{ mt: 2, fontSize: 11.5, color: "#94A3B8" }}>
+          建好后是公共测试数据（跟着项目走），组件库和看板都能直接取数；只有管理员能删。
+        </Typography>
+        {stage && (
+          <Box sx={{ mt: 1, display: "flex", alignItems: "center", gap: 1 }}>
+            <CircularProgress size={13} />
+            <Typography sx={{ fontSize: 11.5, color: "#4F46E5" }}>{stage}</Typography>
+          </Box>
+        )}
+      </DialogContent>
+      <DialogActions sx={{ px: 3, pb: 2.5 }}>
+        <Button onClick={onClose} disabled={busy} sx={{ textTransform: "none" }}>取消</Button>
+        <Button variant="contained" onClick={() => void submit()} disabled={busy || !canSubmit}
+          startIcon={busy ? <CircularProgress size={13} color="inherit" /> : null}
+          sx={{ bgcolor: "#6366F1", textTransform: "none", borderRadius: 2 }}>
+          {busy ? "创建中…" : "创建"}
+        </Button>
+      </DialogActions>
+    </Dialog>
   );
 }

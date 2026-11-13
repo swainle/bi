@@ -22,6 +22,9 @@ const BY_KIND: Partial<Record<ComponentKind, AxisLabels>> = {
   line: { dimension: "横轴（时间 / 分类）", metric: "纵轴（数值）", dimensionHint: "时间或分类", metricHint: "聚合数值" },
   scatter: { dimension: "点名称（可选）", metric: "纵轴（数值）", dimensionHint: "点的标签", metricHint: "Y 数值" },
   area: { dimension: "横轴（时间 / 分类）", metric: "纵轴（数值）", dimensionHint: "时间或分类", metricHint: "聚合数值" },
+  /* 词云跟业界一致（Superset 的 Series + Metric、Tableau 的标记卡 文本 + 大小）：
+     词 = 维度（文本列），权重 = 指标（决定字号） */
+  wordcloud: { dimension: "词（维度）", metric: "权重（指标）", dimensionHint: "词", metricHint: "权重" },
 };
 
 export function axisLabels(kind: ComponentKind): AxisLabels {

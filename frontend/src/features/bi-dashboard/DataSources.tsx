@@ -12,7 +12,6 @@ import {
   Rule, Search, Storage, TableChart, UploadFile,
 } from "@mui/icons-material";
 import client from "../../api/client";
-import { DS_TYPES } from "./constants";
 
 interface Source {
   id: number; name: string; ds_type: string; host: string; port: number | null;
@@ -46,11 +45,16 @@ interface RemoteTable {
   schema?: string;
   kind?: "table" | "view";
 }
+interface SourceType {
+  id: string; label: string; desc: string; category: string;
+  default_port: number; available: boolean; reason: string; install: string;
+}
 
-const th = { fontSize: 11.5, fontWeight: 600, color: "#64748B", py: 0.85, bgcolor: "#F8F9FC", borderColor: "#EEF3FB" } as const;
-const td = { fontSize: 12, py: 0.7, borderColor: "#F1F5F9" } as const;
-
-const DB_TYPES = DS_TYPES.filter((t) => t.category !== "文件" && t.category !== "API数据");
+const th = {
+  fontSize: 11.5, fontWeight: 600, color: "#64748B", py: 0.85, bgcolor: "#F8F9FC",
+  borderColor: "#EEF3FB", whiteSpace: "nowrap",
+} as const;
+const td = { fontSize: 12, py: 0.7, borderColor: "#F1F5F9", whiteSpace: "nowrap" } as const;
 
 function addr(s: Source) {
   if (s.uri) return "URI";
@@ -81,6 +85,13 @@ function driftText(d: Drift | null | undefined) {
   return lines.join("\n");
 }
 
+const SYNC_OPTIONS = [
+  { value: 0, label: "关闭" },
+  { value: 60, label: "每小时" },
+  { value: 360, label: "每 6 小时" },
+  { value: 1440, label: "每天" },
+] as const;
+
 function ageText(hours: number | null | undefined) {
   if (hours === null || hours === undefined) return "";
   if (hours < 1) return "刚刚";
@@ -102,6 +113,22 @@ export default function DataSources() {
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const [keyword, setKeyword] = useState("");
+  const [dsTypes, setDsTypes] = useState<SourceType[]>([]);
+  const [typesError, setTypesError] = useState("");
+
+  const loadTypes = useCallback(async () => {
+    try {
+      const res = await client.get("/bi/sources/types");
+      setDsTypes(res.data?.types || []);
+      setTypesError("");
+    } catch {
+      setTypesError("数据源类型加载失败");
+    }
+  }, []);
+
+  useEffect(() => { void loadTypes(); }, [loadTypes]);
+
+  const typeLabel = (id: string) => dsTypes.find((t) => t.id === id)?.label || id;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -180,6 +207,17 @@ export default function DataSources() {
       setError(e?.response?.data?.detail || "重新同步失败");
     } finally {
       setResyncing(null);
+    }
+  };
+
+  const setSchedule = async (t: SyncedTable, minutes: number) => {
+    try {
+      await client.patch(`/bi/sources/files/${t.id}/schedule`, { interval_minutes: minutes });
+      await load();
+      const label = SYNC_OPTIONS.find((o) => o.value === minutes)?.label || `${minutes} 分钟`;
+      setOk(`${t.source_table} 自动同步：${label}`);
+    } catch (e: any) {
+      setError(e?.response?.data?.detail || "设置自动同步失败");
     }
   };
 
@@ -273,7 +311,7 @@ export default function DataSources() {
                       </Box>
                     </TableCell>
                     <TableCell sx={td}>
-                      <Chip label={s.ds_type} size="small"
+                      <Chip label={typeLabel(s.ds_type)} size="small"
                         sx={{ fontSize: 10.5, height: 20, bgcolor: "#F1F5F9", color: "#475569" }} />
                     </TableCell>
                     <TableCell sx={{ ...td, color: "#475569", fontFamily: "ui-monospace", fontSize: 11.5 }}>
@@ -339,6 +377,7 @@ export default function DataSources() {
                   <TableCell sx={th} align="right">行数</TableCell>
                   <TableCell sx={th} align="right">数据集</TableCell>
                   <TableCell sx={th}>新鲜度</TableCell>
+                  <TableCell sx={th}>自动同步</TableCell>
                   <TableCell sx={th}>同步时间</TableCell>
                   <TableCell sx={{ ...th, pr: 2 }} align="right">操作</TableCell>
                 </TableRow>
@@ -346,7 +385,7 @@ export default function DataSources() {
               <TableBody>
                 {filteredSynced.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} sx={{ py: 6, textAlign: "center", borderBottom: 0 }}>
+                    <TableCell colSpan={8} sx={{ py: 6, textAlign: "center", borderBottom: 0 }}>
                       <TableChart sx={{ fontSize: 32, color: "text.disabled", mb: 1 }} />
                       <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>
                         {keyword ? "没有匹配的表" : "还没有接入表"}
@@ -355,9 +394,12 @@ export default function DataSources() {
                   </TableRow>
                 ) : filteredSynced.map((t) => (
                   <TableRow key={t.id} hover>
-                    <TableCell sx={{ ...td, pl: 2 }}>
-                      <Box sx={{ display: "flex", alignItems: "center", gap: 0.8 }}>
-                        <code style={{ fontSize: 11.5, color: "#0F172A" }}>{t.local_table}</code>
+                    <TableCell sx={{ ...td, pl: 2, maxWidth: 260 }}>
+                      <Box sx={{ display: "flex", alignItems: "center", gap: 0.8, minWidth: 0 }}>
+                        <code title={t.local_table}
+                          style={{ fontSize: 11.5, color: "#0F172A", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {t.local_table}
+                        </code>
                         {driftCount(t.drift) > 0 && (
                           <Tooltip title={<span style={{ whiteSpace: "pre-line" }}>{driftText(t.drift)}</span>}>
                             <Chip label={`结构已变 · ${driftCount(t.drift)}`} size="small"
@@ -367,16 +409,28 @@ export default function DataSources() {
                               }} />
                           </Tooltip>
                         )}
+                        {t.last_sync_status === "failed" && (
+                          <Tooltip title={t.last_sync_error || "最近一次同步失败"}>
+                            <Box sx={{ display: "flex", alignItems: "center", gap: 0.3 }}>
+                              <Box sx={{ width: 6, height: 6, borderRadius: "50%", bgcolor: "#DC2626" }} />
+                              <Typography sx={{ fontSize: 10.5, color: "#B91C1C" }}>同步失败</Typography>
+                            </Box>
+                          </Tooltip>
+                        )}
                       </Box>
                     </TableCell>
-                    <TableCell sx={{ ...td, color: "#475569" }}>
+                    <TableCell sx={{ ...td, color: "#475569", maxWidth: 230 }}>
                       {t.kind === "file" ? (
-                        <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-                          <FileUpload sx={{ fontSize: 14, color: "#94A3B8" }} />
-                          {t.source_table}
+                        <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, minWidth: 0 }}>
+                          <FileUpload sx={{ fontSize: 14, color: "#94A3B8", flexShrink: 0 }} />
+                          <Box component="span" title={t.source_table}
+                            sx={{ overflow: "hidden", textOverflow: "ellipsis" }}>{t.source_table}</Box>
                         </Box>
                       ) : (
-                        <span>{t.source_name} · {t.source_table}</span>
+                        <Box component="span" title={`${t.source_name} · ${t.source_table}`}
+                          sx={{ display: "block", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          {t.source_name} · {t.source_table}
+                        </Box>
                       )}
                     </TableCell>
                     <TableCell sx={{ ...td, textAlign: "right", color: "#475569" }}>{t.row_count}</TableCell>
@@ -394,6 +448,30 @@ export default function DataSources() {
                             bgcolor: (FRESH_META[t.freshness || "unknown"] || FRESH_META.unknown).bg,
                           }} />
                       </Tooltip>
+                    </TableCell>
+                    <TableCell sx={td}>
+                      {t.kind === "db" ? (
+                        <Tooltip title={t.next_sync_at ? `下次同步：${t.next_sync_at.slice(0, 16)}` : "不自动同步"}>
+                          <Select
+                            size="small"
+                            variant="outlined"
+                            value={t.sync_interval_minutes || 0}
+                            onChange={(e) => setSchedule(t, Number(e.target.value))}
+                            aria-label="自动同步间隔"
+                            sx={{
+                              height: 26, fontSize: 11.5, borderRadius: "8px", minWidth: 88,
+                              "& .MuiSelect-select": { py: 0.25, px: 1 },
+                            }}>
+                            {SYNC_OPTIONS.map((o) => (
+                              <MenuItem key={o.value} value={o.value} sx={{ fontSize: 12 }}>
+                                {o.label}
+                              </MenuItem>
+                            ))}
+                          </Select>
+                        </Tooltip>
+                      ) : (
+                        <Typography sx={{ fontSize: 11, color: "text.disabled" }}>—</Typography>
+                      )}
                     </TableCell>
                     <TableCell sx={{ ...td, color: "text.secondary" }}>{t.synced_at?.slice(0, 16)}</TableCell>
                     <TableCell sx={{ ...td, pr: 2, textAlign: "right" }}>
@@ -422,7 +500,8 @@ export default function DataSources() {
       )}
 
       {createOpen && (
-        <CreateSourceDialog onClose={() => setCreateOpen(false)}
+        <CreateSourceDialog types={dsTypes} typesError={typesError} onRetry={loadTypes}
+          onClose={() => setCreateOpen(false)}
           onCreated={async () => { setCreateOpen(false); await load(); }}
           onError={setError} onOk={setOk} />
       )}
@@ -446,22 +525,46 @@ export default function DataSources() {
 
 /* ── 新建数据源 ─────────────────────────────────────────── */
 function CreateSourceDialog({
-  onClose, onCreated, onError, onOk,
+  types, typesError, onRetry, onClose, onCreated, onError, onOk,
 }: {
+  types: SourceType[];
+  typesError: string;
+  onRetry: () => Promise<void>;
   onClose: () => void;
   onCreated: () => void;
   onError: (m: string) => void;
   onOk: (m: string) => void;
 }) {
-  const [dsType, setDsType] = useState("postgresql");
+  const [dsType, setDsType] = useState("");
   const [name, setName] = useState("");
   const [host, setHost] = useState("127.0.0.1");
-  const [port, setPort] = useState("5432");
+  const [port, setPort] = useState("");
   const [dbName, setDbName] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [uri, setUri] = useState("");
   const [busy, setBusy] = useState(false);
+
+  const selected = types.find((t) => t.id === dsType);
+  const blocked = !dsType || selected?.available === false;
+  const unavailable = types.filter((t) => !t.available);
+  const notReady = !!typesError || types.length === 0;
+
+  // 类型是后端下发的，异步到达：默认选中第一个可用项
+  useEffect(() => {
+    if (dsType) return;
+    const first = types.find((t) => t.available);
+    if (first) {
+      setDsType(first.id);
+      setPort(String(first.default_port || ""));
+    }
+  }, [types, dsType]);
+
+  const pickType = (id: string) => {
+    setDsType(id);
+    const t = types.find((x) => x.id === id);
+    setPort(String(t?.default_port || ""));
+  };
 
   const payload = () => ({
     name: name.trim(), ds_type: dsType, host: host.trim(),
@@ -470,6 +573,7 @@ function CreateSourceDialog({
   });
 
   const test = async () => {
+    if (blocked) return;
     setBusy(true);
     try {
       const t = await client.post("/bi/sources/test", payload());
@@ -482,7 +586,7 @@ function CreateSourceDialog({
   };
 
   const submit = async () => {
-    if (!name.trim()) return;
+    if (!name.trim() || blocked) return;
     setBusy(true);
     try {
       await client.post("/bi/sources", payload());
@@ -498,47 +602,61 @@ function CreateSourceDialog({
     <Dialog open onClose={onClose} maxWidth="sm" fullWidth>
       <DialogTitle sx={{ fontSize: 16, fontWeight: 700 }}>新建数据源</DialogTitle>
       <DialogContent sx={{ pt: 1 }}>
-        <Box sx={{ display: "flex", gap: 1.5, mt: 1 }}>
-          <TextField select size="small" label="类型" value={dsType}
-            onChange={(e) => {
-              setDsType(e.target.value);
-              const d = DB_TYPES.find((t) => t.id === e.target.value);
-              setPort(String(d?.defaultPort || ""));
-            }}
-            sx={{ width: 190, "& .MuiOutlinedInput-root": { borderRadius: 2 } }}>
-            {DB_TYPES.map((t) => (
-              <MenuItem key={t.id} value={t.id} sx={{ fontSize: 13 }}>{t.label}</MenuItem>
-            ))}
-          </TextField>
-          <TextField size="small" label="名称" value={name} onChange={(e) => setName(e.target.value)}
-            sx={{ flex: 1, "& .MuiOutlinedInput-root": { borderRadius: 2 } }} />
-        </Box>
-        <TextField fullWidth size="small" label="连接串 URI（可选，填了优先用）" value={uri}
-          onChange={(e) => setUri(e.target.value)}
-          placeholder="postgresql://user:password@host:5432/dbname"
-          InputProps={{ sx: { fontFamily: "ui-monospace", fontSize: 12 } }}
-          sx={{ mt: 2, "& .MuiOutlinedInput-root": { borderRadius: 2 } }} />
-        <Box sx={{ display: "flex", gap: 1.5, mt: 2 }}>
-          <TextField size="small" label="主机" value={host} onChange={(e) => setHost(e.target.value)}
-            sx={{ flex: 2, "& .MuiOutlinedInput-root": { borderRadius: 2 } }} />
-          <TextField size="small" label="端口" value={port} onChange={(e) => setPort(e.target.value)}
-            sx={{ flex: 1, "& .MuiOutlinedInput-root": { borderRadius: 2 } }} />
-        </Box>
-        <TextField fullWidth size="small" label="数据库" value={dbName} onChange={(e) => setDbName(e.target.value)}
-          sx={{ mt: 2, "& .MuiOutlinedInput-root": { borderRadius: 2 } }} />
-        <Box sx={{ display: "flex", gap: 1.5, mt: 2 }}>
-          <TextField size="small" label="用户名" value={username} onChange={(e) => setUsername(e.target.value)}
-            sx={{ flex: 1, "& .MuiOutlinedInput-root": { borderRadius: 2 } }} />
-          <TextField size="small" label="密码" type="password" value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            sx={{ flex: 1, "& .MuiOutlinedInput-root": { borderRadius: 2 } }} />
-        </Box>
+        {typesError ? (
+          <Alert severity="error" sx={{ mt: 1, borderRadius: 1.5, fontSize: 12.5 }}
+            action={<Button color="inherit" size="small" onClick={() => void onRetry()}>重试</Button>}>
+            {typesError}
+          </Alert>
+        ) : types.length === 0 ? (
+          <Box sx={{ py: 5, textAlign: "center" }}><CircularProgress size={22} /></Box>
+        ) : (
+          <>
+            <Box sx={{ display: "flex", gap: 1.5, mt: 1 }}>
+              <TextField select size="small" label="类型" value={dsType}
+                onChange={(e) => pickType(e.target.value)}
+                sx={{ width: 220, "& .MuiOutlinedInput-root": { borderRadius: 2 } }}>
+                {types.map((t) => (
+                  <MenuItem key={t.id} value={t.id} disabled={!t.available} sx={{ fontSize: 13 }}>
+                    {t.label}{t.available ? "" : " · 未装驱动"}
+                  </MenuItem>
+                ))}
+              </TextField>
+              <TextField size="small" label="名称" value={name} onChange={(e) => setName(e.target.value)}
+                sx={{ flex: 1, "& .MuiOutlinedInput-root": { borderRadius: 2 } }} />
+            </Box>
+            {unavailable.length > 0 && (
+              <Typography sx={{ mt: 0.75, fontSize: 11.5, color: "#94A3B8" }}>
+                置灰类型需先在服务器安装驱动，重启后端后自动可用。
+              </Typography>
+            )}
+            <TextField fullWidth size="small" label="连接串 URI（可选，填了优先用）" value={uri}
+              onChange={(e) => setUri(e.target.value)}
+              placeholder="postgresql://user:password@host:5432/dbname"
+              InputProps={{ sx: { fontFamily: "ui-monospace", fontSize: 12 } }}
+              sx={{ mt: 2, "& .MuiOutlinedInput-root": { borderRadius: 2 } }} />
+            <Box sx={{ display: "flex", gap: 1.5, mt: 2 }}>
+              <TextField size="small" label="主机" value={host} onChange={(e) => setHost(e.target.value)}
+                sx={{ flex: 2, "& .MuiOutlinedInput-root": { borderRadius: 2 } }} />
+              <TextField size="small" label="端口" value={port} onChange={(e) => setPort(e.target.value)}
+                sx={{ flex: 1, "& .MuiOutlinedInput-root": { borderRadius: 2 } }} />
+            </Box>
+            <TextField fullWidth size="small" label="数据库" value={dbName} onChange={(e) => setDbName(e.target.value)}
+              sx={{ mt: 2, "& .MuiOutlinedInput-root": { borderRadius: 2 } }} />
+            <Box sx={{ display: "flex", gap: 1.5, mt: 2 }}>
+              <TextField size="small" label="用户名" value={username} onChange={(e) => setUsername(e.target.value)}
+                sx={{ flex: 1, "& .MuiOutlinedInput-root": { borderRadius: 2 } }} />
+              <TextField size="small" label="密码" type="password" value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                sx={{ flex: 1, "& .MuiOutlinedInput-root": { borderRadius: 2 } }} />
+            </Box>
+          </>
+        )}
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2.5 }}>
-        <Button onClick={test} disabled={busy}
+        <Button onClick={test} disabled={busy || blocked || notReady}
           sx={{ textTransform: "none", mr: "auto", color: "#475569" }}>测试连接</Button>
         <Button onClick={onClose} sx={{ textTransform: "none" }}>取消</Button>
-        <Button variant="contained" onClick={submit} disabled={busy || !name.trim()}
+        <Button variant="contained" onClick={submit} disabled={busy || notReady || blocked || !name.trim()}
           startIcon={busy ? <CircularProgress size={13} color="inherit" /> : null}
           sx={{ bgcolor: "#6366F1", textTransform: "none", borderRadius: 2 }}>保存</Button>
       </DialogActions>
