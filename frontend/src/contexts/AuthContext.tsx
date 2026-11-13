@@ -18,6 +18,7 @@ interface AuthContextType {
   loading: boolean;
   hasPerm: (key: string) => boolean;
   login: (account: string, password: string) => Promise<void>;
+  register: (username: string, email: string, phone: string, password: string) => Promise<void>;
   logout: () => void;
   refreshUser: () => Promise<void>;
 }
@@ -27,6 +28,7 @@ export const AuthContext = createContext<AuthContextType>({
   loading: true,
   hasPerm: () => false,
   login: async () => {},
+  register: async () => {},
   logout: () => {},
   refreshUser: async () => {},
 });
@@ -89,6 +91,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(me);
   }, []);
 
+  const register = useCallback(async (username: string, email: string, phone: string, password: string) => {
+    const data = await authApi.register(username, email || undefined, phone || undefined, password);
+    localStorage.setItem(TOKEN_KEY, data.access_token);
+    localStorage.setItem(REFRESH_KEY, data.refresh_token);
+    const me = await authApi.getMe();
+    setUser(me);
+  }, []);
+
   const logout = useCallback(() => {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(REFRESH_KEY);
@@ -98,7 +108,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, loading, hasPerm, login, logout, refreshUser }}
+      value={{ user, loading, hasPerm, login, register, logout, refreshUser }}
     >
       {children}
     </AuthContext.Provider>

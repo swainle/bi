@@ -1,4 +1,4 @@
-/** React 错误边界 — 捕获组件树中的未处理异常，上报到后端 error_logs
+/** React 错误边界 — 捕获组件树中的未处理异常，上报到后端错误日志（bi_error_log）
  *  增强版：高级 fallback UI + 路由级隔离 + 自动重试 + 暗色适配 */
 import { Component, type ReactNode, type ErrorInfo } from "react";
 import { Box, Typography, Button, Collapse, IconButton, Stack } from "@mui/material";
@@ -10,8 +10,24 @@ import {
   ExpandLess as ExpandLessIcon,
 } from "@mui/icons-material";
 
-// ── 上报错误到后端 ──
+// ── 上报错误到后端（同一页面 10s 内同样报错只发一次，避免雪崩）──
+const reported = new Map<string, number>();
+
+function shouldReport(key: string): boolean {
+  const now = Date.now();
+  if (now - (reported.get(key) || 0) < 10_000) return false;
+  reported.set(key, now);
+  if (reported.size > 50) {
+    reported.forEach((at, k) => {
+      if (now - at > 60_000) reported.delete(k);
+    });
+  }
+  return true;
+}
+
 export async function reportError(message: string, stack?: string) {
+  const url = window.location.href;
+  if (!shouldReport(`${message}|${window.location.pathname}`)) return;
   try {
     const token = localStorage.getItem("access_token") || "";
     const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -24,8 +40,9 @@ export async function reportError(message: string, stack?: string) {
         level: "error",
         message,
         stack: (stack || "").slice(0, 5000),
-        url: window.location.href,
+        url,
         user_agent: navigator.userAgent,
+        extra: { path: window.location.pathname, referrer: document.referrer || "" },
       }),
     });
   } catch {

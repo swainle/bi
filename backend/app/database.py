@@ -31,12 +31,18 @@ if _is_sqlite:
         os.makedirs(data_dir, exist_ok=True)
     _engine_kwargs["connect_args"] = {"check_same_thread": False}
 else:
-    # PostgreSQL 企业级连接池配置（100 人并发）
-    _engine_kwargs["pool_size"] = 20             # 基础连接数（每 Uvicorn worker）
-    _engine_kwargs["max_overflow"] = 10          # 高峰额外连接（总计最多 30）
+    # PostgreSQL 企业级连接池配置（可环境变量调；多 worker 时记得按 worker 数对齐 PG 的 max_connections）
+    def _env_int(name: str, default: int) -> int:
+        try:
+            return max(1, int(os.getenv(name, str(default)) or default))
+        except ValueError:
+            return default
+
+    _engine_kwargs["pool_size"] = _env_int("DB_POOL_SIZE", 20)          # 基础连接数（每个进程）
+    _engine_kwargs["max_overflow"] = _env_int("DB_MAX_OVERFLOW", 10)    # 高峰额外连接（总计最多 30）
     _engine_kwargs["pool_pre_ping"] = True       # 每次借出前检测连接可用性
     _engine_kwargs["pool_recycle"] = 1800        # 30 分钟后回收连接，防止 PG 断开
-    _engine_kwargs["pool_timeout"] = 30          # 等待连接超时 30s，防并发 500
+    _engine_kwargs["pool_timeout"] = _env_int("DB_POOL_TIMEOUT", 30)    # 等待连接超时，防并发 500
     _engine_kwargs["pool_use_lifo"] = True       # LIFO 复用最近连接，减少空闲数
 
 engine = create_engine(_db_url, **_engine_kwargs)
@@ -72,6 +78,11 @@ import time as _time
 _slow_log = logging.getLogger("sqlalchemy.slow")
 _pool_log = logging.getLogger("sqlalchemy.pool")
 
+try:
+    _SLOW_QUERY_MS = max(0, int(os.getenv("DB_SLOW_QUERY_MS", "500") or "500"))
+except ValueError:
+    _SLOW_QUERY_MS = 500
+
 @event.listens_for(engine, "before_cursor_execute")
 def _before_exec(conn, cursor, statement, parameters, context, executemany):
     conn.info.setdefault("_start", _time.time())
@@ -79,7 +90,7 @@ def _before_exec(conn, cursor, statement, parameters, context, executemany):
 @event.listens_for(engine, "after_cursor_execute")
 def _after_exec(conn, cursor, statement, parameters, context, executemany):
     elapsed = _time.time() - conn.info.pop("_start", _time.time())
-    if elapsed > 0.5:  # 超过 500ms 记录
+    if _SLOW_QUERY_MS > 0 and elapsed * 1000 > _SLOW_QUERY_MS:  # 慢查询告警阈值可调
         _slow_log.warning(f"SLOW QUERY ({elapsed:.2f}s): {statement[:200]}")
 
 

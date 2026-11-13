@@ -153,9 +153,106 @@ def ensure_rbac_seed() -> None:
         print(f"[bootstrap] RBAC 种子跳过：{e}")
 
 
+def ensure_migrations() -> list[str]:
+    """执行 schema/migrations 下未应用的增量迁移（幂等）."""
+    try:
+        from app.schema_migrations import run_all
+
+        executed = run_all()
+        if executed:
+            print(f"[bootstrap] 已应用迁移：{', '.join(executed)}")
+        return executed
+    except Exception as e:  # 迁移失败必须让启动失败，否则后续查询会撞缺表
+        raise RuntimeError(f"[bootstrap] 迁移失败：{e}") from e
+
+
+def ensure_item_sources() -> int:
+    """按现有看板文档重建「组件 → 数据源」账本（幂等，启动时跑一遍）."""
+    from app.dashboards import sources
+
+    db = SessionLocal()
+    try:
+        count = sources.backfill(db)
+        if count:
+            print(f"[bootstrap] 组件数据源账本已同步：{count} 行")
+        return count
+    finally:
+        db.close()
+
+
+def ensure_project_names() -> int:
+    """把历史上没起名（就叫「未命名项目」）的看板按创建顺序补成 未命名项目01/02/03…（幂等）."""
+    from sqlalchemy import text
+
+    from app.dashboards.repository import UNTITLED, next_untitled_name
+
+    db = SessionLocal()
+    try:
+        rows = db.execute(
+            text("SELECT id, name FROM bi_canvas WHERE deleted_at IS NULL AND name = :name "
+                 "ORDER BY created_at ASC, id ASC"),
+            {"name": UNTITLED},
+        ).fetchall()
+        if not rows:
+            return 0
+        renamed = 0
+        for row in rows:
+            db.execute(
+                text("UPDATE bi_canvas SET name = :name WHERE id = :id"),
+                {"name": next_untitled_name(db), "id": row[0]},
+            )
+            renamed += 1
+        db.commit()
+        print(f"[bootstrap] 未命名项目已编号：{renamed} 个")
+        return renamed
+    finally:
+        db.close()
+
+
+def ensure_components() -> dict:
+    """组件库种子：数据集 + 15 个「类型级」基础组件（同类不在库里重复）。"""
+    try:
+        from app.components import seed as component_seed
+        from app.components import seed_base, seed_demand, seed_demo
+
+        db = SessionLocal()
+        try:
+            if not component_seed.table_ready(db):
+                return {"skipped": "bi_component 表不存在"}
+            dataset_id = component_seed.ensure_dataset(db)
+            demo_dataset_id = seed_demo.ensure_demo_dataset(db)
+            demand = seed_demand.ensure_datasets(db) if seed_demand.table_ready(db) else {}
+            base = seed_base.ensure_base(db, dataset_id, demo_dataset_id)
+            return {"dataset_id": dataset_id, "demo_dataset_id": demo_dataset_id,
+                    "demand_datasets": demand, "base_components": base}
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"[bootstrap] 组件库种子跳过：{e}")
+        return {"error": str(e)[:200]}
+
+
+def ensure_pages() -> dict:
+    """两个成品看板（从 seed_docs 载入；已存在不覆盖）。"""
+    try:
+        from app.dashboards.seed_loader import ensure_docs
+
+        db = SessionLocal()
+        try:
+            return {"dashboards": ensure_docs(db)}
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"[bootstrap] 看板种子跳过：{e}")
+        return {"error": str(e)[:200]}
+
+
 def init_all() -> None:
     """完整初始化（幂等）."""
     ensure_schema()
+    ensure_migrations()
+    ensure_components()
+    ensure_pages()
     ensure_rbac_seed()
     ensure_seed_data()
     ensure_admin()

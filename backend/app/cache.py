@@ -25,13 +25,30 @@ if _redis_url:
 
 # ── 内存缓存（回退）───────────────────────────────────────────
 _memory_cache: dict[str, tuple[float, Any]] = {}
+# 进程内缓存条数上限：key 会带用户/参数指纹，不设限长期运行会慢慢涨
+_MEMORY_MAX_KEYS = 4000
+
+
+def _prune_memory() -> None:
+    if len(_memory_cache) < _MEMORY_MAX_KEYS:
+        return
+    now = time.time()
+    for key in [k for k, (expires_at, _v) in _memory_cache.items() if expires_at <= now]:
+        _memory_cache.pop(key, None)
+    if len(_memory_cache) >= _MEMORY_MAX_KEYS:  # 还满就丢掉最早到期的一半
+        overflow = len(_memory_cache) - _MEMORY_MAX_KEYS // 2
+        for key in sorted(_memory_cache, key=lambda k: _memory_cache[k][0])[:overflow]:
+            _memory_cache.pop(key, None)
 
 
 def get(key: str) -> Optional[Any]:
-    """获取缓存值."""
+    """获取缓存值（Redis 掉线 / 值损坏 → 当作未命中）."""
     if _redis:
-        raw = _redis.get(key)
-        return json.loads(raw) if raw else None
+        try:
+            raw = _redis.get(key)
+            return json.loads(raw) if raw else None
+        except Exception:
+            return None
 
     entry = _memory_cache.get(key)
     if entry:
@@ -43,18 +60,25 @@ def get(key: str) -> Optional[Any]:
 
 
 def set(key: str, value: Any, ttl: int = 300) -> None:
-    """设置缓存（默认 TTL 5 分钟）."""
+    """设置缓存（默认 TTL 5 分钟）；缓存不可用时静默跳过."""
     if _redis:
-        _redis.setex(key, ttl, json.dumps(value, default=str))
+        try:
+            _redis.setex(key, ttl, json.dumps(value, default=str))
+        except Exception:
+            return
         return
 
+    _prune_memory()
     _memory_cache[key] = (time.time() + ttl, value)
 
 
 def delete(key: str) -> None:
     """删除缓存."""
     if _redis:
-        _redis.delete(key)
+        try:
+            _redis.delete(key)
+        except Exception:
+            return
     else:
         _memory_cache.pop(key, None)
 
@@ -81,17 +105,20 @@ def cached(ttl: int = 300, key_prefix: str = "cache"):
 
 
 def invalidate_prefix(prefix: str) -> None:
-    """按前缀批量失效缓存（仅 Redis 支持）."""
+    """按前缀批量失效缓存：删掉 `prefix:*`（Redis / 内存同一口径）."""
     if not _redis:
-        keys = [k for k in _memory_cache if k.startswith(prefix)]
+        keys = [k for k in _memory_cache if k.startswith(f"{prefix}:")]
         for k in keys:
             del _memory_cache[k]
         return
 
-    cursor = 0
-    while True:
-        cursor, keys = _redis.scan(cursor, match=f"{prefix}:*", count=100)
-        if keys:
-            _redis.delete(*keys)
-        if cursor == 0:
-            break
+    try:
+        cursor = 0
+        while True:
+            cursor, keys = _redis.scan(cursor, match=f"{prefix}:*", count=100)
+            if keys:
+                _redis.delete(*keys)
+            if cursor == 0:
+                break
+    except Exception:
+        return

@@ -1,0 +1,4559 @@
+{
+  "code": "board.rank",
+  "name": "榜单端 · 市场分析",
+  "doc": {
+    "mode": "flow",
+    "views": [
+      {
+        "key": "main",
+        "items": [
+          {
+            "h": 76,
+            "key": "filter",
+            "icon": "",
+            "note": "",
+            "size": 13,
+            "span": 12,
+            "spec": {
+              "ui": {
+                "align": "left",
+                "badge": "",
+                "accent": "indigo",
+                "radius": 14,
+                "animate": true,
+                "columns": 1,
+                "show_unit": true,
+                "min_height": 76
+              },
+              "rank": {
+                "order": "value",
+                "x_key": "",
+                "y_key": "",
+                "cvr_key": "",
+                "weights": {},
+                "tags_key": "",
+                "max_items": 10,
+                "show_rank": true,
+                "show_tags": false,
+                "value_key": "",
+                "show_score": false
+              },
+              "unit": "",
+              "chart": {
+                "log_x": false,
+                "log_y": false,
+                "x_key": "",
+                "y_key": "",
+                "y_max": null,
+                "y_min": null,
+                "smooth": true,
+                "pie_gap": true,
+                "x_title": "",
+                "y_title": "",
+                "pie_rose": false,
+                "size_key": "",
+                "bar_width": 26,
+                "pie_inner": 46,
+                "pie_label": "name_pct",
+                "pie_start": 90,
+                "show_grid": true,
+                "show_labels": true,
+                "show_legend": true,
+                "label_format": "auto",
+                "label_layout": "inside",
+                "label_rotate": 0,
+                "scatter_mode": "point",
+                "single_slice": true,
+                "hbar_highlight": "violet",
+                "hbar_threshold_gte": null,
+                "hbar_threshold_key": ""
+              },
+              "combo": {
+                "smooth": true,
+                "bar_name": "",
+                "line_name": "",
+                "right_axis": true
+              },
+              "title": "筛选栏",
+              "filter": {
+                "fields": [
+                  {
+                    "id": "platform",
+                    "note": "",
+                    "type": "select",
+                    "label": "平台",
+                    "width": 0,
+                    "default": "拼多多",
+                    "options": [
+                      {
+                        "t": "天猫",
+                        "v": "天猫"
+                      },
+                      {
+                        "t": "拼多多",
+                        "v": "拼多多"
+                      }
+                    ],
+                    "multiple": false,
+                    "placeholder": ""
+                  },
+                  {
+                    "id": "category",
+                    "note": "",
+                    "type": "select",
+                    "label": "品类",
+                    "width": 0,
+                    "default": "all",
+                    "options": [
+                      {
+                        "t": "全部品类",
+                        "v": "all"
+                      },
+                      {
+                        "t": "乌龟食品",
+                        "v": "乌龟食品"
+                      },
+                      {
+                        "t": "仓鼠食品",
+                        "v": "仓鼠食品"
+                      },
+                      {
+                        "t": "兔子食品",
+                        "v": "兔子食品"
+                      },
+                      {
+                        "t": "狗狗零食",
+                        "v": "狗狗零食"
+                      },
+                      {
+                        "t": "猫咪零食",
+                        "v": "猫咪零食"
+                      },
+                      {
+                        "t": "鸟食品",
+                        "v": "鸟食品"
+                      }
+                    ],
+                    "multiple": false,
+                    "placeholder": ""
+                  },
+                  {
+                    "id": "board",
+                    "note": "",
+                    "type": "select",
+                    "label": "榜单",
+                    "width": 0,
+                    "default": "all",
+                    "options": [
+                      {
+                        "t": "全部榜单",
+                        "v": "all"
+                      },
+                      {
+                        "t": "乌龟食品热销榜",
+                        "v": "乌龟食品热销榜"
+                      },
+                      {
+                        "t": "乌龟食品畅销榜",
+                        "v": "乌龟食品畅销榜"
+                      },
+                      {
+                        "t": "仓鼠主粮畅销榜",
+                        "v": "仓鼠主粮畅销榜"
+                      },
+                      {
+                        "t": "仓鼠零食畅销榜",
+                        "v": "仓鼠零食畅销榜"
+                      },
+                      {
+                        "t": "仓鼠食品热销榜",
+                        "v": "仓鼠食品热销榜"
+                      },
+                      {
+                        "t": "兔兔零食畅销榜",
+                        "v": "兔兔零食畅销榜"
+                      },
+                      {
+                        "t": "兔子食品热销榜",
+                        "v": "兔子食品热销榜"
+                      },
+                      {
+                        "t": "兔粮好评榜",
+                        "v": "兔粮好评榜"
+                      },
+                      {
+                        "t": "兔粮热销榜",
+                        "v": "兔粮热销榜"
+                      },
+                      {
+                        "t": "其他猫零食畅销榜",
+                        "v": "其他猫零食畅销榜"
+                      },
+                      {
+                        "t": "冻干猫零食好评榜",
+                        "v": "冻干猫零食好评榜"
+                      },
+                      {
+                        "t": "冻干猫零食热销榜",
+                        "v": "冻干猫零食热销榜"
+                      }
+                    ],
+                    "multiple": false,
+                    "placeholder": ""
+                  },
+                  {
+                    "id": "band",
+                    "note": "",
+                    "type": "select",
+                    "label": "价格带",
+                    "width": 0,
+                    "default": "all",
+                    "options": [
+                      {
+                        "t": "全部价格带",
+                        "v": "all"
+                      },
+                      {
+                        "t": "<20元",
+                        "v": "<20元"
+                      },
+                      {
+                        "t": "20-40元",
+                        "v": "20-40元"
+                      },
+                      {
+                        "t": "40-60元",
+                        "v": "40-60元"
+                      },
+                      {
+                        "t": "60-80元",
+                        "v": "60-80元"
+                      },
+                      {
+                        "t": "≥80元",
+                        "v": "≥80元"
+                      }
+                    ],
+                    "multiple": false,
+                    "placeholder": ""
+                  },
+                  {
+                    "id": "q",
+                    "note": "",
+                    "type": "search",
+                    "label": "搜索",
+                    "width": 210,
+                    "default": "",
+                    "options": [],
+                    "multiple": false,
+                    "placeholder": "标题 / 品牌 / 榜单"
+                  }
+                ],
+                "inline": true
+              },
+              "layout": {
+                "h": 320,
+                "w": 520,
+                "x": 40,
+                "y": 56
+              },
+              "binding": {
+                "agg": "SUM",
+                "sort": "desc",
+                "grain": null,
+                "limit": 500,
+                "split": null,
+                "top_n": 10,
+                "metric": null,
+                "series": null,
+                "filters": [],
+                "metrics": [],
+                "dimension": null,
+                "dataset_id": null,
+                "dimensions": []
+              },
+              "compute": {
+                "hint": "none",
+                "scale": 1,
+                "format": "int",
+                "offset": 0,
+                "prefix": "",
+                "suffix": "",
+                "decimals": 0,
+                "headline": "first",
+                "transform": "raw",
+                "bucket_size": null,
+                "bucket_count": 0,
+                "bucket_start": null
+              },
+              "content": {
+                "icon": "",
+                "text": "",
+                "index": "",
+                "items": []
+              },
+              "subtitle": "",
+              "table_view": {
+                "more": true,
+                "columns": [],
+                "sortable": false,
+                "page_size": 10,
+                "more_label": "",
+                "index_column": true
+              }
+            },
+            "text": "",
+            "type": "filter",
+            "align": "left",
+            "index": "",
+            "title": "",
+            "action": null,
+            "layout": {
+              "h": 76,
+              "w": 1416,
+              "x": 12,
+              "y": 12
+            },
+            "weight": 400,
+            "component": "base.filter",
+            "row_action": null
+          },
+          {
+            "h": 60,
+            "key": "sec_overview",
+            "icon": "grid",
+            "note": "当前平台 · 六维指标",
+            "size": 13,
+            "span": 12,
+            "spec": null,
+            "text": "一、榜单概况",
+            "type": "heading",
+            "align": "left",
+            "index": "一",
+            "title": "",
+            "action": null,
+            "layout": {
+              "h": 60,
+              "w": 1416,
+              "x": 12,
+              "y": 104
+            },
+            "weight": 400,
+            "component": "",
+            "row_action": null
+          },
+          {
+            "h": 112,
+            "key": "kpi_sales",
+            "icon": "",
+            "note": "",
+            "size": 13,
+            "span": 2,
+            "spec": {
+              "ui": {
+                "align": "left",
+                "badge": "TOP10",
+                "accent": "indigo",
+                "radius": 14,
+                "animate": false,
+                "columns": 1,
+                "show_unit": true,
+                "min_height": 104
+              },
+              "rank": {
+                "order": "value",
+                "x_key": "",
+                "y_key": "",
+                "cvr_key": "",
+                "weights": {},
+                "tags_key": "",
+                "max_items": 10,
+                "show_rank": true,
+                "show_tags": false,
+                "value_key": "",
+                "show_score": false
+              },
+              "unit": "单",
+              "chart": {
+                "log_x": false,
+                "log_y": false,
+                "x_key": "",
+                "y_key": "",
+                "y_max": null,
+                "y_min": null,
+                "smooth": true,
+                "pie_gap": true,
+                "x_title": "",
+                "y_title": "",
+                "pie_rose": false,
+                "size_key": "",
+                "bar_width": 26,
+                "pie_inner": 46,
+                "pie_label": "name_pct",
+                "pie_start": 90,
+                "show_grid": true,
+                "show_labels": true,
+                "show_legend": true,
+                "label_format": "auto",
+                "label_layout": "inside",
+                "label_rotate": 0,
+                "scatter_mode": "point",
+                "single_slice": true,
+                "hbar_highlight": "violet",
+                "hbar_threshold_gte": null,
+                "hbar_threshold_key": ""
+              },
+              "combo": {
+                "smooth": true,
+                "bar_name": "",
+                "line_name": "",
+                "right_axis": true
+              },
+              "title": "日销量",
+              "filter": {
+                "fields": [],
+                "inline": true
+              },
+              "layout": {
+                "h": 260,
+                "w": 420,
+                "x": 40,
+                "y": 40
+              },
+              "binding": {
+                "agg": "SUM",
+                "sort": "desc",
+                "grain": null,
+                "limit": 500,
+                "split": null,
+                "top_n": 10,
+                "metric": "日销量",
+                "series": null,
+                "filters": [
+                  {
+                    "op": "=",
+                    "column": "平台",
+                    "valueFrom": "param:platform"
+                  },
+                  {
+                    "op": "=",
+                    "column": "品类",
+                    "valueFrom": "param:category"
+                  },
+                  {
+                    "op": "=",
+                    "column": "榜单",
+                    "valueFrom": "param:board"
+                  },
+                  {
+                    "op": "=",
+                    "column": "价格带",
+                    "valueFrom": "param:band"
+                  },
+                  {
+                    "op": "ILIKE",
+                    "column": "搜索文本",
+                    "valueFrom": "param:q"
+                  }
+                ],
+                "metrics": [],
+                "dimension": "商品标题",
+                "dataset_id": 2,
+                "dimensions": []
+              },
+              "compute": {
+                "hint": "sum_topn",
+                "scale": 1,
+                "format": "int",
+                "offset": 0,
+                "prefix": "",
+                "suffix": "",
+                "decimals": 0,
+                "headline": "first",
+                "transform": "raw",
+                "bucket_size": null,
+                "bucket_count": 0,
+                "bucket_start": null
+              },
+              "content": {
+                "icon": "",
+                "text": "",
+                "index": "",
+                "items": []
+              },
+              "subtitle": "",
+              "table_view": {
+                "more": true,
+                "columns": [],
+                "sortable": false,
+                "page_size": 10,
+                "more_label": "",
+                "index_column": true
+              }
+            },
+            "text": "",
+            "type": "chart",
+            "align": "left",
+            "index": "",
+            "title": "",
+            "action": {
+              "spec": {
+                "ui": {
+                  "align": "left",
+                  "badge": "",
+                  "accent": "indigo",
+                  "radius": 14,
+                  "animate": true,
+                  "columns": 1,
+                  "show_unit": true,
+                  "min_height": 520
+                },
+                "rank": {
+                  "order": "value",
+                  "x_key": "",
+                  "y_key": "",
+                  "cvr_key": "",
+                  "weights": {},
+                  "tags_key": "",
+                  "max_items": 10,
+                  "show_rank": true,
+                  "show_tags": false,
+                  "value_key": "",
+                  "show_score": false
+                },
+                "unit": "",
+                "chart": {
+                  "log_x": false,
+                  "log_y": false,
+                  "x_key": "",
+                  "y_key": "",
+                  "y_max": null,
+                  "y_min": null,
+                  "smooth": true,
+                  "pie_gap": true,
+                  "x_title": "",
+                  "y_title": "",
+                  "pie_rose": false,
+                  "size_key": "",
+                  "bar_width": 26,
+                  "pie_inner": 46,
+                  "pie_label": "name_pct",
+                  "pie_start": 90,
+                  "show_grid": true,
+                  "show_labels": true,
+                  "show_legend": true,
+                  "label_format": "auto",
+                  "label_layout": "inside",
+                  "label_rotate": 0,
+                  "scatter_mode": "point",
+                  "single_slice": true,
+                  "hbar_highlight": "violet",
+                  "hbar_threshold_gte": null,
+                  "hbar_threshold_key": ""
+                },
+                "combo": {
+                  "smooth": true,
+                  "bar_name": "",
+                  "line_name": "",
+                  "right_axis": true
+                },
+                "title": "TOP10",
+                "filter": {
+                  "fields": [],
+                  "inline": true
+                },
+                "layout": {
+                  "h": 320,
+                  "w": 520,
+                  "x": 40,
+                  "y": 56
+                },
+                "binding": {
+                  "agg": "SUM",
+                  "sort": "desc",
+                  "grain": null,
+                  "limit": 200,
+                  "split": null,
+                  "top_n": 10,
+                  "metric": "日销量",
+                  "series": null,
+                  "filters": [
+                    {
+                      "op": "=",
+                      "column": "平台",
+                      "valueFrom": "param:platform"
+                    },
+                    {
+                      "op": "=",
+                      "column": "品类",
+                      "valueFrom": "param:category"
+                    },
+                    {
+                      "op": "=",
+                      "column": "榜单",
+                      "valueFrom": "param:board"
+                    },
+                    {
+                      "op": "=",
+                      "column": "价格带",
+                      "valueFrom": "param:band"
+                    },
+                    {
+                      "op": "ILIKE",
+                      "column": "搜索文本",
+                      "valueFrom": "param:q"
+                    }
+                  ],
+                  "metrics": [],
+                  "dimension": "商品标题",
+                  "dataset_id": 2,
+                  "dimensions": []
+                },
+                "compute": {
+                  "hint": "none",
+                  "scale": 1,
+                  "format": "int",
+                  "offset": 0,
+                  "prefix": "",
+                  "suffix": "",
+                  "decimals": 0,
+                  "headline": "first",
+                  "transform": "raw",
+                  "bucket_size": null,
+                  "bucket_count": 0,
+                  "bucket_start": null
+                },
+                "content": {
+                  "icon": "",
+                  "text": "",
+                  "index": "",
+                  "items": []
+                },
+                "subtitle": "",
+                "table_view": {
+                  "more": true,
+                  "columns": [],
+                  "sortable": false,
+                  "page_size": 10,
+                  "more_label": "",
+                  "index_column": true
+                }
+              },
+              "type": "modal",
+              "title": "日销量 TOP10",
+              "params": {},
+              "component": "base.rank_list",
+              "overrides": {
+                "title": "日销量 TOP10",
+                "binding": {
+                  "metric": "日销量"
+                }
+              }
+            },
+            "layout": {
+              "h": 112,
+              "w": 223,
+              "x": 12,
+              "y": 180
+            },
+            "weight": 400,
+            "component": "base.kpi",
+            "row_action": null
+          },
+          {
+            "h": 112,
+            "key": "kpi_heat",
+            "icon": "",
+            "note": "",
+            "size": 13,
+            "span": 2,
+            "spec": {
+              "ui": {
+                "align": "left",
+                "badge": "TOP10",
+                "accent": "amber",
+                "radius": 14,
+                "animate": false,
+                "columns": 1,
+                "show_unit": true,
+                "min_height": 104
+              },
+              "rank": {
+                "order": "value",
+                "x_key": "",
+                "y_key": "",
+                "cvr_key": "",
+                "weights": {},
+                "tags_key": "",
+                "max_items": 10,
+                "show_rank": true,
+                "show_tags": false,
+                "value_key": "",
+                "show_score": false
+              },
+              "unit": "",
+              "chart": {
+                "log_x": false,
+                "log_y": false,
+                "x_key": "",
+                "y_key": "",
+                "y_max": null,
+                "y_min": null,
+                "smooth": true,
+                "pie_gap": true,
+                "x_title": "",
+                "y_title": "",
+                "pie_rose": false,
+                "size_key": "",
+                "bar_width": 26,
+                "pie_inner": 46,
+                "pie_label": "name_pct",
+                "pie_start": 90,
+                "show_grid": true,
+                "show_labels": true,
+                "show_legend": true,
+                "label_format": "auto",
+                "label_layout": "inside",
+                "label_rotate": 0,
+                "scatter_mode": "point",
+                "single_slice": true,
+                "hbar_highlight": "violet",
+                "hbar_threshold_gte": null,
+                "hbar_threshold_key": ""
+              },
+              "combo": {
+                "smooth": true,
+                "bar_name": "",
+                "line_name": "",
+                "right_axis": true
+              },
+              "title": "热销指数",
+              "filter": {
+                "fields": [],
+                "inline": true
+              },
+              "layout": {
+                "h": 448,
+                "w": 728,
+                "x": 160,
+                "y": 136
+              },
+              "binding": {
+                "agg": "MAX",
+                "sort": "desc",
+                "grain": null,
+                "limit": 500,
+                "split": null,
+                "top_n": 10,
+                "metric": "热销指数",
+                "series": null,
+                "filters": [
+                  {
+                    "op": "=",
+                    "column": "平台",
+                    "valueFrom": "param:platform"
+                  },
+                  {
+                    "op": "=",
+                    "column": "品类",
+                    "valueFrom": "param:category"
+                  },
+                  {
+                    "op": "=",
+                    "column": "榜单",
+                    "valueFrom": "param:board"
+                  },
+                  {
+                    "op": "=",
+                    "column": "价格带",
+                    "valueFrom": "param:band"
+                  },
+                  {
+                    "op": "ILIKE",
+                    "column": "搜索文本",
+                    "valueFrom": "param:q"
+                  }
+                ],
+                "metrics": [],
+                "dimension": "商品标题",
+                "dataset_id": 2,
+                "dimensions": []
+              },
+              "compute": {
+                "hint": "avg_topn",
+                "scale": 1,
+                "format": "int",
+                "offset": 0,
+                "prefix": "",
+                "suffix": "",
+                "decimals": 0,
+                "headline": "max",
+                "transform": "raw",
+                "bucket_size": null,
+                "bucket_count": 0,
+                "bucket_start": null
+              },
+              "content": {
+                "icon": "",
+                "text": "",
+                "index": "",
+                "items": []
+              },
+              "subtitle": "",
+              "table_view": {
+                "more": true,
+                "columns": [],
+                "sortable": false,
+                "page_size": 10,
+                "more_label": "",
+                "index_column": true
+              }
+            },
+            "text": "",
+            "type": "chart",
+            "align": "left",
+            "index": "",
+            "title": "",
+            "action": {
+              "spec": {
+                "ui": {
+                  "align": "left",
+                  "badge": "",
+                  "accent": "indigo",
+                  "radius": 14,
+                  "animate": true,
+                  "columns": 1,
+                  "show_unit": true,
+                  "min_height": 520
+                },
+                "rank": {
+                  "order": "value",
+                  "x_key": "",
+                  "y_key": "",
+                  "cvr_key": "",
+                  "weights": {},
+                  "tags_key": "",
+                  "max_items": 10,
+                  "show_rank": true,
+                  "show_tags": false,
+                  "value_key": "",
+                  "show_score": false
+                },
+                "unit": "",
+                "chart": {
+                  "log_x": false,
+                  "log_y": false,
+                  "x_key": "",
+                  "y_key": "",
+                  "y_max": null,
+                  "y_min": null,
+                  "smooth": true,
+                  "pie_gap": true,
+                  "x_title": "",
+                  "y_title": "",
+                  "pie_rose": false,
+                  "size_key": "",
+                  "bar_width": 26,
+                  "pie_inner": 46,
+                  "pie_label": "name_pct",
+                  "pie_start": 90,
+                  "show_grid": true,
+                  "show_labels": true,
+                  "show_legend": true,
+                  "label_format": "auto",
+                  "label_layout": "inside",
+                  "label_rotate": 0,
+                  "scatter_mode": "point",
+                  "single_slice": true,
+                  "hbar_highlight": "violet",
+                  "hbar_threshold_gte": null,
+                  "hbar_threshold_key": ""
+                },
+                "combo": {
+                  "smooth": true,
+                  "bar_name": "",
+                  "line_name": "",
+                  "right_axis": true
+                },
+                "title": "TOP10",
+                "filter": {
+                  "fields": [],
+                  "inline": true
+                },
+                "layout": {
+                  "h": 320,
+                  "w": 520,
+                  "x": 40,
+                  "y": 56
+                },
+                "binding": {
+                  "agg": "SUM",
+                  "sort": "desc",
+                  "grain": null,
+                  "limit": 200,
+                  "split": null,
+                  "top_n": 10,
+                  "metric": "日销量",
+                  "series": null,
+                  "filters": [
+                    {
+                      "op": "=",
+                      "column": "平台",
+                      "valueFrom": "param:platform"
+                    },
+                    {
+                      "op": "=",
+                      "column": "品类",
+                      "valueFrom": "param:category"
+                    },
+                    {
+                      "op": "=",
+                      "column": "榜单",
+                      "valueFrom": "param:board"
+                    },
+                    {
+                      "op": "=",
+                      "column": "价格带",
+                      "valueFrom": "param:band"
+                    },
+                    {
+                      "op": "ILIKE",
+                      "column": "搜索文本",
+                      "valueFrom": "param:q"
+                    }
+                  ],
+                  "metrics": [],
+                  "dimension": "商品标题",
+                  "dataset_id": 2,
+                  "dimensions": []
+                },
+                "compute": {
+                  "hint": "none",
+                  "scale": 1,
+                  "format": "int",
+                  "offset": 0,
+                  "prefix": "",
+                  "suffix": "",
+                  "decimals": 0,
+                  "headline": "first",
+                  "transform": "raw",
+                  "bucket_size": null,
+                  "bucket_count": 0,
+                  "bucket_start": null
+                },
+                "content": {
+                  "icon": "",
+                  "text": "",
+                  "index": "",
+                  "items": []
+                },
+                "subtitle": "",
+                "table_view": {
+                  "more": true,
+                  "columns": [],
+                  "sortable": false,
+                  "page_size": 10,
+                  "more_label": "",
+                  "index_column": true
+                }
+              },
+              "type": "modal",
+              "title": "热销指数 TOP10",
+              "params": {},
+              "component": "base.rank_list",
+              "overrides": {
+                "title": "热销指数 TOP10",
+                "binding": {
+                  "metric": "热销指数"
+                }
+              }
+            },
+            "layout": {
+              "h": 112,
+              "w": 223,
+              "x": 251,
+              "y": 180
+            },
+            "weight": 400,
+            "component": "base.kpi",
+            "row_action": null
+          },
+          {
+            "h": 112,
+            "key": "kpi_rank",
+            "icon": "",
+            "note": "",
+            "size": 13,
+            "span": 2,
+            "spec": {
+              "ui": {
+                "align": "left",
+                "badge": "TOP10",
+                "accent": "teal",
+                "radius": 14,
+                "animate": false,
+                "columns": 1,
+                "show_unit": true,
+                "min_height": 104
+              },
+              "rank": {
+                "order": "value",
+                "x_key": "",
+                "y_key": "",
+                "cvr_key": "",
+                "weights": {},
+                "tags_key": "",
+                "max_items": 10,
+                "show_rank": true,
+                "show_tags": false,
+                "value_key": "",
+                "show_score": false
+              },
+              "unit": "名",
+              "chart": {
+                "log_x": false,
+                "log_y": false,
+                "x_key": "",
+                "y_key": "",
+                "y_max": null,
+                "y_min": null,
+                "smooth": true,
+                "pie_gap": true,
+                "x_title": "",
+                "y_title": "",
+                "pie_rose": false,
+                "size_key": "",
+                "bar_width": 26,
+                "pie_inner": 46,
+                "pie_label": "name_pct",
+                "pie_start": 90,
+                "show_grid": true,
+                "show_labels": true,
+                "show_legend": true,
+                "label_format": "auto",
+                "label_layout": "inside",
+                "label_rotate": 0,
+                "scatter_mode": "point",
+                "single_slice": true,
+                "hbar_highlight": "violet",
+                "hbar_threshold_gte": null,
+                "hbar_threshold_key": ""
+              },
+              "combo": {
+                "smooth": true,
+                "bar_name": "",
+                "line_name": "",
+                "right_axis": true
+              },
+              "title": "榜单排名",
+              "filter": {
+                "fields": [],
+                "inline": true
+              },
+              "layout": {
+                "h": 260,
+                "w": 420,
+                "x": 40,
+                "y": 40
+              },
+              "binding": {
+                "agg": "MIN",
+                "sort": "asc",
+                "grain": null,
+                "limit": 500,
+                "split": null,
+                "top_n": 10,
+                "metric": "榜单排名",
+                "series": null,
+                "filters": [
+                  {
+                    "op": "=",
+                    "column": "平台",
+                    "valueFrom": "param:platform"
+                  },
+                  {
+                    "op": "=",
+                    "column": "品类",
+                    "valueFrom": "param:category"
+                  },
+                  {
+                    "op": "=",
+                    "column": "榜单",
+                    "valueFrom": "param:board"
+                  },
+                  {
+                    "op": "=",
+                    "column": "价格带",
+                    "valueFrom": "param:band"
+                  },
+                  {
+                    "op": "ILIKE",
+                    "column": "搜索文本",
+                    "valueFrom": "param:q"
+                  }
+                ],
+                "metrics": [],
+                "dimension": "商品标题",
+                "dataset_id": 2,
+                "dimensions": []
+              },
+              "compute": {
+                "hint": "count_topn",
+                "scale": 1,
+                "format": "int",
+                "offset": 0,
+                "prefix": "",
+                "suffix": "",
+                "decimals": 0,
+                "headline": "min",
+                "transform": "raw",
+                "bucket_size": null,
+                "bucket_count": 0,
+                "bucket_start": null
+              },
+              "content": {
+                "icon": "",
+                "text": "",
+                "index": "",
+                "items": []
+              },
+              "subtitle": "",
+              "table_view": {
+                "more": true,
+                "columns": [],
+                "sortable": false,
+                "page_size": 10,
+                "more_label": "",
+                "index_column": true
+              }
+            },
+            "text": "",
+            "type": "chart",
+            "align": "left",
+            "index": "",
+            "title": "",
+            "action": {
+              "spec": {
+                "ui": {
+                  "align": "left",
+                  "badge": "",
+                  "accent": "indigo",
+                  "radius": 14,
+                  "animate": true,
+                  "columns": 1,
+                  "show_unit": true,
+                  "min_height": 520
+                },
+                "rank": {
+                  "order": "value",
+                  "x_key": "",
+                  "y_key": "",
+                  "cvr_key": "",
+                  "weights": {},
+                  "tags_key": "",
+                  "max_items": 10,
+                  "show_rank": true,
+                  "show_tags": false,
+                  "value_key": "",
+                  "show_score": false
+                },
+                "unit": "",
+                "chart": {
+                  "log_x": false,
+                  "log_y": false,
+                  "x_key": "",
+                  "y_key": "",
+                  "y_max": null,
+                  "y_min": null,
+                  "smooth": true,
+                  "pie_gap": true,
+                  "x_title": "",
+                  "y_title": "",
+                  "pie_rose": false,
+                  "size_key": "",
+                  "bar_width": 26,
+                  "pie_inner": 46,
+                  "pie_label": "name_pct",
+                  "pie_start": 90,
+                  "show_grid": true,
+                  "show_labels": true,
+                  "show_legend": true,
+                  "label_format": "auto",
+                  "label_layout": "inside",
+                  "label_rotate": 0,
+                  "scatter_mode": "point",
+                  "single_slice": true,
+                  "hbar_highlight": "violet",
+                  "hbar_threshold_gte": null,
+                  "hbar_threshold_key": ""
+                },
+                "combo": {
+                  "smooth": true,
+                  "bar_name": "",
+                  "line_name": "",
+                  "right_axis": true
+                },
+                "title": "TOP10",
+                "filter": {
+                  "fields": [],
+                  "inline": true
+                },
+                "layout": {
+                  "h": 320,
+                  "w": 520,
+                  "x": 40,
+                  "y": 56
+                },
+                "binding": {
+                  "agg": "SUM",
+                  "sort": "desc",
+                  "grain": null,
+                  "limit": 200,
+                  "split": null,
+                  "top_n": 10,
+                  "metric": "日销量",
+                  "series": null,
+                  "filters": [
+                    {
+                      "op": "=",
+                      "column": "平台",
+                      "valueFrom": "param:platform"
+                    },
+                    {
+                      "op": "=",
+                      "column": "品类",
+                      "valueFrom": "param:category"
+                    },
+                    {
+                      "op": "=",
+                      "column": "榜单",
+                      "valueFrom": "param:board"
+                    },
+                    {
+                      "op": "=",
+                      "column": "价格带",
+                      "valueFrom": "param:band"
+                    },
+                    {
+                      "op": "ILIKE",
+                      "column": "搜索文本",
+                      "valueFrom": "param:q"
+                    }
+                  ],
+                  "metrics": [],
+                  "dimension": "商品标题",
+                  "dataset_id": 2,
+                  "dimensions": []
+                },
+                "compute": {
+                  "hint": "none",
+                  "scale": 1,
+                  "format": "int",
+                  "offset": 0,
+                  "prefix": "",
+                  "suffix": "",
+                  "decimals": 0,
+                  "headline": "first",
+                  "transform": "raw",
+                  "bucket_size": null,
+                  "bucket_count": 0,
+                  "bucket_start": null
+                },
+                "content": {
+                  "icon": "",
+                  "text": "",
+                  "index": "",
+                  "items": []
+                },
+                "subtitle": "",
+                "table_view": {
+                  "more": true,
+                  "columns": [],
+                  "sortable": false,
+                  "page_size": 10,
+                  "more_label": "",
+                  "index_column": true
+                }
+              },
+              "type": "modal",
+              "title": "榜单排名 TOP10",
+              "params": {},
+              "component": "base.rank_list",
+              "overrides": {
+                "title": "榜单排名 TOP10",
+                "binding": {
+                  "sort": "asc",
+                  "metric": "榜单排名"
+                }
+              }
+            },
+            "layout": {
+              "h": 112,
+              "w": 223,
+              "x": 489,
+              "y": 180
+            },
+            "weight": 400,
+            "component": "base.kpi",
+            "row_action": null
+          },
+          {
+            "h": 112,
+            "key": "kpi_days",
+            "icon": "",
+            "note": "",
+            "size": 13,
+            "span": 2,
+            "spec": {
+              "ui": {
+                "align": "left",
+                "badge": "TOP10",
+                "accent": "violet",
+                "radius": 14,
+                "animate": false,
+                "columns": 1,
+                "show_unit": true,
+                "min_height": 104
+              },
+              "rank": {
+                "order": "value",
+                "x_key": "",
+                "y_key": "",
+                "cvr_key": "",
+                "weights": {},
+                "tags_key": "",
+                "max_items": 10,
+                "show_rank": true,
+                "show_tags": false,
+                "value_key": "",
+                "show_score": false
+              },
+              "unit": "天",
+              "chart": {
+                "log_x": false,
+                "log_y": false,
+                "x_key": "",
+                "y_key": "",
+                "y_max": null,
+                "y_min": null,
+                "smooth": true,
+                "pie_gap": true,
+                "x_title": "",
+                "y_title": "",
+                "pie_rose": false,
+                "size_key": "",
+                "bar_width": 26,
+                "pie_inner": 46,
+                "pie_label": "name_pct",
+                "pie_start": 90,
+                "show_grid": true,
+                "show_labels": true,
+                "show_legend": true,
+                "label_format": "auto",
+                "label_layout": "inside",
+                "label_rotate": 0,
+                "scatter_mode": "point",
+                "single_slice": true,
+                "hbar_highlight": "violet",
+                "hbar_threshold_gte": null,
+                "hbar_threshold_key": ""
+              },
+              "combo": {
+                "smooth": true,
+                "bar_name": "",
+                "line_name": "",
+                "right_axis": true
+              },
+              "title": "霸榜天数",
+              "filter": {
+                "fields": [],
+                "inline": true
+              },
+              "layout": {
+                "h": 260,
+                "w": 420,
+                "x": 40,
+                "y": 40
+              },
+              "binding": {
+                "agg": "MAX",
+                "sort": "desc",
+                "grain": null,
+                "limit": 500,
+                "split": null,
+                "top_n": 10,
+                "metric": "霸榜天数",
+                "series": null,
+                "filters": [
+                  {
+                    "op": "=",
+                    "column": "平台",
+                    "valueFrom": "param:platform"
+                  },
+                  {
+                    "op": "=",
+                    "column": "品类",
+                    "valueFrom": "param:category"
+                  },
+                  {
+                    "op": "=",
+                    "column": "榜单",
+                    "valueFrom": "param:board"
+                  },
+                  {
+                    "op": "=",
+                    "column": "价格带",
+                    "valueFrom": "param:band"
+                  },
+                  {
+                    "op": "ILIKE",
+                    "column": "搜索文本",
+                    "valueFrom": "param:q"
+                  }
+                ],
+                "metrics": [],
+                "dimension": "商品标题",
+                "dataset_id": 2,
+                "dimensions": []
+              },
+              "compute": {
+                "hint": "avg_topn",
+                "scale": 1,
+                "format": "int",
+                "offset": 0,
+                "prefix": "",
+                "suffix": "",
+                "decimals": 0,
+                "headline": "max",
+                "transform": "raw",
+                "bucket_size": null,
+                "bucket_count": 0,
+                "bucket_start": null
+              },
+              "content": {
+                "icon": "",
+                "text": "",
+                "index": "",
+                "items": []
+              },
+              "subtitle": "",
+              "table_view": {
+                "more": true,
+                "columns": [],
+                "sortable": false,
+                "page_size": 10,
+                "more_label": "",
+                "index_column": true
+              }
+            },
+            "text": "",
+            "type": "chart",
+            "align": "left",
+            "index": "",
+            "title": "",
+            "action": {
+              "spec": {
+                "ui": {
+                  "align": "left",
+                  "badge": "",
+                  "accent": "indigo",
+                  "radius": 14,
+                  "animate": true,
+                  "columns": 1,
+                  "show_unit": true,
+                  "min_height": 520
+                },
+                "rank": {
+                  "order": "value",
+                  "x_key": "",
+                  "y_key": "",
+                  "cvr_key": "",
+                  "weights": {},
+                  "tags_key": "",
+                  "max_items": 10,
+                  "show_rank": true,
+                  "show_tags": false,
+                  "value_key": "",
+                  "show_score": false
+                },
+                "unit": "",
+                "chart": {
+                  "log_x": false,
+                  "log_y": false,
+                  "x_key": "",
+                  "y_key": "",
+                  "y_max": null,
+                  "y_min": null,
+                  "smooth": true,
+                  "pie_gap": true,
+                  "x_title": "",
+                  "y_title": "",
+                  "pie_rose": false,
+                  "size_key": "",
+                  "bar_width": 26,
+                  "pie_inner": 46,
+                  "pie_label": "name_pct",
+                  "pie_start": 90,
+                  "show_grid": true,
+                  "show_labels": true,
+                  "show_legend": true,
+                  "label_format": "auto",
+                  "label_layout": "inside",
+                  "label_rotate": 0,
+                  "scatter_mode": "point",
+                  "single_slice": true,
+                  "hbar_highlight": "violet",
+                  "hbar_threshold_gte": null,
+                  "hbar_threshold_key": ""
+                },
+                "combo": {
+                  "smooth": true,
+                  "bar_name": "",
+                  "line_name": "",
+                  "right_axis": true
+                },
+                "title": "TOP10",
+                "filter": {
+                  "fields": [],
+                  "inline": true
+                },
+                "layout": {
+                  "h": 320,
+                  "w": 520,
+                  "x": 40,
+                  "y": 56
+                },
+                "binding": {
+                  "agg": "SUM",
+                  "sort": "desc",
+                  "grain": null,
+                  "limit": 200,
+                  "split": null,
+                  "top_n": 10,
+                  "metric": "日销量",
+                  "series": null,
+                  "filters": [
+                    {
+                      "op": "=",
+                      "column": "平台",
+                      "valueFrom": "param:platform"
+                    },
+                    {
+                      "op": "=",
+                      "column": "品类",
+                      "valueFrom": "param:category"
+                    },
+                    {
+                      "op": "=",
+                      "column": "榜单",
+                      "valueFrom": "param:board"
+                    },
+                    {
+                      "op": "=",
+                      "column": "价格带",
+                      "valueFrom": "param:band"
+                    },
+                    {
+                      "op": "ILIKE",
+                      "column": "搜索文本",
+                      "valueFrom": "param:q"
+                    }
+                  ],
+                  "metrics": [],
+                  "dimension": "商品标题",
+                  "dataset_id": 2,
+                  "dimensions": []
+                },
+                "compute": {
+                  "hint": "none",
+                  "scale": 1,
+                  "format": "int",
+                  "offset": 0,
+                  "prefix": "",
+                  "suffix": "",
+                  "decimals": 0,
+                  "headline": "first",
+                  "transform": "raw",
+                  "bucket_size": null,
+                  "bucket_count": 0,
+                  "bucket_start": null
+                },
+                "content": {
+                  "icon": "",
+                  "text": "",
+                  "index": "",
+                  "items": []
+                },
+                "subtitle": "",
+                "table_view": {
+                  "more": true,
+                  "columns": [],
+                  "sortable": false,
+                  "page_size": 10,
+                  "more_label": "",
+                  "index_column": true
+                }
+              },
+              "type": "modal",
+              "title": "霸榜天数 TOP10",
+              "params": {},
+              "component": "base.rank_list",
+              "overrides": {
+                "title": "霸榜天数 TOP10",
+                "binding": {
+                  "metric": "霸榜天数"
+                }
+              }
+            },
+            "layout": {
+              "h": 112,
+              "w": 223,
+              "x": 728,
+              "y": 180
+            },
+            "weight": 400,
+            "component": "base.kpi",
+            "row_action": null
+          },
+          {
+            "h": 112,
+            "key": "kpi_band",
+            "icon": "",
+            "note": "",
+            "size": 13,
+            "span": 2,
+            "spec": {
+              "ui": {
+                "align": "left",
+                "badge": "TOP10",
+                "accent": "rose",
+                "radius": 14,
+                "animate": false,
+                "columns": 1,
+                "show_unit": true,
+                "min_height": 104
+              },
+              "rank": {
+                "order": "value",
+                "x_key": "",
+                "y_key": "",
+                "cvr_key": "",
+                "weights": {},
+                "tags_key": "",
+                "max_items": 10,
+                "show_rank": true,
+                "show_tags": false,
+                "value_key": "",
+                "show_score": false
+              },
+              "unit": "",
+              "chart": {
+                "log_x": false,
+                "log_y": false,
+                "x_key": "",
+                "y_key": "",
+                "y_max": null,
+                "y_min": null,
+                "smooth": true,
+                "pie_gap": true,
+                "x_title": "",
+                "y_title": "",
+                "pie_rose": false,
+                "size_key": "",
+                "bar_width": 26,
+                "pie_inner": 46,
+                "pie_label": "name_pct",
+                "pie_start": 90,
+                "show_grid": true,
+                "show_labels": true,
+                "show_legend": true,
+                "label_format": "auto",
+                "label_layout": "inside",
+                "label_rotate": 0,
+                "scatter_mode": "point",
+                "single_slice": true,
+                "hbar_highlight": "violet",
+                "hbar_threshold_gte": null,
+                "hbar_threshold_key": ""
+              },
+              "combo": {
+                "smooth": true,
+                "bar_name": "",
+                "line_name": "",
+                "right_axis": true
+              },
+              "title": "价格带",
+              "filter": {
+                "fields": [],
+                "inline": true
+              },
+              "layout": {
+                "h": 260,
+                "w": 420,
+                "x": 40,
+                "y": 40
+              },
+              "binding": {
+                "agg": "SUM",
+                "sort": "desc",
+                "grain": null,
+                "limit": 500,
+                "split": null,
+                "top_n": 6,
+                "metric": "日销量",
+                "series": null,
+                "filters": [
+                  {
+                    "op": "=",
+                    "column": "平台",
+                    "valueFrom": "param:platform"
+                  },
+                  {
+                    "op": "=",
+                    "column": "品类",
+                    "valueFrom": "param:category"
+                  },
+                  {
+                    "op": "=",
+                    "column": "榜单",
+                    "valueFrom": "param:board"
+                  },
+                  {
+                    "op": "=",
+                    "column": "价格带",
+                    "valueFrom": "param:band"
+                  },
+                  {
+                    "op": "ILIKE",
+                    "column": "搜索文本",
+                    "valueFrom": "param:q"
+                  }
+                ],
+                "metrics": [],
+                "dimension": "价格带",
+                "dataset_id": 2,
+                "dimensions": []
+              },
+              "compute": {
+                "hint": "none",
+                "scale": 1,
+                "format": "text",
+                "offset": 0,
+                "prefix": "",
+                "suffix": "",
+                "decimals": 0,
+                "headline": "mode",
+                "transform": "raw",
+                "bucket_size": null,
+                "bucket_count": 0,
+                "bucket_start": null
+              },
+              "content": {
+                "icon": "",
+                "text": "",
+                "index": "",
+                "items": []
+              },
+              "subtitle": "",
+              "table_view": {
+                "more": true,
+                "columns": [],
+                "sortable": false,
+                "page_size": 10,
+                "more_label": "",
+                "index_column": true
+              }
+            },
+            "text": "",
+            "type": "chart",
+            "align": "left",
+            "index": "",
+            "title": "",
+            "action": {
+              "spec": {
+                "ui": {
+                  "align": "left",
+                  "badge": "",
+                  "accent": "indigo",
+                  "radius": 14,
+                  "animate": true,
+                  "columns": 1,
+                  "show_unit": true,
+                  "min_height": 520
+                },
+                "rank": {
+                  "order": "value",
+                  "x_key": "",
+                  "y_key": "",
+                  "cvr_key": "",
+                  "weights": {},
+                  "tags_key": "",
+                  "max_items": 10,
+                  "show_rank": true,
+                  "show_tags": false,
+                  "value_key": "",
+                  "show_score": false
+                },
+                "unit": "",
+                "chart": {
+                  "log_x": false,
+                  "log_y": false,
+                  "x_key": "",
+                  "y_key": "",
+                  "y_max": null,
+                  "y_min": null,
+                  "smooth": true,
+                  "pie_gap": true,
+                  "x_title": "",
+                  "y_title": "",
+                  "pie_rose": false,
+                  "size_key": "",
+                  "bar_width": 26,
+                  "pie_inner": 46,
+                  "pie_label": "name_pct",
+                  "pie_start": 90,
+                  "show_grid": true,
+                  "show_labels": true,
+                  "show_legend": true,
+                  "label_format": "auto",
+                  "label_layout": "inside",
+                  "label_rotate": 0,
+                  "scatter_mode": "point",
+                  "single_slice": true,
+                  "hbar_highlight": "violet",
+                  "hbar_threshold_gte": null,
+                  "hbar_threshold_key": ""
+                },
+                "combo": {
+                  "smooth": true,
+                  "bar_name": "",
+                  "line_name": "",
+                  "right_axis": true
+                },
+                "title": "TOP10",
+                "filter": {
+                  "fields": [],
+                  "inline": true
+                },
+                "layout": {
+                  "h": 320,
+                  "w": 520,
+                  "x": 40,
+                  "y": 56
+                },
+                "binding": {
+                  "agg": "SUM",
+                  "sort": "desc",
+                  "grain": null,
+                  "limit": 200,
+                  "split": null,
+                  "top_n": 10,
+                  "metric": "日销量",
+                  "series": null,
+                  "filters": [
+                    {
+                      "op": "=",
+                      "column": "平台",
+                      "valueFrom": "param:platform"
+                    },
+                    {
+                      "op": "=",
+                      "column": "品类",
+                      "valueFrom": "param:category"
+                    },
+                    {
+                      "op": "=",
+                      "column": "榜单",
+                      "valueFrom": "param:board"
+                    },
+                    {
+                      "op": "=",
+                      "column": "价格带",
+                      "valueFrom": "param:band"
+                    },
+                    {
+                      "op": "ILIKE",
+                      "column": "搜索文本",
+                      "valueFrom": "param:q"
+                    }
+                  ],
+                  "metrics": [],
+                  "dimension": "商品标题",
+                  "dataset_id": 2,
+                  "dimensions": []
+                },
+                "compute": {
+                  "hint": "none",
+                  "scale": 1,
+                  "format": "int",
+                  "offset": 0,
+                  "prefix": "",
+                  "suffix": "",
+                  "decimals": 0,
+                  "headline": "first",
+                  "transform": "raw",
+                  "bucket_size": null,
+                  "bucket_count": 0,
+                  "bucket_start": null
+                },
+                "content": {
+                  "icon": "",
+                  "text": "",
+                  "index": "",
+                  "items": []
+                },
+                "subtitle": "",
+                "table_view": {
+                  "more": true,
+                  "columns": [],
+                  "sortable": false,
+                  "page_size": 10,
+                  "more_label": "",
+                  "index_column": true
+                }
+              },
+              "type": "modal",
+              "title": "价格带分布",
+              "params": {},
+              "component": "base.rank_list",
+              "overrides": {
+                "title": "价格带分布",
+                "binding": {
+                  "metric": "日销量",
+                  "dimension": "价格带"
+                }
+              }
+            },
+            "layout": {
+              "h": 112,
+              "w": 223,
+              "x": 967,
+              "y": 180
+            },
+            "weight": 400,
+            "component": "base.kpi",
+            "row_action": null
+          },
+          {
+            "h": 112,
+            "key": "kpi_listed",
+            "icon": "",
+            "note": "",
+            "size": 13,
+            "span": 2,
+            "spec": {
+              "ui": {
+                "align": "left",
+                "badge": "TOP10",
+                "accent": "sky",
+                "radius": 14,
+                "animate": false,
+                "columns": 1,
+                "show_unit": true,
+                "min_height": 104
+              },
+              "rank": {
+                "order": "value",
+                "x_key": "",
+                "y_key": "",
+                "cvr_key": "",
+                "weights": {},
+                "tags_key": "",
+                "max_items": 10,
+                "show_rank": true,
+                "show_tags": false,
+                "value_key": "",
+                "show_score": false
+              },
+              "unit": "",
+              "chart": {
+                "log_x": false,
+                "log_y": false,
+                "x_key": "",
+                "y_key": "",
+                "y_max": null,
+                "y_min": null,
+                "smooth": true,
+                "pie_gap": true,
+                "x_title": "",
+                "y_title": "",
+                "pie_rose": false,
+                "size_key": "",
+                "bar_width": 26,
+                "pie_inner": 46,
+                "pie_label": "name_pct",
+                "pie_start": 90,
+                "show_grid": true,
+                "show_labels": true,
+                "show_legend": true,
+                "label_format": "auto",
+                "label_layout": "inside",
+                "label_rotate": 0,
+                "scatter_mode": "point",
+                "single_slice": true,
+                "hbar_highlight": "violet",
+                "hbar_threshold_gte": null,
+                "hbar_threshold_key": ""
+              },
+              "combo": {
+                "smooth": true,
+                "bar_name": "",
+                "line_name": "",
+                "right_axis": true
+              },
+              "title": "上架时间",
+              "filter": {
+                "fields": [],
+                "inline": true
+              },
+              "layout": {
+                "h": 260,
+                "w": 420,
+                "x": 40,
+                "y": 40
+              },
+              "binding": {
+                "agg": "SUM",
+                "sort": "desc",
+                "grain": null,
+                "limit": 500,
+                "split": null,
+                "top_n": 1,
+                "metric": null,
+                "series": null,
+                "filters": [
+                  {
+                    "op": "=",
+                    "column": "平台",
+                    "valueFrom": "param:platform"
+                  },
+                  {
+                    "op": "=",
+                    "column": "品类",
+                    "valueFrom": "param:category"
+                  },
+                  {
+                    "op": "=",
+                    "column": "榜单",
+                    "valueFrom": "param:board"
+                  },
+                  {
+                    "op": "=",
+                    "column": "价格带",
+                    "valueFrom": "param:band"
+                  },
+                  {
+                    "op": "ILIKE",
+                    "column": "搜索文本",
+                    "valueFrom": "param:q"
+                  }
+                ],
+                "metrics": [],
+                "dimension": "上架时间",
+                "dataset_id": 2,
+                "dimensions": []
+              },
+              "compute": {
+                "hint": "none",
+                "scale": 1,
+                "format": "date",
+                "offset": 0,
+                "prefix": "",
+                "suffix": "",
+                "decimals": 0,
+                "headline": "latest",
+                "transform": "raw",
+                "bucket_size": null,
+                "bucket_count": 0,
+                "bucket_start": null
+              },
+              "content": {
+                "icon": "",
+                "text": "",
+                "index": "",
+                "items": []
+              },
+              "subtitle": "",
+              "table_view": {
+                "more": true,
+                "columns": [],
+                "sortable": false,
+                "page_size": 10,
+                "more_label": "",
+                "index_column": true
+              }
+            },
+            "text": "",
+            "type": "chart",
+            "align": "left",
+            "index": "",
+            "title": "",
+            "action": {
+              "spec": {
+                "ui": {
+                  "align": "left",
+                  "badge": "",
+                  "accent": "indigo",
+                  "radius": 14,
+                  "animate": true,
+                  "columns": 1,
+                  "show_unit": true,
+                  "min_height": 520
+                },
+                "rank": {
+                  "order": "value",
+                  "x_key": "",
+                  "y_key": "",
+                  "cvr_key": "",
+                  "weights": {},
+                  "tags_key": "",
+                  "max_items": 10,
+                  "show_rank": true,
+                  "show_tags": false,
+                  "value_key": "",
+                  "show_score": false
+                },
+                "unit": "",
+                "chart": {
+                  "log_x": false,
+                  "log_y": false,
+                  "x_key": "",
+                  "y_key": "",
+                  "y_max": null,
+                  "y_min": null,
+                  "smooth": true,
+                  "pie_gap": true,
+                  "x_title": "",
+                  "y_title": "",
+                  "pie_rose": false,
+                  "size_key": "",
+                  "bar_width": 26,
+                  "pie_inner": 46,
+                  "pie_label": "name_pct",
+                  "pie_start": 90,
+                  "show_grid": true,
+                  "show_labels": true,
+                  "show_legend": true,
+                  "label_format": "auto",
+                  "label_layout": "inside",
+                  "label_rotate": 0,
+                  "scatter_mode": "point",
+                  "single_slice": true,
+                  "hbar_highlight": "violet",
+                  "hbar_threshold_gte": null,
+                  "hbar_threshold_key": ""
+                },
+                "combo": {
+                  "smooth": true,
+                  "bar_name": "",
+                  "line_name": "",
+                  "right_axis": true
+                },
+                "title": "TOP10",
+                "filter": {
+                  "fields": [],
+                  "inline": true
+                },
+                "layout": {
+                  "h": 320,
+                  "w": 520,
+                  "x": 40,
+                  "y": 56
+                },
+                "binding": {
+                  "agg": "SUM",
+                  "sort": "desc",
+                  "grain": null,
+                  "limit": 200,
+                  "split": null,
+                  "top_n": 10,
+                  "metric": "日销量",
+                  "series": null,
+                  "filters": [
+                    {
+                      "op": "=",
+                      "column": "平台",
+                      "valueFrom": "param:platform"
+                    },
+                    {
+                      "op": "=",
+                      "column": "品类",
+                      "valueFrom": "param:category"
+                    },
+                    {
+                      "op": "=",
+                      "column": "榜单",
+                      "valueFrom": "param:board"
+                    },
+                    {
+                      "op": "=",
+                      "column": "价格带",
+                      "valueFrom": "param:band"
+                    },
+                    {
+                      "op": "ILIKE",
+                      "column": "搜索文本",
+                      "valueFrom": "param:q"
+                    }
+                  ],
+                  "metrics": [],
+                  "dimension": "商品标题",
+                  "dataset_id": 2,
+                  "dimensions": []
+                },
+                "compute": {
+                  "hint": "none",
+                  "scale": 1,
+                  "format": "int",
+                  "offset": 0,
+                  "prefix": "",
+                  "suffix": "",
+                  "decimals": 0,
+                  "headline": "first",
+                  "transform": "raw",
+                  "bucket_size": null,
+                  "bucket_count": 0,
+                  "bucket_start": null
+                },
+                "content": {
+                  "icon": "",
+                  "text": "",
+                  "index": "",
+                  "items": []
+                },
+                "subtitle": "",
+                "table_view": {
+                  "more": true,
+                  "columns": [],
+                  "sortable": false,
+                  "page_size": 10,
+                  "more_label": "",
+                  "index_column": true
+                }
+              },
+              "type": "modal",
+              "title": "最新上架",
+              "params": {},
+              "component": "base.rank_list",
+              "overrides": {
+                "title": "最新上架",
+                "binding": {
+                  "sort": "asc",
+                  "metric": "上架天数",
+                  "dimension": "商品标题"
+                }
+              }
+            },
+            "layout": {
+              "h": 112,
+              "w": 223,
+              "x": 1205,
+              "y": 180
+            },
+            "weight": 400,
+            "component": "base.kpi",
+            "row_action": null
+          },
+          {
+            "h": 60,
+            "key": "sec_structure",
+            "icon": "pie",
+            "note": "品类 / 品牌 / 价格带",
+            "size": 13,
+            "span": 12,
+            "spec": null,
+            "text": "二、榜单结构",
+            "type": "heading",
+            "align": "left",
+            "index": "二",
+            "title": "",
+            "action": null,
+            "layout": {
+              "h": 60,
+              "w": 1416,
+              "x": 12,
+              "y": 308
+            },
+            "weight": 400,
+            "component": "",
+            "row_action": null
+          },
+          {
+            "h": 368,
+            "key": "chart_cat",
+            "icon": "",
+            "note": "",
+            "size": 13,
+            "span": 4,
+            "spec": {
+              "ui": {
+                "align": "left",
+                "badge": "",
+                "accent": "amber",
+                "radius": 14,
+                "animate": true,
+                "columns": 1,
+                "show_unit": true,
+                "min_height": 300
+              },
+              "rank": {
+                "order": "value",
+                "x_key": "",
+                "y_key": "",
+                "cvr_key": "",
+                "weights": {},
+                "tags_key": "",
+                "max_items": 10,
+                "show_rank": true,
+                "show_tags": false,
+                "value_key": "",
+                "show_score": false
+              },
+              "unit": "",
+              "chart": {
+                "log_x": false,
+                "log_y": false,
+                "x_key": "",
+                "y_key": "",
+                "y_max": null,
+                "y_min": null,
+                "smooth": true,
+                "pie_gap": true,
+                "x_title": "",
+                "y_title": "",
+                "pie_rose": false,
+                "size_key": "",
+                "bar_width": 26,
+                "pie_inner": 46,
+                "pie_label": "name_pct",
+                "pie_start": 90,
+                "show_grid": true,
+                "show_labels": true,
+                "show_legend": true,
+                "label_format": "auto",
+                "label_layout": "outside",
+                "label_rotate": 0,
+                "scatter_mode": "point",
+                "single_slice": true,
+                "hbar_highlight": "violet",
+                "hbar_threshold_gte": null,
+                "hbar_threshold_key": ""
+              },
+              "combo": {
+                "smooth": true,
+                "bar_name": "",
+                "line_name": "",
+                "right_axis": true
+              },
+              "title": "热卖品类",
+              "filter": {
+                "fields": [],
+                "inline": true
+              },
+              "layout": {
+                "h": 320,
+                "w": 520,
+                "x": 40,
+                "y": 56
+              },
+              "binding": {
+                "agg": "SUM",
+                "sort": "desc",
+                "grain": null,
+                "limit": 500,
+                "split": null,
+                "top_n": 6,
+                "metric": "日销量",
+                "series": null,
+                "filters": [
+                  {
+                    "op": "=",
+                    "column": "平台",
+                    "valueFrom": "param:platform"
+                  },
+                  {
+                    "op": "=",
+                    "column": "品类",
+                    "valueFrom": "param:category"
+                  },
+                  {
+                    "op": "=",
+                    "column": "榜单",
+                    "valueFrom": "param:board"
+                  },
+                  {
+                    "op": "=",
+                    "column": "价格带",
+                    "valueFrom": "param:band"
+                  },
+                  {
+                    "op": "ILIKE",
+                    "column": "搜索文本",
+                    "valueFrom": "param:q"
+                  }
+                ],
+                "metrics": [],
+                "dimension": "品类",
+                "dataset_id": 2,
+                "dimensions": []
+              },
+              "compute": {
+                "hint": "none",
+                "scale": 1,
+                "format": "int",
+                "offset": 0,
+                "prefix": "",
+                "suffix": "",
+                "decimals": 0,
+                "headline": "first",
+                "transform": "raw",
+                "bucket_size": null,
+                "bucket_count": 0,
+                "bucket_start": null
+              },
+              "content": {
+                "icon": "",
+                "text": "",
+                "index": "",
+                "items": []
+              },
+              "subtitle": "按日销量",
+              "table_view": {
+                "more": true,
+                "columns": [],
+                "sortable": false,
+                "page_size": 10,
+                "more_label": "",
+                "index_column": true
+              }
+            },
+            "text": "",
+            "type": "chart",
+            "align": "left",
+            "index": "",
+            "title": "",
+            "action": null,
+            "layout": {
+              "h": 368,
+              "w": 461,
+              "x": 12,
+              "y": 384
+            },
+            "weight": 400,
+            "component": "base.pie",
+            "row_action": null
+          },
+          {
+            "h": 360,
+            "key": "chart_brand",
+            "icon": "",
+            "note": "",
+            "size": 13,
+            "span": 4,
+            "spec": {
+              "ui": {
+                "align": "left",
+                "badge": "",
+                "accent": "indigo",
+                "radius": 14,
+                "animate": true,
+                "columns": 1,
+                "show_unit": true,
+                "min_height": 300
+              },
+              "rank": {
+                "order": "value",
+                "x_key": "",
+                "y_key": "",
+                "cvr_key": "",
+                "weights": {},
+                "tags_key": "",
+                "max_items": 10,
+                "show_rank": true,
+                "show_tags": false,
+                "value_key": "",
+                "show_score": false
+              },
+              "unit": "",
+              "chart": {
+                "log_x": false,
+                "log_y": false,
+                "x_key": "",
+                "y_key": "",
+                "y_max": null,
+                "y_min": null,
+                "smooth": true,
+                "pie_gap": true,
+                "x_title": "",
+                "y_title": "",
+                "pie_rose": false,
+                "size_key": "",
+                "bar_width": 26,
+                "pie_inner": 46,
+                "pie_label": "name_pct",
+                "pie_start": 90,
+                "show_grid": true,
+                "show_labels": true,
+                "show_legend": true,
+                "label_format": "auto",
+                "label_layout": "inside",
+                "label_rotate": 0,
+                "scatter_mode": "point",
+                "single_slice": true,
+                "hbar_highlight": "violet",
+                "hbar_threshold_gte": null,
+                "hbar_threshold_key": ""
+              },
+              "combo": {
+                "smooth": true,
+                "bar_name": "",
+                "line_name": "",
+                "right_axis": true
+              },
+              "title": "品牌 TOP10",
+              "filter": {
+                "fields": [],
+                "inline": true
+              },
+              "layout": {
+                "h": 260,
+                "w": 420,
+                "x": 40,
+                "y": 40
+              },
+              "binding": {
+                "agg": "SUM",
+                "sort": "desc",
+                "grain": null,
+                "limit": 500,
+                "split": null,
+                "top_n": 10,
+                "metric": "日销量",
+                "series": null,
+                "filters": [
+                  {
+                    "op": "=",
+                    "column": "平台",
+                    "valueFrom": "param:platform"
+                  },
+                  {
+                    "op": "=",
+                    "column": "品类",
+                    "valueFrom": "param:category"
+                  },
+                  {
+                    "op": "=",
+                    "column": "榜单",
+                    "valueFrom": "param:board"
+                  },
+                  {
+                    "op": "=",
+                    "column": "价格带",
+                    "valueFrom": "param:band"
+                  },
+                  {
+                    "op": "ILIKE",
+                    "column": "搜索文本",
+                    "valueFrom": "param:q"
+                  }
+                ],
+                "metrics": [],
+                "dimension": "品牌",
+                "dataset_id": 2,
+                "dimensions": []
+              },
+              "compute": {
+                "hint": "none",
+                "scale": 1,
+                "format": "int",
+                "offset": 0,
+                "prefix": "",
+                "suffix": "",
+                "decimals": 0,
+                "headline": "first",
+                "transform": "raw",
+                "bucket_size": null,
+                "bucket_count": 0,
+                "bucket_start": null
+              },
+              "content": {
+                "icon": "",
+                "text": "",
+                "index": "",
+                "items": []
+              },
+              "subtitle": "按日销量",
+              "table_view": {
+                "more": true,
+                "columns": [],
+                "sortable": false,
+                "page_size": 10,
+                "more_label": "",
+                "index_column": true
+              }
+            },
+            "text": "",
+            "type": "chart",
+            "align": "left",
+            "index": "",
+            "title": "",
+            "action": null,
+            "layout": {
+              "h": 360,
+              "w": 461,
+              "x": 489,
+              "y": 384
+            },
+            "weight": 400,
+            "component": "base.bar",
+            "row_action": null
+          },
+          {
+            "h": 352,
+            "key": "chart_band",
+            "icon": "",
+            "note": "",
+            "size": 13,
+            "span": 4,
+            "spec": {
+              "ui": {
+                "align": "left",
+                "badge": "",
+                "accent": "sky",
+                "radius": 14,
+                "animate": true,
+                "columns": 1,
+                "show_unit": true,
+                "min_height": 300
+              },
+              "rank": {
+                "order": "value",
+                "x_key": "",
+                "y_key": "",
+                "cvr_key": "",
+                "weights": {},
+                "tags_key": "",
+                "max_items": 10,
+                "show_rank": true,
+                "show_tags": false,
+                "value_key": "",
+                "show_score": false
+              },
+              "unit": "",
+              "chart": {
+                "log_x": false,
+                "log_y": false,
+                "x_key": "",
+                "y_key": "",
+                "y_max": null,
+                "y_min": null,
+                "smooth": true,
+                "pie_gap": true,
+                "x_title": "",
+                "y_title": "",
+                "pie_rose": false,
+                "size_key": "",
+                "bar_width": 26,
+                "pie_inner": 46,
+                "pie_label": "name_pct",
+                "pie_start": 90,
+                "show_grid": true,
+                "show_labels": true,
+                "show_legend": true,
+                "label_format": "auto",
+                "label_layout": "inside",
+                "label_rotate": 0,
+                "scatter_mode": "point",
+                "single_slice": true,
+                "hbar_highlight": "violet",
+                "hbar_threshold_gte": null,
+                "hbar_threshold_key": ""
+              },
+              "combo": {
+                "smooth": true,
+                "bar_name": "平均日销量",
+                "line_name": "平均热销指数",
+                "right_axis": true
+              },
+              "title": "价格带 × 日销量",
+              "filter": {
+                "fields": [],
+                "inline": true
+              },
+              "layout": {
+                "h": 320,
+                "w": 520,
+                "x": 40,
+                "y": 56
+              },
+              "binding": {
+                "agg": "AVG",
+                "sort": "asc",
+                "grain": null,
+                "limit": 500,
+                "split": null,
+                "top_n": 8,
+                "metric": "日销量",
+                "series": null,
+                "filters": [
+                  {
+                    "op": "=",
+                    "column": "平台",
+                    "valueFrom": "param:platform"
+                  },
+                  {
+                    "op": "=",
+                    "column": "品类",
+                    "valueFrom": "param:category"
+                  },
+                  {
+                    "op": "=",
+                    "column": "榜单",
+                    "valueFrom": "param:board"
+                  },
+                  {
+                    "op": "=",
+                    "column": "价格带",
+                    "valueFrom": "param:band"
+                  },
+                  {
+                    "op": "ILIKE",
+                    "column": "搜索文本",
+                    "valueFrom": "param:q"
+                  }
+                ],
+                "metrics": [
+                  {
+                    "agg": "AVG",
+                    "name": "热销指数"
+                  }
+                ],
+                "dimension": "价格带",
+                "dataset_id": 2,
+                "dimensions": [],
+                "order_by_dimension": true
+              },
+              "compute": {
+                "hint": "none",
+                "scale": 1,
+                "format": "int",
+                "offset": 0,
+                "prefix": "",
+                "suffix": "",
+                "decimals": 0,
+                "headline": "first",
+                "transform": "raw",
+                "bucket_size": null,
+                "bucket_count": 0,
+                "bucket_start": null
+              },
+              "content": {
+                "icon": "",
+                "text": "",
+                "index": "",
+                "items": []
+              },
+              "subtitle": "柱=平均日销量 · 线=平均热销指数",
+              "table_view": {
+                "more": true,
+                "columns": [],
+                "sortable": false,
+                "page_size": 10,
+                "more_label": "",
+                "index_column": true
+              }
+            },
+            "text": "",
+            "type": "chart",
+            "align": "left",
+            "index": "",
+            "title": "",
+            "action": null,
+            "layout": {
+              "h": 352,
+              "w": 461,
+              "x": 967,
+              "y": 384
+            },
+            "weight": 400,
+            "component": "base.combo",
+            "row_action": null
+          },
+          {
+            "h": 60,
+            "key": "sec_detail",
+            "icon": "table",
+            "note": "按日销量排序 · 可搜可看全部",
+            "size": 13,
+            "span": 12,
+            "spec": null,
+            "text": "三、榜单明细",
+            "type": "heading",
+            "align": "left",
+            "index": "三",
+            "title": "",
+            "action": null,
+            "layout": {
+              "h": 60,
+              "w": 1416,
+              "x": 12,
+              "y": 768
+            },
+            "weight": 400,
+            "component": "",
+            "row_action": null
+          },
+          {
+            "h": 460,
+            "key": "table_detail",
+            "icon": "",
+            "note": "",
+            "size": 13,
+            "span": 12,
+            "spec": {
+              "ui": {
+                "align": "left",
+                "badge": "",
+                "accent": "slate",
+                "radius": 14,
+                "animate": true,
+                "columns": 1,
+                "show_unit": true,
+                "min_height": 460
+              },
+              "rank": {
+                "order": "value",
+                "x_key": "",
+                "y_key": "",
+                "cvr_key": "",
+                "weights": {},
+                "tags_key": "",
+                "max_items": 10,
+                "show_rank": true,
+                "show_tags": false,
+                "value_key": "",
+                "show_score": false
+              },
+              "unit": "",
+              "chart": {
+                "log_x": false,
+                "log_y": false,
+                "x_key": "",
+                "y_key": "",
+                "y_max": null,
+                "y_min": null,
+                "smooth": true,
+                "pie_gap": true,
+                "x_title": "",
+                "y_title": "",
+                "pie_rose": false,
+                "size_key": "",
+                "bar_width": 26,
+                "pie_inner": 46,
+                "pie_label": "name_pct",
+                "pie_start": 90,
+                "show_grid": true,
+                "show_labels": true,
+                "show_legend": true,
+                "label_format": "auto",
+                "label_layout": "inside",
+                "label_rotate": 0,
+                "scatter_mode": "point",
+                "single_slice": true,
+                "hbar_highlight": "violet",
+                "hbar_threshold_gte": null,
+                "hbar_threshold_key": ""
+              },
+              "combo": {
+                "smooth": true,
+                "bar_name": "",
+                "line_name": "",
+                "right_axis": true
+              },
+              "title": "榜单明细",
+              "filter": {
+                "fields": [],
+                "inline": true
+              },
+              "layout": {
+                "h": 260,
+                "w": 420,
+                "x": 40,
+                "y": 40
+              },
+              "binding": {
+                "agg": "SUM",
+                "sort": "desc",
+                "grain": null,
+                "limit": 500,
+                "split": null,
+                "top_n": 10,
+                "metric": "日销量",
+                "series": null,
+                "filters": [
+                  {
+                    "op": "=",
+                    "column": "平台",
+                    "valueFrom": "param:platform"
+                  },
+                  {
+                    "op": "=",
+                    "column": "品类",
+                    "valueFrom": "param:category"
+                  },
+                  {
+                    "op": "=",
+                    "column": "榜单",
+                    "valueFrom": "param:board"
+                  },
+                  {
+                    "op": "=",
+                    "column": "价格带",
+                    "valueFrom": "param:band"
+                  },
+                  {
+                    "op": "ILIKE",
+                    "column": "搜索文本",
+                    "valueFrom": "param:q"
+                  }
+                ],
+                "metrics": [
+                  {
+                    "agg": "AVG",
+                    "name": "均价"
+                  },
+                  {
+                    "agg": "MIN",
+                    "name": "榜单排名"
+                  },
+                  {
+                    "agg": "MAX",
+                    "name": "热销指数"
+                  },
+                  {
+                    "agg": "MAX",
+                    "name": "霸榜天数"
+                  },
+                  {
+                    "agg": "MAX",
+                    "name": "差评数"
+                  }
+                ],
+                "dimension": "商品标题",
+                "dataset_id": 2,
+                "dimensions": [
+                  "平台",
+                  "品牌",
+                  "价格带",
+                  "链接ID"
+                ]
+              },
+              "compute": {
+                "hint": "none",
+                "scale": 1,
+                "format": "int",
+                "offset": 0,
+                "prefix": "",
+                "suffix": "",
+                "decimals": 0,
+                "headline": "first",
+                "transform": "raw",
+                "bucket_size": null,
+                "bucket_count": 0,
+                "bucket_start": null
+              },
+              "content": {
+                "icon": "",
+                "text": "",
+                "index": "",
+                "items": []
+              },
+              "subtitle": "前 10 条",
+              "table_view": {
+                "more": true,
+                "columns": [
+                  {
+                    "key": "商品标题",
+                    "type": "text",
+                    "align": "left",
+                    "label": "商品标题",
+                    "width": 260
+                  },
+                  {
+                    "key": "平台",
+                    "type": "badge",
+                    "align": "center",
+                    "label": "平台",
+                    "width": 90
+                  },
+                  {
+                    "key": "品牌",
+                    "type": "text",
+                    "align": "left",
+                    "label": "品牌",
+                    "width": 100
+                  },
+                  {
+                    "key": "价格带",
+                    "type": "text",
+                    "align": "center",
+                    "label": "价格带",
+                    "width": 100
+                  },
+                  {
+                    "key": "均价",
+                    "type": "money",
+                    "align": "right",
+                    "label": "均价",
+                    "width": 90
+                  },
+                  {
+                    "key": "日销量",
+                    "type": "number",
+                    "align": "right",
+                    "label": "日销量",
+                    "width": 100
+                  },
+                  {
+                    "key": "榜单排名",
+                    "type": "rank",
+                    "align": "center",
+                    "label": "榜单排名",
+                    "width": 100
+                  },
+                  {
+                    "key": "热销指数",
+                    "type": "number",
+                    "align": "right",
+                    "label": "热销指数",
+                    "width": 100
+                  },
+                  {
+                    "key": "霸榜天数",
+                    "type": "number",
+                    "align": "right",
+                    "label": "霸榜天数",
+                    "width": 100
+                  },
+                  {
+                    "key": "差评数",
+                    "type": "number",
+                    "align": "right",
+                    "label": "差评数",
+                    "width": 90
+                  }
+                ],
+                "sortable": false,
+                "page_size": 10,
+                "more_label": "查看全部",
+                "index_column": true
+              }
+            },
+            "text": "",
+            "type": "chart",
+            "align": "left",
+            "index": "",
+            "title": "",
+            "action": {
+              "spec": {
+                "ui": {
+                  "align": "left",
+                  "badge": "",
+                  "accent": "slate",
+                  "radius": 14,
+                  "animate": true,
+                  "columns": 1,
+                  "show_unit": true,
+                  "min_height": 460
+                },
+                "rank": {
+                  "order": "value",
+                  "x_key": "",
+                  "y_key": "",
+                  "cvr_key": "",
+                  "weights": {},
+                  "tags_key": "",
+                  "max_items": 10,
+                  "show_rank": true,
+                  "show_tags": false,
+                  "value_key": "",
+                  "show_score": false
+                },
+                "unit": "",
+                "chart": {
+                  "log_x": false,
+                  "log_y": false,
+                  "x_key": "",
+                  "y_key": "",
+                  "y_max": null,
+                  "y_min": null,
+                  "smooth": true,
+                  "pie_gap": true,
+                  "x_title": "",
+                  "y_title": "",
+                  "pie_rose": false,
+                  "size_key": "",
+                  "bar_width": 26,
+                  "pie_inner": 46,
+                  "pie_label": "name_pct",
+                  "pie_start": 90,
+                  "show_grid": true,
+                  "show_labels": true,
+                  "show_legend": true,
+                  "label_format": "auto",
+                  "label_layout": "inside",
+                  "label_rotate": 0,
+                  "scatter_mode": "point",
+                  "single_slice": true,
+                  "hbar_highlight": "violet",
+                  "hbar_threshold_gte": null,
+                  "hbar_threshold_key": ""
+                },
+                "combo": {
+                  "smooth": true,
+                  "bar_name": "",
+                  "line_name": "",
+                  "right_axis": true
+                },
+                "title": "榜单明细",
+                "filter": {
+                  "fields": [],
+                  "inline": true
+                },
+                "layout": {
+                  "h": 260,
+                  "w": 420,
+                  "x": 40,
+                  "y": 40
+                },
+                "binding": {
+                  "agg": "SUM",
+                  "sort": "desc",
+                  "grain": null,
+                  "limit": 500,
+                  "split": null,
+                  "top_n": 10,
+                  "metric": "日销量",
+                  "series": null,
+                  "filters": [
+                    {
+                      "op": "=",
+                      "column": "平台",
+                      "valueFrom": "param:platform"
+                    },
+                    {
+                      "op": "=",
+                      "column": "品类",
+                      "valueFrom": "param:category"
+                    },
+                    {
+                      "op": "=",
+                      "column": "榜单",
+                      "valueFrom": "param:board"
+                    },
+                    {
+                      "op": "=",
+                      "column": "价格带",
+                      "valueFrom": "param:band"
+                    },
+                    {
+                      "op": "ILIKE",
+                      "column": "搜索文本",
+                      "valueFrom": "param:q"
+                    }
+                  ],
+                  "metrics": [
+                    {
+                      "agg": "AVG",
+                      "name": "均价"
+                    },
+                    {
+                      "agg": "MIN",
+                      "name": "榜单排名"
+                    },
+                    {
+                      "agg": "MAX",
+                      "name": "热销指数"
+                    },
+                    {
+                      "agg": "MAX",
+                      "name": "霸榜天数"
+                    },
+                    {
+                      "agg": "MAX",
+                      "name": "差评数"
+                    }
+                  ],
+                  "dimension": "商品标题",
+                  "dataset_id": 2,
+                  "dimensions": [
+                    "平台",
+                    "品牌",
+                    "价格带",
+                    "链接ID"
+                  ]
+                },
+                "compute": {
+                  "hint": "none",
+                  "scale": 1,
+                  "format": "int",
+                  "offset": 0,
+                  "prefix": "",
+                  "suffix": "",
+                  "decimals": 0,
+                  "headline": "first",
+                  "transform": "raw",
+                  "bucket_size": null,
+                  "bucket_count": 0,
+                  "bucket_start": null
+                },
+                "content": {
+                  "icon": "",
+                  "text": "",
+                  "index": "",
+                  "items": []
+                },
+                "subtitle": "前 10 条",
+                "table_view": {
+                  "more": true,
+                  "columns": [
+                    {
+                      "key": "商品标题",
+                      "type": "text",
+                      "align": "left",
+                      "label": "商品标题",
+                      "width": 260
+                    },
+                    {
+                      "key": "平台",
+                      "type": "badge",
+                      "align": "center",
+                      "label": "平台",
+                      "width": 90
+                    },
+                    {
+                      "key": "品牌",
+                      "type": "text",
+                      "align": "left",
+                      "label": "品牌",
+                      "width": 100
+                    },
+                    {
+                      "key": "价格带",
+                      "type": "text",
+                      "align": "center",
+                      "label": "价格带",
+                      "width": 100
+                    },
+                    {
+                      "key": "均价",
+                      "type": "money",
+                      "align": "right",
+                      "label": "均价",
+                      "width": 90
+                    },
+                    {
+                      "key": "日销量",
+                      "type": "number",
+                      "align": "right",
+                      "label": "日销量",
+                      "width": 100
+                    },
+                    {
+                      "key": "榜单排名",
+                      "type": "rank",
+                      "align": "center",
+                      "label": "榜单排名",
+                      "width": 100
+                    },
+                    {
+                      "key": "热销指数",
+                      "type": "number",
+                      "align": "right",
+                      "label": "热销指数",
+                      "width": 100
+                    },
+                    {
+                      "key": "霸榜天数",
+                      "type": "number",
+                      "align": "right",
+                      "label": "霸榜天数",
+                      "width": 100
+                    },
+                    {
+                      "key": "差评数",
+                      "type": "number",
+                      "align": "right",
+                      "label": "差评数",
+                      "width": 90
+                    }
+                  ],
+                  "sortable": false,
+                  "page_size": 10,
+                  "more_label": "查看全部",
+                  "index_column": true
+                }
+              },
+              "type": "modal",
+              "title": "全部在榜商品",
+              "params": {},
+              "component": "base.table",
+              "overrides": {
+                "title": "全部在榜商品",
+                "binding": {
+                  "limit": 999,
+                  "top_n": 999
+                },
+                "table_view": {
+                  "page_size": 50
+                }
+              }
+            },
+            "layout": {
+              "h": 460,
+              "w": 1416,
+              "x": 12,
+              "y": 844
+            },
+            "weight": 400,
+            "component": "base.table",
+            "row_action": {
+              "spec": {
+                "ui": {
+                  "align": "left",
+                  "badge": "",
+                  "accent": "slate",
+                  "radius": 14,
+                  "animate": true,
+                  "columns": 1,
+                  "show_unit": true,
+                  "min_height": 420
+                },
+                "rank": {
+                  "order": "value",
+                  "x_key": "",
+                  "y_key": "",
+                  "cvr_key": "",
+                  "weights": {},
+                  "tags_key": "",
+                  "max_items": 10,
+                  "show_rank": true,
+                  "show_tags": false,
+                  "value_key": "",
+                  "show_score": false
+                },
+                "unit": "",
+                "chart": {
+                  "log_x": false,
+                  "log_y": false,
+                  "x_key": "",
+                  "y_key": "",
+                  "y_max": null,
+                  "y_min": null,
+                  "smooth": true,
+                  "pie_gap": true,
+                  "x_title": "",
+                  "y_title": "",
+                  "pie_rose": false,
+                  "size_key": "",
+                  "bar_width": 26,
+                  "pie_inner": 46,
+                  "pie_label": "name_pct",
+                  "pie_start": 90,
+                  "show_grid": true,
+                  "show_labels": true,
+                  "show_legend": true,
+                  "label_format": "auto",
+                  "label_layout": "inside",
+                  "label_rotate": 0,
+                  "scatter_mode": "point",
+                  "single_slice": true,
+                  "hbar_highlight": "violet",
+                  "hbar_threshold_gte": null,
+                  "hbar_threshold_key": ""
+                },
+                "combo": {
+                  "smooth": true,
+                  "bar_name": "",
+                  "line_name": "",
+                  "right_axis": true
+                },
+                "title": "商品详情",
+                "filter": {
+                  "fields": [],
+                  "inline": true
+                },
+                "layout": {
+                  "h": 320,
+                  "w": 520,
+                  "x": 40,
+                  "y": 56
+                },
+                "binding": {
+                  "agg": "SUM",
+                  "sort": "desc",
+                  "grain": null,
+                  "limit": 10,
+                  "split": null,
+                  "top_n": 1,
+                  "metric": "日销量",
+                  "series": null,
+                  "filters": [
+                    {
+                      "op": "=",
+                      "column": "平台",
+                      "valueFrom": "param:platform"
+                    },
+                    {
+                      "op": "=",
+                      "column": "品类",
+                      "valueFrom": "param:category"
+                    },
+                    {
+                      "op": "=",
+                      "column": "榜单",
+                      "valueFrom": "param:board"
+                    },
+                    {
+                      "op": "=",
+                      "column": "价格带",
+                      "valueFrom": "param:band"
+                    },
+                    {
+                      "op": "ILIKE",
+                      "column": "搜索文本",
+                      "valueFrom": "param:q"
+                    },
+                    {
+                      "op": "=",
+                      "column": "链接ID",
+                      "valueFrom": "action:link_id"
+                    }
+                  ],
+                  "metrics": [
+                    {
+                      "agg": "AVG",
+                      "name": "均价"
+                    },
+                    {
+                      "agg": "MIN",
+                      "name": "榜单排名"
+                    },
+                    {
+                      "agg": "MAX",
+                      "name": "热销指数"
+                    },
+                    {
+                      "agg": "MAX",
+                      "name": "霸榜天数"
+                    },
+                    {
+                      "agg": "MAX",
+                      "name": "差评数"
+                    },
+                    {
+                      "agg": "MAX",
+                      "name": "上架天数"
+                    }
+                  ],
+                  "dimension": "商品标题",
+                  "dataset_id": 2,
+                  "dimensions": [
+                    "平台",
+                    "链接ID"
+                  ]
+                },
+                "compute": {
+                  "hint": "none",
+                  "scale": 1,
+                  "format": "int",
+                  "offset": 0,
+                  "prefix": "",
+                  "suffix": "",
+                  "decimals": 0,
+                  "headline": "first",
+                  "transform": "raw",
+                  "bucket_size": null,
+                  "bucket_count": 0,
+                  "bucket_start": null
+                },
+                "content": {
+                  "icon": "",
+                  "text": "",
+                  "index": "",
+                  "items": []
+                },
+                "subtitle": "",
+                "table_view": {
+                  "more": false,
+                  "columns": [
+                    {
+                      "key": "商品标题",
+                      "type": "text",
+                      "align": "left",
+                      "label": "商品标题",
+                      "width": 0
+                    },
+                    {
+                      "key": "日销量",
+                      "type": "number",
+                      "align": "right",
+                      "label": "日销量",
+                      "width": 0
+                    },
+                    {
+                      "key": "均价",
+                      "type": "money",
+                      "align": "right",
+                      "label": "均价",
+                      "width": 0
+                    },
+                    {
+                      "key": "榜单排名",
+                      "type": "rank",
+                      "align": "center",
+                      "label": "榜单排名",
+                      "width": 0
+                    },
+                    {
+                      "key": "热销指数",
+                      "type": "number",
+                      "align": "right",
+                      "label": "热销指数",
+                      "width": 0
+                    },
+                    {
+                      "key": "霸榜天数",
+                      "type": "number",
+                      "align": "right",
+                      "label": "霸榜天数",
+                      "width": 0
+                    },
+                    {
+                      "key": "差评数",
+                      "type": "number",
+                      "align": "right",
+                      "label": "差评数",
+                      "width": 0
+                    },
+                    {
+                      "key": "上架天数",
+                      "type": "number",
+                      "align": "right",
+                      "label": "上架天数",
+                      "width": 0
+                    }
+                  ],
+                  "sortable": false,
+                  "page_size": 5,
+                  "more_label": "",
+                  "index_column": true
+                }
+              },
+              "type": "drawer",
+              "title": "商品详情",
+              "params": {
+                "link_id": "$row.链接ID"
+              },
+              "component": "base.table",
+              "overrides": {}
+            }
+          },
+          {
+            "h": 60,
+            "key": "sec_pain",
+            "icon": "cloud",
+            "note": "痛点词频 · 按 SKU 数加权",
+            "size": 13,
+            "span": 12,
+            "spec": null,
+            "text": "四、差评云",
+            "type": "heading",
+            "align": "left",
+            "index": "四",
+            "title": "",
+            "action": null,
+            "layout": {
+              "h": 60,
+              "w": 1416,
+              "x": 12,
+              "y": 1320
+            },
+            "weight": 400,
+            "component": "",
+            "row_action": null
+          },
+          {
+            "h": 320,
+            "key": "cloud_pain",
+            "icon": "",
+            "note": "",
+            "size": 13,
+            "span": 12,
+            "spec": {
+              "ui": {
+                "align": "left",
+                "badge": "",
+                "accent": "rose",
+                "radius": 14,
+                "animate": true,
+                "columns": 1,
+                "show_unit": true,
+                "min_height": 280
+              },
+              "rank": {
+                "order": "value",
+                "x_key": "",
+                "y_key": "",
+                "cvr_key": "",
+                "weights": {},
+                "tags_key": "",
+                "max_items": 10,
+                "show_rank": true,
+                "show_tags": false,
+                "value_key": "",
+                "show_score": false
+              },
+              "unit": "",
+              "chart": {
+                "log_x": false,
+                "log_y": false,
+                "x_key": "",
+                "y_key": "",
+                "y_max": null,
+                "y_min": null,
+                "smooth": true,
+                "pie_gap": true,
+                "x_title": "",
+                "y_title": "",
+                "pie_rose": false,
+                "size_key": "",
+                "bar_width": 26,
+                "pie_inner": 46,
+                "pie_label": "name_pct",
+                "pie_start": 90,
+                "show_grid": true,
+                "show_labels": true,
+                "show_legend": true,
+                "label_format": "auto",
+                "label_layout": "inside",
+                "label_rotate": 0,
+                "scatter_mode": "point",
+                "single_slice": true,
+                "hbar_highlight": "violet",
+                "hbar_threshold_gte": null,
+                "hbar_threshold_key": ""
+              },
+              "combo": {
+                "smooth": true,
+                "bar_name": "",
+                "line_name": "",
+                "right_axis": true
+              },
+              "title": "痛点云",
+              "filter": {
+                "fields": [],
+                "inline": true
+              },
+              "layout": {
+                "h": 260,
+                "w": 420,
+                "x": 40,
+                "y": 40
+              },
+              "binding": {
+                "agg": "COUNT",
+                "sort": "desc",
+                "grain": null,
+                "limit": 500,
+                "split": "/",
+                "top_n": 30,
+                "metric": "SKU数",
+                "series": null,
+                "filters": [
+                  {
+                    "op": "=",
+                    "column": "平台",
+                    "valueFrom": "param:platform"
+                  },
+                  {
+                    "op": "=",
+                    "column": "品类",
+                    "valueFrom": "param:category"
+                  },
+                  {
+                    "op": "=",
+                    "column": "榜单",
+                    "valueFrom": "param:board"
+                  },
+                  {
+                    "op": "=",
+                    "column": "价格带",
+                    "valueFrom": "param:band"
+                  },
+                  {
+                    "op": "ILIKE",
+                    "column": "搜索文本",
+                    "valueFrom": "param:q"
+                  }
+                ],
+                "metrics": [],
+                "dimension": "痛点",
+                "dataset_id": 2,
+                "dimensions": []
+              },
+              "compute": {
+                "hint": "none",
+                "scale": 1,
+                "format": "int",
+                "offset": 0,
+                "prefix": "",
+                "suffix": "",
+                "decimals": 0,
+                "headline": "first",
+                "transform": "raw",
+                "bucket_size": null,
+                "bucket_count": 0,
+                "bucket_start": null
+              },
+              "content": {
+                "icon": "",
+                "text": "",
+                "index": "",
+                "items": []
+              },
+              "subtitle": "按 SKU 数加权",
+              "table_view": {
+                "more": true,
+                "columns": [],
+                "sortable": false,
+                "page_size": 10,
+                "more_label": "",
+                "index_column": true
+              }
+            },
+            "text": "",
+            "type": "chart",
+            "align": "left",
+            "index": "",
+            "title": "",
+            "action": null,
+            "layout": {
+              "h": 320,
+              "w": 1416,
+              "x": 12,
+              "y": 1396
+            },
+            "weight": 400,
+            "component": "base.wordcloud",
+            "row_action": null
+          },
+          {
+            "h": 60,
+            "key": "sec_sell",
+            "icon": "tag",
+            "note": "主卖点 / 副卖点",
+            "size": 13,
+            "span": 12,
+            "spec": null,
+            "text": "五、卖点云",
+            "type": "heading",
+            "align": "left",
+            "index": "五",
+            "title": "",
+            "action": null,
+            "layout": {
+              "h": 60,
+              "w": 1416,
+              "x": 12,
+              "y": 1732
+            },
+            "weight": 400,
+            "component": "",
+            "row_action": null
+          },
+          {
+            "h": 320,
+            "key": "cloud_sell",
+            "icon": "",
+            "note": "",
+            "size": 13,
+            "span": 6,
+            "spec": {
+              "ui": {
+                "align": "left",
+                "badge": "",
+                "accent": "sky",
+                "radius": 14,
+                "animate": true,
+                "columns": 1,
+                "show_unit": true,
+                "min_height": 280
+              },
+              "rank": {
+                "order": "value",
+                "x_key": "",
+                "y_key": "",
+                "cvr_key": "",
+                "weights": {},
+                "tags_key": "",
+                "max_items": 10,
+                "show_rank": true,
+                "show_tags": false,
+                "value_key": "",
+                "show_score": false
+              },
+              "unit": "",
+              "chart": {
+                "log_x": false,
+                "log_y": false,
+                "x_key": "",
+                "y_key": "",
+                "y_max": null,
+                "y_min": null,
+                "smooth": true,
+                "pie_gap": true,
+                "x_title": "",
+                "y_title": "",
+                "pie_rose": false,
+                "size_key": "",
+                "bar_width": 26,
+                "pie_inner": 46,
+                "pie_label": "name_pct",
+                "pie_start": 90,
+                "show_grid": true,
+                "show_labels": true,
+                "show_legend": true,
+                "label_format": "auto",
+                "label_layout": "inside",
+                "label_rotate": 0,
+                "scatter_mode": "point",
+                "single_slice": true,
+                "hbar_highlight": "violet",
+                "hbar_threshold_gte": null,
+                "hbar_threshold_key": ""
+              },
+              "combo": {
+                "smooth": true,
+                "bar_name": "",
+                "line_name": "",
+                "right_axis": true
+              },
+              "title": "卖点云",
+              "filter": {
+                "fields": [],
+                "inline": true
+              },
+              "layout": {
+                "h": 260,
+                "w": 420,
+                "x": 40,
+                "y": 40
+              },
+              "binding": {
+                "agg": "COUNT",
+                "sort": "desc",
+                "grain": null,
+                "limit": 500,
+                "split": "/",
+                "top_n": 30,
+                "metric": "SKU数",
+                "series": null,
+                "filters": [
+                  {
+                    "op": "=",
+                    "column": "平台",
+                    "valueFrom": "param:platform"
+                  },
+                  {
+                    "op": "=",
+                    "column": "品类",
+                    "valueFrom": "param:category"
+                  },
+                  {
+                    "op": "=",
+                    "column": "榜单",
+                    "valueFrom": "param:board"
+                  },
+                  {
+                    "op": "=",
+                    "column": "价格带",
+                    "valueFrom": "param:band"
+                  },
+                  {
+                    "op": "ILIKE",
+                    "column": "搜索文本",
+                    "valueFrom": "param:q"
+                  }
+                ],
+                "metrics": [],
+                "dimension": "主卖点",
+                "dataset_id": 2,
+                "dimensions": []
+              },
+              "compute": {
+                "hint": "none",
+                "scale": 1,
+                "format": "int",
+                "offset": 0,
+                "prefix": "",
+                "suffix": "",
+                "decimals": 0,
+                "headline": "first",
+                "transform": "raw",
+                "bucket_size": null,
+                "bucket_count": 0,
+                "bucket_start": null
+              },
+              "content": {
+                "icon": "",
+                "text": "",
+                "index": "",
+                "items": []
+              },
+              "subtitle": "按 SKU 数加权",
+              "table_view": {
+                "more": true,
+                "columns": [],
+                "sortable": false,
+                "page_size": 10,
+                "more_label": "",
+                "index_column": true
+              }
+            },
+            "text": "",
+            "type": "chart",
+            "align": "left",
+            "index": "",
+            "title": "",
+            "action": null,
+            "layout": {
+              "h": 320,
+              "w": 700,
+              "x": 12,
+              "y": 1808
+            },
+            "weight": 400,
+            "component": "base.wordcloud",
+            "row_action": null
+          },
+          {
+            "h": 320,
+            "key": "cloud_subsell",
+            "icon": "",
+            "note": "",
+            "size": 13,
+            "span": 6,
+            "spec": {
+              "ui": {
+                "align": "left",
+                "badge": "",
+                "accent": "teal",
+                "radius": 14,
+                "animate": true,
+                "columns": 1,
+                "show_unit": true,
+                "min_height": 320
+              },
+              "rank": {
+                "order": "value",
+                "x_key": "",
+                "y_key": "",
+                "cvr_key": "",
+                "weights": {},
+                "tags_key": "",
+                "max_items": 10,
+                "show_rank": true,
+                "show_tags": false,
+                "value_key": "",
+                "show_score": false
+              },
+              "unit": "",
+              "chart": {
+                "log_x": false,
+                "log_y": false,
+                "x_key": "",
+                "y_key": "",
+                "y_max": null,
+                "y_min": null,
+                "smooth": true,
+                "pie_gap": true,
+                "x_title": "",
+                "y_title": "",
+                "pie_rose": false,
+                "size_key": "",
+                "bar_width": 26,
+                "pie_inner": 46,
+                "pie_label": "name_pct",
+                "pie_start": 90,
+                "show_grid": true,
+                "show_labels": true,
+                "show_legend": true,
+                "label_format": "auto",
+                "label_layout": "inside",
+                "label_rotate": 0,
+                "scatter_mode": "point",
+                "single_slice": true,
+                "hbar_highlight": "violet",
+                "hbar_threshold_gte": null,
+                "hbar_threshold_key": ""
+              },
+              "combo": {
+                "smooth": true,
+                "bar_name": "",
+                "line_name": "",
+                "right_axis": true
+              },
+              "title": "副卖点云",
+              "filter": {
+                "fields": [],
+                "inline": true
+              },
+              "layout": {
+                "h": 320,
+                "w": 520,
+                "x": 40,
+                "y": 56
+              },
+              "binding": {
+                "agg": "COUNT",
+                "sort": "desc",
+                "grain": null,
+                "limit": 500,
+                "split": "/",
+                "top_n": 30,
+                "metric": "SKU数",
+                "series": null,
+                "filters": [
+                  {
+                    "op": "=",
+                    "column": "平台",
+                    "valueFrom": "param:platform"
+                  },
+                  {
+                    "op": "=",
+                    "column": "品类",
+                    "valueFrom": "param:category"
+                  },
+                  {
+                    "op": "=",
+                    "column": "榜单",
+                    "valueFrom": "param:board"
+                  },
+                  {
+                    "op": "=",
+                    "column": "价格带",
+                    "valueFrom": "param:band"
+                  },
+                  {
+                    "op": "ILIKE",
+                    "column": "搜索文本",
+                    "valueFrom": "param:q"
+                  }
+                ],
+                "metrics": [],
+                "dimension": "副卖点",
+                "dataset_id": 2,
+                "dimensions": []
+              },
+              "compute": {
+                "hint": "none",
+                "scale": 1,
+                "format": "int",
+                "offset": 0,
+                "prefix": "",
+                "suffix": "",
+                "decimals": 0,
+                "headline": "first",
+                "transform": "raw",
+                "bucket_size": null,
+                "bucket_count": 0,
+                "bucket_start": null
+              },
+              "content": {
+                "icon": "",
+                "text": "",
+                "index": "",
+                "items": []
+              },
+              "subtitle": "按 SKU 数",
+              "table_view": {
+                "more": true,
+                "columns": [],
+                "sortable": false,
+                "page_size": 10,
+                "more_label": "",
+                "index_column": true
+              }
+            },
+            "text": "",
+            "type": "chart",
+            "align": "left",
+            "index": "",
+            "title": "",
+            "action": null,
+            "layout": {
+              "h": 320,
+              "w": 700,
+              "x": 728,
+              "y": 1808
+            },
+            "weight": 400,
+            "component": "base.wordcloud",
+            "row_action": null
+          }
+        ],
+        "title": "榜单端"
+      }
+    ],
+    "header": {
+      "stats": [
+        {
+          "spec": {
+            "ui": {
+              "align": "left",
+              "badge": "",
+              "accent": "indigo",
+              "radius": 14,
+              "animate": false,
+              "columns": 1,
+              "show_unit": true,
+              "min_height": 104
+            },
+            "rank": {
+              "order": "value",
+              "x_key": "",
+              "y_key": "",
+              "cvr_key": "",
+              "weights": {},
+              "tags_key": "",
+              "max_items": 10,
+              "show_rank": true,
+              "show_tags": false,
+              "value_key": "",
+              "show_score": false
+            },
+            "unit": "",
+            "chart": {
+              "log_x": false,
+              "log_y": false,
+              "x_key": "",
+              "y_key": "",
+              "y_max": null,
+              "y_min": null,
+              "smooth": true,
+              "pie_gap": true,
+              "x_title": "",
+              "y_title": "",
+              "pie_rose": false,
+              "size_key": "",
+              "bar_width": 26,
+              "pie_inner": 46,
+              "pie_label": "name_pct",
+              "pie_start": 90,
+              "show_grid": true,
+              "show_labels": true,
+              "show_legend": true,
+              "label_format": "auto",
+              "label_layout": "inside",
+              "label_rotate": 0,
+              "scatter_mode": "point",
+              "single_slice": true,
+              "hbar_highlight": "violet",
+              "hbar_threshold_gte": null,
+              "hbar_threshold_key": ""
+            },
+            "combo": {
+              "smooth": true,
+              "bar_name": "",
+              "line_name": "",
+              "right_axis": true
+            },
+            "title": "在榜",
+            "filter": {
+              "fields": [],
+              "inline": true
+            },
+            "layout": {
+              "h": 320,
+              "w": 520,
+              "x": 40,
+              "y": 56
+            },
+            "binding": {
+              "agg": "SUM",
+              "sort": "desc",
+              "grain": null,
+              "limit": 500,
+              "split": null,
+              "top_n": 1,
+              "metric": "SKU数",
+              "series": null,
+              "filters": [
+                {
+                  "op": "=",
+                  "column": "平台",
+                  "valueFrom": "param:platform"
+                },
+                {
+                  "op": "=",
+                  "column": "品类",
+                  "valueFrom": "param:category"
+                },
+                {
+                  "op": "=",
+                  "column": "榜单",
+                  "valueFrom": "param:board"
+                },
+                {
+                  "op": "=",
+                  "column": "价格带",
+                  "valueFrom": "param:band"
+                },
+                {
+                  "op": "ILIKE",
+                  "column": "搜索文本",
+                  "valueFrom": "param:q"
+                }
+              ],
+              "metrics": [],
+              "dimension": null,
+              "dataset_id": 2,
+              "dimensions": []
+            },
+            "compute": {
+              "hint": "none",
+              "scale": 1,
+              "format": "int",
+              "offset": 0,
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0,
+              "headline": "first",
+              "transform": "raw",
+              "bucket_size": null,
+              "bucket_count": 0,
+              "bucket_start": null
+            },
+            "content": {
+              "icon": "",
+              "text": "",
+              "index": "",
+              "items": []
+            },
+            "subtitle": "",
+            "table_view": {
+              "more": true,
+              "columns": [],
+              "sortable": false,
+              "page_size": 10,
+              "more_label": "",
+              "index_column": true
+            }
+          },
+          "label": "在榜 SKU",
+          "component": "base.kpi"
+        },
+        {
+          "spec": {
+            "ui": {
+              "align": "left",
+              "badge": "",
+              "accent": "teal",
+              "radius": 14,
+              "animate": false,
+              "columns": 1,
+              "show_unit": true,
+              "min_height": 104
+            },
+            "rank": {
+              "order": "value",
+              "x_key": "",
+              "y_key": "",
+              "cvr_key": "",
+              "weights": {},
+              "tags_key": "",
+              "max_items": 10,
+              "show_rank": true,
+              "show_tags": false,
+              "value_key": "",
+              "show_score": false
+            },
+            "unit": "",
+            "chart": {
+              "log_x": false,
+              "log_y": false,
+              "x_key": "",
+              "y_key": "",
+              "y_max": null,
+              "y_min": null,
+              "smooth": true,
+              "pie_gap": true,
+              "x_title": "",
+              "y_title": "",
+              "pie_rose": false,
+              "size_key": "",
+              "bar_width": 26,
+              "pie_inner": 46,
+              "pie_label": "name_pct",
+              "pie_start": 90,
+              "show_grid": true,
+              "show_labels": true,
+              "show_legend": true,
+              "label_format": "auto",
+              "label_layout": "inside",
+              "label_rotate": 0,
+              "scatter_mode": "point",
+              "single_slice": true,
+              "hbar_highlight": "violet",
+              "hbar_threshold_gte": null,
+              "hbar_threshold_key": ""
+            },
+            "combo": {
+              "smooth": true,
+              "bar_name": "",
+              "line_name": "",
+              "right_axis": true
+            },
+            "title": "品牌",
+            "filter": {
+              "fields": [],
+              "inline": true
+            },
+            "layout": {
+              "h": 320,
+              "w": 520,
+              "x": 40,
+              "y": 56
+            },
+            "binding": {
+              "agg": "COUNT_DISTINCT",
+              "sort": "desc",
+              "grain": null,
+              "limit": 500,
+              "split": null,
+              "top_n": 1,
+              "metric": "品牌",
+              "series": null,
+              "filters": [
+                {
+                  "op": "=",
+                  "column": "平台",
+                  "valueFrom": "param:platform"
+                },
+                {
+                  "op": "=",
+                  "column": "品类",
+                  "valueFrom": "param:category"
+                },
+                {
+                  "op": "=",
+                  "column": "榜单",
+                  "valueFrom": "param:board"
+                },
+                {
+                  "op": "=",
+                  "column": "价格带",
+                  "valueFrom": "param:band"
+                },
+                {
+                  "op": "ILIKE",
+                  "column": "搜索文本",
+                  "valueFrom": "param:q"
+                }
+              ],
+              "metrics": [],
+              "dimension": null,
+              "dataset_id": 2,
+              "dimensions": []
+            },
+            "compute": {
+              "hint": "none",
+              "scale": 1,
+              "format": "int",
+              "offset": 0,
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0,
+              "headline": "first",
+              "transform": "raw",
+              "bucket_size": null,
+              "bucket_count": 0,
+              "bucket_start": null
+            },
+            "content": {
+              "icon": "",
+              "text": "",
+              "index": "",
+              "items": []
+            },
+            "subtitle": "",
+            "table_view": {
+              "more": true,
+              "columns": [],
+              "sortable": false,
+              "page_size": 10,
+              "more_label": "",
+              "index_column": true
+            }
+          },
+          "label": "竞品品牌",
+          "component": "base.kpi"
+        },
+        {
+          "spec": {
+            "ui": {
+              "align": "left",
+              "badge": "",
+              "accent": "violet",
+              "radius": 14,
+              "animate": false,
+              "columns": 1,
+              "show_unit": true,
+              "min_height": 104
+            },
+            "rank": {
+              "order": "value",
+              "x_key": "",
+              "y_key": "",
+              "cvr_key": "",
+              "weights": {},
+              "tags_key": "",
+              "max_items": 10,
+              "show_rank": true,
+              "show_tags": false,
+              "value_key": "",
+              "show_score": false
+            },
+            "unit": "",
+            "chart": {
+              "log_x": false,
+              "log_y": false,
+              "x_key": "",
+              "y_key": "",
+              "y_max": null,
+              "y_min": null,
+              "smooth": true,
+              "pie_gap": true,
+              "x_title": "",
+              "y_title": "",
+              "pie_rose": false,
+              "size_key": "",
+              "bar_width": 26,
+              "pie_inner": 46,
+              "pie_label": "name_pct",
+              "pie_start": 90,
+              "show_grid": true,
+              "show_labels": true,
+              "show_legend": true,
+              "label_format": "auto",
+              "label_layout": "inside",
+              "label_rotate": 0,
+              "scatter_mode": "point",
+              "single_slice": true,
+              "hbar_highlight": "violet",
+              "hbar_threshold_gte": null,
+              "hbar_threshold_key": ""
+            },
+            "combo": {
+              "smooth": true,
+              "bar_name": "",
+              "line_name": "",
+              "right_axis": true
+            },
+            "title": "品类",
+            "filter": {
+              "fields": [],
+              "inline": true
+            },
+            "layout": {
+              "h": 320,
+              "w": 520,
+              "x": 40,
+              "y": 56
+            },
+            "binding": {
+              "agg": "COUNT_DISTINCT",
+              "sort": "desc",
+              "grain": null,
+              "limit": 500,
+              "split": null,
+              "top_n": 1,
+              "metric": "品类",
+              "series": null,
+              "filters": [
+                {
+                  "op": "=",
+                  "column": "平台",
+                  "valueFrom": "param:platform"
+                },
+                {
+                  "op": "=",
+                  "column": "品类",
+                  "valueFrom": "param:category"
+                },
+                {
+                  "op": "=",
+                  "column": "榜单",
+                  "valueFrom": "param:board"
+                },
+                {
+                  "op": "=",
+                  "column": "价格带",
+                  "valueFrom": "param:band"
+                },
+                {
+                  "op": "ILIKE",
+                  "column": "搜索文本",
+                  "valueFrom": "param:q"
+                }
+              ],
+              "metrics": [],
+              "dimension": null,
+              "dataset_id": 2,
+              "dimensions": []
+            },
+            "compute": {
+              "hint": "none",
+              "scale": 1,
+              "format": "int",
+              "offset": 0,
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0,
+              "headline": "first",
+              "transform": "raw",
+              "bucket_size": null,
+              "bucket_count": 0,
+              "bucket_start": null
+            },
+            "content": {
+              "icon": "",
+              "text": "",
+              "index": "",
+              "items": []
+            },
+            "subtitle": "",
+            "table_view": {
+              "more": true,
+              "columns": [],
+              "sortable": false,
+              "page_size": 10,
+              "more_label": "",
+              "index_column": true
+            }
+          },
+          "label": "覆盖品类",
+          "component": "base.kpi"
+        }
+      ],
+      "title": "榜单端 市场分析",
+      "kicker": "2026 Q4 · 冻干零食赛道 · 单期快照",
+      "subtitle": "拼多多 · 天猫 · 京东 · 抖音 | 按平台切换"
+    },
+    "params": [],
+    "version": 2.1,
+    "published": true,
+    "published_at": "2026-11-10T17:05:31"
+  }
+}

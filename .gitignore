@@ -26,8 +26,26 @@ frontend/node_modules/
 vite.config.js
 vite.config.d.ts
 
+# ── 视觉回归（Playwright）产物 ──
+frontend/test-results/
+frontend/playwright-report/
+
+# ── Storybook 静态产物（本地预览 / CI 构建校验，不入库）──
+frontend/storybook-static/
+
+# ── 运行时生成（定时报表文件等）──
+backend/var/
+
 # ── 系统 / 编辑器 ──
 .DS_Store
 .idea/
 .vscode/
 *.swp
+
+# ── 业务数据：模板市场素材（本地运行时数据，不入库）──
+市场部BI看板模板/
+
+# ── 设计参考与自检截图（只留文档正文 md）──
+组件样式/
+docs/_selfcheck/
+docs/看板截图/

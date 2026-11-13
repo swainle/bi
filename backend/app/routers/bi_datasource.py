@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import sqlite3  # 本地 SQLite 直连
 from typing import Optional
 
@@ -20,61 +19,28 @@ from app.models.user import User
 router = APIRouter(prefix="/bi/datasource", tags=["BI数据源"])
 
 
-# ====== 安全：SQL 注入防护 ======
+# ====== 安全：SQL 只读网关（app/security 内核）======
 
-# 黑名单关键字 — 即使前缀检查通过，也不允许包含这些危险操作
-_BLOCKED_KEYWORDS = re.compile(
-    r"\b(DROP|DELETE|INSERT|UPDATE|ALTER|CREATE|TRUNCATE|EXEC|EXECUTE|GRANT|REVOKE|RENAME|LOAD_FILE|INTO\s+(OUTFILE|DUMPFILE))\b",
-    re.IGNORECASE,
-)
-
-# 多语句分隔符
-_MULTI_STATEMENT = re.compile(r";\s*(DROP|DELETE|INSERT|UPDATE|ALTER|CREATE|TRUNCATE|SELECT)", re.IGNORECASE)
-
-# 允许的 SQL 前缀（白名单）
-_ALLOWED_PREFIXES = ("SELECT", "SHOW", "DESC", "DESCRIBE", "EXPLAIN", "WITH")
+from app.security.errors import SecurityError
+from app.security.sql_guard import guard_readonly, to_sql
 
 
-def _validate_sql(sql: str, max_rows: int = 1000) -> str:
-    """校验用户输入的 SQL，禁止危险操作，添加行数限制.
+def _validate_sql(sql: str, max_rows: int = 1000, dialect: str | None = None) -> str:
+    """只读校验（sqlglot AST）+ 强制行数上限.
 
-    Returns:
-        安全处理后的 SQL 语句.
-
-    Raises:
-        HTTPException: SQL 包含危险操作或格式不合法.
+    对接外部数据源时方言未知，交给 sqlglot 自动识别；
+    校验内容：单条语句 / 仅 SELECT 家族 / 无 DDL,DML / 无危险函数。
     """
-    if not sql or not sql.strip():
-        raise HTTPException(400, "请输入 SQL 查询语句")
+    try:
+        root = guard_readonly(sql, dialect=dialect)
+    except SecurityError as exc:
+        raise HTTPException(status_code=exc.http_status, detail=exc.message) from exc
 
-    # 1. 去除注释和多余空白
-    cleaned = re.sub(r"--.*$", "", sql, flags=re.MULTILINE)  # 行注释
-    cleaned = re.sub(r"/\*.*?\*/", "", cleaned, flags=re.DOTALL)  # 块注释
-    cleaned = cleaned.strip()
+    # 没有 LIMIT 就补一个，防全表扫描撑爆内存
+    if root.args.get("limit") is None:
+        root = root.limit(max_rows)
 
-    if not cleaned:
-        raise HTTPException(400, "请输入 SQL 查询语句")
-
-    # 2. 白名单前缀检查
-    upper = cleaned.upper().lstrip()
-    if not any(upper.startswith(prefix) for prefix in _ALLOWED_PREFIXES):
-        raise HTTPException(403, f"仅允许 {' / '.join(_ALLOWED_PREFIXES)} 查询")
-
-    # 3. 黑名单关键字检查
-    if _BLOCKED_KEYWORDS.search(cleaned):
-        blocked = _BLOCKED_KEYWORDS.findall(cleaned)
-        raise HTTPException(403, f"SQL 包含禁止的操作: {', '.join(b[:20] for b in blocked)}")
-
-    # 4. 多语句注入检测
-    if _MULTI_STATEMENT.search(cleaned):
-        raise HTTPException(403, "不允许执行多条 SQL 语句")
-
-    # 5. 添加行数限制（防止全表扫描撑爆内存）
-    if "LIMIT" not in cleaned.upper():
-        cleaned = cleaned.rstrip(";").strip()
-        cleaned += f" LIMIT {max_rows}"
-
-    return cleaned
+    return to_sql(root, dialect=dialect or "postgres")
 
 
 # ====== 请求体 ======

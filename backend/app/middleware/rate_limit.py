@@ -34,11 +34,20 @@ if _redis_url:
         _redis_client = None
 
 # ── 限流配置 ──────────────────────────────────────────────
+# default 可用 RATE_LIMIT_DEFAULT 调整：压测（k6）与高并发大屏场景需要更高的每分钟上限，
+# 不改默认值（300）时行为与原来完全一致。
+def _env_limit(name: str, default: int) -> int:
+    try:
+        return max(1, int(os.getenv(name, str(default)) or default))
+    except ValueError:
+        return default
+
+
 LIMITS = {
     "/api/mindmap/team/ws/": 10,
     "/api/mindmap/team/.*/sync": 120,
     "/api/mindmap/team/.*/data": 300,
-    "default": 300,
+    "default": _env_limit("RATE_LIMIT_DEFAULT", 300),
 }
 
 _WINDOW = 60  # 60 秒滑动窗口

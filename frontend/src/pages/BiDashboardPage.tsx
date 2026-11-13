@@ -1,52 +1,88 @@
 /** 明策BI — ECharts 自研引擎，模板卡片 + 数据从 PostgreSQL 实时查询 */
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
-  Box, Typography, Button, CircularProgress, alpha, useTheme,
-  Card, CardContent, IconButton, TextField, InputAdornment, Avatar, Chip,
-  LinearProgress,
-  Snackbar, Alert, Menu, MenuItem, Dialog, DialogTitle, DialogContent,
-  DialogActions, List, ListItem, ListItemAvatar, ListItemText, Checkbox,
-  Tooltip, Divider, ToggleButton, ToggleButtonGroup,
+  Box, Typography, Button, CircularProgress,
+  Card, CardContent, IconButton, TextField, Avatar, Chip,
+  Snackbar, Alert, Dialog, DialogTitle, DialogContent,
+  DialogActions, List, ListItem, ListItemAvatar, ListItemText,
+  Divider, Menu, MenuItem, Radio, RadioGroup, FormControlLabel,
 } from "@mui/material";
 import {
-  Add, Search, Dashboard, BarChart, Storage, TrendingUp, Group, Code,
-  MoreVert, Edit, Delete, Share, Person, Lock, OpenInNew, DesignServices, AutoAwesome, CloudUpload,
+  Search, Dashboard, Share, MoreHoriz, Visibility, OpenInNew, TrendingUp,
+  DriveFileRenameOutline, DeleteOutline, Groups, NotificationsActive, Schedule,
 } from "@mui/icons-material";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import client from "../api/client";
+import { useAuth } from "../hooks/useAuth";
 import DataSources from "../features/bi-dashboard/DataSources";
 import SqlQueryPanel from "../features/bi-dashboard/SqlQueryPanel";
-import AnalysisCanvas from "../features/bi-dashboard/AnalysisCanvas";
-import TeamPanel, { SharedWithMePanel } from "../features/bi-dashboard/TeamPanel";
-import type { TeamDashboard } from "../features/bi-dashboard/constants";
+import DatasetPanel from "../features/bi-dashboard/DatasetPanel";
+import TestDataPanel from "../features/bi-dashboard/TestDataPanel";
+import TeamBoardsPanel from "../features/bi-dashboard/TeamBoardsPanel";
+import TeamShareDialog from "../features/bi-dashboard/TeamShareDialog";
+import AlertRulesDialog from "../features/bi-dashboard/AlertRulesDialog";
+import ReportSubscriptionsDialog from "../features/bi-dashboard/ReportSubscriptionsDialog";
+import BiSideNav, { BI_NAV_ITEMS, type SideNavItem } from "../features/bi-dashboard/BiSideNav";
+import BoardThumb from "../features/bi-dashboard/BoardThumb";
+import type { DashboardDoc } from "../features/components/types";
+
+/** 与「项目」页同一套视觉令牌，保证两页看起来是一家人 */
+const CARD_BORDER = "#E8E8ED";
+const INK = "#1D1D1F";
+const MUTED = "#86868B";
 
 interface DashboardMeta {
   id: number; name: string; panels: any[];
   table_map?: Record<string, string>;
   created_at: string; updated_at: string;
+  owner_id?: number | null;
 }
 
-const NAV_ITEMS = [
-  { label: "我的看板", icon: <Dashboard />, color: "#6366F1", view: "dashboards" },
-  { label: "模板库", icon: <BarChart />, color: "#F59E0B", view: "templates" },
-  { label: "我的团队", icon: <Group />, color: "#10B981", view: "team" },
-  { label: "数据源", icon: <Storage />, color: "#EC4899", view: "datasource" },
-  { label: "SQL 查询", icon: <Code />, color: "#8B5CF6", view: "sql" },
-  { label: "自助分析", icon: <BarChart />, color: "#10B981", view: "analysis" },
-  { label: "AI生成看板", icon: <AutoAwesome />, color: "#8B5CF6", view: "ai-generate", action: "modal" },
-  { label: "编辑设计", icon: <DesignServices />, color: "#EC4899", view: "editor", action: "nav" },
-];
+/** 组件库拼装出来的成品页（存 bi_canvas.doc） */
+interface PageBoardMeta {
+  id: number; name: string; code?: string | null;
+  views: number; items: number; charts: number;
+  updated_at: string; owner_id?: number | null; can_manage?: boolean;
+  /** 已分享到我的团队（协同看板） */
+  team_shared?: boolean; team_editors?: number;
+}
+
+/** 「我的看板」里的一张卡片 —— 两种来源统一成同一种形状 */
+interface BoardCardMeta {
+  key: string;
+  id: number;
+  kind: "engine" | "page";
+  name: string;
+  charts: number;
+  updatedAt: string;
+  canManage: boolean;
+  teamShared?: boolean;
+}
+
 
 export default function BiDashboardPage() {
   const nav = useNavigate();
-  const theme = useTheme();
-  const [activeNav, setActiveNav] = useState("dashboards");
+  const { user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
+  /** 视图可深链（/bi?view=templates），从「项目」页点菜单也能落回同一个视图 */
+  const [activeNav, setActiveNav] = useState(() => searchParams.get("view") || "dashboards");
   const [search, setSearch] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [myDashboards, setMyDashboards] = useState<DashboardMeta[]>([]);
-  const [teamDashboards, setTeamDashboards] = useState<TeamDashboard[]>([]);
-  const [sharedWithMe, setSharedWithMe] = useState<TeamDashboard[]>([]);
+  const [pageBoards, setPageBoards] = useState<PageBoardMeta[]>([]);
+  /** page 类型看板的 doc —— 只为缩略图，取不到就显示空图 */
+  const [boardDocs, setBoardDocs] = useState<Record<number, DashboardDoc>>({});
+  /** 卡片右上角 ⋯ 菜单 */
+  const [boardMenu, setBoardMenu] = useState<{ el: HTMLElement; board: BoardCardMeta } | null>(null);
+  /** 分享到我的团队（协同看板）弹窗 + 团队页刷新令牌 */
+  const [teamShareBoard, setTeamShareBoard] = useState<{ id: number; name: string } | null>(null);
+  /** 指标告警规则（按看板配置） */
+  const [alertBoard, setAlertBoard] = useState<{ id: number; name: string } | null>(null);
+  /** 定时报表订阅（按看板配置） */
+  const [reportBoard, setReportBoard] = useState<{ id: number; name: string } | null>(null);
+  const [teamReload, setTeamReload] = useState(0);
   const [marketTemplates, setMarketTemplates] = useState<any[]>([]);
   const [templateCategory, setTemplateCategory] = useState("");
   const [cloningId, setCloningId] = useState<number | null>(null);
@@ -54,22 +90,23 @@ export default function BiDashboardPage() {
     open: false, msg: "", severity: "success",
   });
 
-  // ====== 看板操作状态 ======
-  const [menuAnchor, setMenuAnchor] = useState<{ el: HTMLElement; dashId: number } | null>(null);
-  const [renameDialog, setRenameDialog] = useState<DashboardMeta | null>(null);
+  // ====== 看板操作状态（两种来源共用同一套弹窗） ======
+  const [renameDialog, setRenameDialog] = useState<BoardCardMeta | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [renaming, setRenaming] = useState(false);
-  const [deleteDialog, setDeleteDialog] = useState<DashboardMeta | null>(null);
+  const [deleteDialog, setDeleteDialog] = useState<BoardCardMeta | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [shareDialog, setShareDialog] = useState<DashboardMeta | null>(null);
+  /** 分享到模板库（看板模板）：名称 / 说明 / 分类 / 可见范围 */
+  const [tplDialog, setTplDialog] = useState<BoardCardMeta | null>(null);
+  const [tplName, setTplName] = useState("");
+  const [tplDesc, setTplDesc] = useState("");
+  const [tplCategory, setTplCategory] = useState("通用");
+  const [tplPublic, setTplPublic] = useState(true);
+  const [tplMembers, setTplMembers] = useState<number[]>([]);
+  const [tplUsers, setTplUsers] = useState<{ id: number; username: string }[]>([]);
+  const [tplBusy, setTplBusy] = useState(false);
 
-  // AI 生成看板
-  const [aiDialogOpen, setAiDialogOpen] = useState(false);
-  const [aiMode, setAiMode] = useState<"upload" | "batch">("upload");
-  const [aiFile, setAiFile] = useState<File | null>(null);
-  const [aiGenerating, setAiGenerating] = useState(false);
-  const [aiError, setAiError] = useState("");
-  const [aiResult, setAiResult] = useState<any>(null);
   const [allUsers, setAllUsers] = useState<{ id: number; username: string }[]>([]);
   const [sharePerms, setSharePerms] = useState<Record<number, string>>({}); // userId -> "view"|"edit"|"manage"
   const [shareLoading, setShareLoading] = useState(false);
@@ -79,16 +116,97 @@ export default function BiDashboardPage() {
     setMyDashboards(my.data?.dashboards || []);
   }, []);
 
+  const refreshPageBoards = useCallback(async () => {
+    const res = await client.get("/bi/dashboards?published_only=1");
+    setPageBoards(res.data?.dashboards || []);
+  }, []);
+
+  /** 缩略图要每块看板的版面：分批取（每批 8 个，看板多也不瞬发一串请求），失败留空图、不阻塞列表 */
+  const loadBoardDocs = useCallback(async (list: PageBoardMeta[]) => {
+    const BATCH = 8;
+    for (let i = 0; i < list.length; i += BATCH) {
+      const batch = list.slice(i, i + BATCH);
+      const pairs = await Promise.all(batch.map(async (p) => {
+        try {
+          const detail = await client.get(`/bi/dashboards/${p.id}`);
+          return [p.id, detail.data?.doc as DashboardDoc | undefined] as const;
+        } catch {
+          return [p.id, undefined] as const;
+        }
+      }));
+      const filled: Record<number, DashboardDoc> = {};
+      pairs.forEach(([id, doc]) => { if (doc) filled[id] = doc; });
+      // 逐批填充，缩略图边加载边出现
+      setBoardDocs((prev) => ({ ...prev, ...filled }));
+    }
+  }, []);
+
+  /** 两种看板合成一张列表 —— 不再按来源分组，都是「我的看板」 */
+  const boards = useMemo<BoardCardMeta[]>(() => {
+    const isAdmin = user?.role === "admin";
+    const engine: BoardCardMeta[] = myDashboards.map(d => ({
+      key: `engine-${d.id}`,
+      id: d.id,
+      kind: "engine",
+      name: d.name,
+      charts: d.panels?.length || 0,
+      updatedAt: d.updated_at || "",
+      canManage: d.owner_id === user?.id,
+    }));
+    const pages: BoardCardMeta[] = pageBoards.map(p => ({
+      key: `page-${p.id}`,
+      id: p.id,
+      kind: "page",
+      name: p.name,
+      charts: p.charts || 0,
+      updatedAt: p.updated_at || "",
+      canManage: p.can_manage ?? isAdmin,
+      teamShared: !!p.team_shared,
+    }));
+    return [...engine, ...pages].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  }, [myDashboards, pageBoards, user]);
+
+  const openBoard = (b: BoardCardMeta) =>
+    nav(b.kind === "page" ? `/bi/dashboards/${b.id}` : `/bi/view/${b.id}`);
+
+  const editBoard = (b: BoardCardMeta) => nav(`/bi/canvas?doc=${b.id}`);
+
+  /** 视图切换：同时把视图写进 ?view=，刷新 / 回退都还在这一屏 */
+  const selectView = useCallback((key: string) => {
+    setActiveNav(key);
+    const next = new URLSearchParams(searchParams);
+    next.set("view", key);
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
+
+  const handleNav = (item: SideNavItem) => {
+    if (item.path) { nav(item.path); return; }
+    selectView(item.key);
+  };
+
+  /** 从「项目」页点菜单回来时，URL 变了要跟上 */
+  useEffect(() => {
+    const next = searchParams.get("view");
+    if (next && next !== activeNav) setActiveNav(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
   // 重命名
   const handleRename = async () => {
     if (!renameDialog || !renameValue.trim()) return;
     setRenaming(true);
     try {
-      await client.put(`/bi/engine/dashboards/${renameDialog.id}`, {
-        name: renameValue.trim(),
-        panels: renameDialog.panels || [],
-      });
-      await refreshDashboards();
+      if (renameDialog.kind === "engine") {
+        const src = myDashboards.find(d => d.id === renameDialog.id);
+        await client.put(`/bi/engine/dashboards/${renameDialog.id}`, {
+          name: renameValue.trim(),
+          panels: src?.panels || [],
+        });
+        await refreshDashboards();
+      } else {
+        await client.patch(`/bi/dashboards/${renameDialog.id}`, { name: renameValue.trim() });
+        await refreshPageBoards();
+      }
       setSnackbar({ open: true, msg: "看板名称已更新", severity: "success" });
       setRenameDialog(null);
     } catch (e: any) {
@@ -103,8 +221,13 @@ export default function BiDashboardPage() {
     if (!deleteDialog) return;
     setDeleting(true);
     try {
-      await client.delete(`/bi/engine/dashboards/${deleteDialog.id}`);
-      await refreshDashboards();
+      if (deleteDialog.kind === "engine") {
+        await client.delete(`/bi/engine/dashboards/${deleteDialog.id}`);
+        await refreshDashboards();
+      } else {
+        await client.delete(`/bi/dashboards/${deleteDialog.id}`);
+        await refreshPageBoards();
+      }
       setSnackbar({ open: true, msg: `已删除「${deleteDialog.name}」`, severity: "success" });
       setDeleteDialog(null);
     } catch (e: any) {
@@ -115,9 +238,10 @@ export default function BiDashboardPage() {
   };
 
   // 打开共享弹窗
-  const openShareDialog = async (dash: DashboardMeta) => {
+  const openShareDialog = async (board: BoardCardMeta) => {
+    const dash = myDashboards.find(d => d.id === board.id);
+    if (!dash) return;
     setShareDialog(dash);
-    setMenuAnchor(null);
     try {
       const [usersRes, permsRes] = await Promise.all([
         client.get("/bi/team/users"),
@@ -182,6 +306,49 @@ export default function BiDashboardPage() {
     }
   };
 
+  /** 打开「分享到模板库」：默认所有人可见，也可只给指定成员 */
+  const openTemplateShare = async (board: BoardCardMeta) => {
+    setTplDialog(board);
+    setTplName(board.name);
+    setTplDesc("");
+    setTplCategory("通用");
+    setTplPublic(true);
+    setTplMembers([]);
+    try {
+      const res = await client.get("/bi/team/users");
+      setTplUsers(res.data || []);
+    } catch {
+      setTplUsers([]);
+    }
+  };
+
+  const submitTemplateShare = async () => {
+    if (!tplDialog) return;
+    setTplBusy(true);
+    try {
+      const res = await client.post("/bi/engine/market/share", {
+        board_id: tplDialog.id,
+        name: tplName.trim() || tplDialog.name,
+        description: tplDesc.trim(),
+        category: tplCategory,
+        is_public: tplPublic,
+        user_ids: tplPublic ? [] : tplMembers,
+      });
+      const market = await client.get("/bi/engine/market");
+      setMarketTemplates(market.data?.templates || []);
+      setSnackbar({ open: true, msg: res.data?.message || "已分享到模板库", severity: "success" });
+      setTplDialog(null);
+    } catch (e: any) {
+      setSnackbar({
+        open: true,
+        msg: e?.response?.data?.detail || "分享失败，请重试",
+        severity: "error",
+      });
+    } finally {
+      setTplBusy(false);
+    }
+  };
+
   // 克隆模板到"我的看板"
   const cloneTemplate = async (tpl: any) => {
     if (cloningId !== null) return; // 防重复点击
@@ -189,16 +356,20 @@ export default function BiDashboardPage() {
     try {
       const res = await client.post(`/bi/engine/market/${tpl.id}/clone`);
       const newId = res.data?.id;
+      const kind = res.data?.kind;
       // 刷新"我的看板"列表
-      const my = await client.get("/bi/engine/dashboards");
-      setMyDashboards(my.data?.dashboards || []);
+      if (kind === "page") await refreshPageBoards();
+      else {
+        const my = await client.get("/bi/engine/dashboards");
+        setMyDashboards(my.data?.dashboards || []);
+      }
       // 刷新模板列表（downloads +1）
       const market = await client.get("/bi/engine/market");
       setMarketTemplates(market.data?.templates || []);
       setSnackbar({ open: true, msg: res.data?.message || "模板克隆成功", severity: "success" });
-      // 跳转到新看板编辑页
+      // 跳转到新看板
       if (newId) {
-        nav(`/bi/view/${newId}`);
+        nav(kind === "page" ? `/bi/dashboards/${newId}` : `/bi/view/${newId}`);
       }
     } catch (e: any) {
       setSnackbar({ open: true, msg: e?.response?.data?.detail || "克隆失败，请重试", severity: "error" });
@@ -207,109 +378,54 @@ export default function BiDashboardPage() {
     }
   };
 
-  // AI 生成看板
-  const [aiProgress, setAiProgress] = useState(0);
-  const [aiMsg, setAiMsg] = useState("");
-
-  const handleAiGenerate = async () => {
-    if (!aiFile) { setAiError("请先选择数据文件"); return; }
-    setAiGenerating(true); setAiError(""); setAiResult(null);
-    setAiProgress(0); setAiMsg("初始化...");
-    try {
-      const fd = new FormData(); fd.append("file", aiFile);
-      const token = localStorage.getItem("access_token");
-      // Phase 2: Async pipeline with progress
-      const r = await fetch(`/api/bi/engine/ai/agent-pipeline?_t=${Date.now()}`, {
-        method: "POST",
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-        body: fd,
-      });
-      if (!r.ok) {
-        const err = await r.json().catch(() => ({ detail: `HTTP ${r.status}` }));
-        const msg = Array.isArray(err.detail) ? err.detail[0]?.msg || JSON.stringify(err.detail) : (err.detail || `HTTP ${r.status}`);
-        throw new Error(String(msg));
-      }
-      const data = await r.json();
-      setAiResult(data);
-      setAiFile(null);
-    } catch (e: any) {
-      setAiError(String(e?.message || "AI 生成失败"));
-    } finally {
-      setAiGenerating(false);
-    }
-  };
-
-  // 批量生成
-  const handleBatchGenerate = async (domain: string) => {
-    setAiGenerating(true); setAiError(""); setAiResult(null); setAiProgress(0); setAiMsg("批量生成中...");
-    try {
-      const token = localStorage.getItem("access_token");
-      const r = await fetch("/api/bi/engine/ai/batch/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ domain }),
-      });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const data = await r.json();
-      setAiResult({ batch: true, domain, dashboards: data.dashboards, count: data.count });
-      setAiProgress(100); setAiMsg("完成！");
-    } catch (e: any) {
-      setAiError(String(e?.message || "批量生成失败"));
-    } finally {
-      setAiGenerating(false);
-    }
-  };
 
   useEffect(() => {
     const load = async () => {
       setLoading(true);
       try {
-        const [my, team, shared, market] = await Promise.all([
+        const [my, pages, market] = await Promise.all([
           client.get("/bi/engine/dashboards"),
-          client.get("/bi/team/my"),
-          client.get("/bi/team/shared-with-me"),
+          client.get("/bi/dashboards?published_only=1"),
           client.get("/bi/engine/market"),
         ]);
+        const pageList = (pages.data?.dashboards || []) as PageBoardMeta[];
         setMyDashboards(my.data?.dashboards || []);
-        setTeamDashboards(team.data || []);
-        setSharedWithMe(shared.data || []);
+        setPageBoards(pageList);
         setMarketTemplates(market.data?.templates || []);
-      } catch (e: any) { console.error("加载BI数据失败:", e); }
-      setLoading(false);
+        setLoading(false);
+        // 先出卡片、后填缩略图，列表不等 doc
+        void loadBoardDocs(pageList);
+      } catch (e: any) {
+        console.error("加载BI数据失败:", e);
+        setLoading(false);
+      }
     };
     load();
-  }, []);
+  }, [loadBoardDocs]);
 
-  const filtered = search
-    ? myDashboards.filter(d => d.name.includes(search))
-    : myDashboards;
+  const filtered = useMemo(() => {
+    const kw = search.trim().toLowerCase();
+    return kw ? boards.filter(b => b.name.toLowerCase().includes(kw)) : boards;
+  }, [boards, search]);
 
   const renderContent = () => {
     switch (activeNav) {
       case "team":
         return (
-          <Box sx={{ p: 4 }}>
-            <Typography variant="h5" fontWeight={700} gutterBottom>我的团队</Typography>
-            <TeamPanel
-              rows={[]} panels={[]}
-              myDashboards={teamDashboards} setMyDashboards={setTeamDashboards}
-              sharedWithMe={sharedWithMe} setSharedWithMe={setSharedWithMe}
-              teamLoading={false}
-              loadTeamData={async () => [teamDashboards, sharedWithMe]}
-              setDashboardName={() => {}} setOriginalName={() => {}} setCurrentDashboardId={() => {}}
-              hasAutoLoaded applyTeamDashboard={() => {}}
-            />
-          </Box>
+          <TeamBoardsPanel
+            refreshKey={teamReload}
+            onOpenShare={(board) => setTeamShareBoard(board)}
+          />
         );
+      case "datasets":
+        return <DatasetPanel />;
+      case "test-data":
+      case "dataset-preview":
+        return <TestDataPanel />;
       case "datasource":
-        return (
-          <DataSources rows={[]} setRows={() => {}} fields={[]}
-            setActiveTab={() => {}} setSearchParams={() => {}} handleFileUpload={() => {}} />
-        );
+        return <DataSources />;
       case "sql":
         return <SqlQueryPanel />;
-      case "analysis":
-        return <Box sx={{ flex: 1, overflow: "hidden" }}><AnalysisCanvas /></Box>;
       case "templates":
         return (
           <Box sx={{ p: 4 }}>
@@ -320,7 +436,7 @@ export default function BiDashboardPage() {
 
             {/* FineBI风格分类过滤 */}
             <Box sx={{ display: "flex", gap: 1, mb: 3, flexWrap: "wrap" }}>
-              {["全部","拼多多","天猫","财务","产品部"].map(cat => (
+              {["全部","拼多多","天猫","财务","产品部","通用"].map(cat => (
                 <Chip key={cat} label={cat} size="small"
                   variant={templateCategory === cat || (cat === "全部" && !templateCategory) ? "filled" : "outlined"}
                   color="primary"
@@ -344,17 +460,31 @@ export default function BiDashboardPage() {
                     {/* 顶部色条 */}
                     <Box sx={{ height: 4, background: tpl.category === "财务" ? "linear-gradient(90deg,#6366F1,#8B5CF6)" : tpl.category === "拼多多" ? "linear-gradient(90deg,#F59E0B,#EF4444)" : tpl.category === "天猫" ? "linear-gradient(90deg,#10B981,#0EA5E9)" : "linear-gradient(90deg,#EC4899,#8B5CF6)" }} />
                     <CardContent sx={{ p: 2.5 }}>
-                      <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", mb: 1 }}>
-                        <Typography variant="subtitle1" fontWeight={700} fontSize={15}>{tpl.name}</Typography>
-                        <Chip label={tpl.category} size="small" sx={{ fontSize: 10, height: 20, bgcolor: "#F3F4F6" }} />
+                      <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", mb: 1, gap: 1 }}>
+                        <Box sx={{ minWidth: 0 }}>
+                          <Typography variant="subtitle1" fontWeight={700} fontSize={15} noWrap title={tpl.name}>
+                            {tpl.name}
+                          </Typography>
+                          <Box sx={{ display: "flex", gap: 0.5, mt: 0.5 }}>
+                            {tpl.kind === "page" && (
+                              <Chip label="看板模板" size="small"
+                                sx={{ fontSize: 9.5, height: 18, bgcolor: "rgba(79,70,229,0.10)", color: "#4F46E5", fontWeight: 600 }} />
+                            )}
+                            {tpl.dataset_count > 0 && (
+                              <Chip label={`${tpl.dataset_count} 个数据集`} size="small"
+                                sx={{ fontSize: 9.5, height: 18, bgcolor: "rgba(37,99,235,0.08)", color: "#2563EB" }} />
+                            )}
+                          </Box>
+                        </Box>
+                        <Chip label={tpl.category} size="small" sx={{ fontSize: 10, height: 20, bgcolor: "#F3F4F6", flexShrink: 0 }} />
                       </Box>
                       <Typography variant="body2" color="text.secondary" sx={{ mb: 2, fontSize: 12, lineHeight: 1.5, minHeight: 36 }}>
-                        {tpl.description}
+                        {tpl.description || " "}
                       </Typography>
-                      {/* 面板预览 */}
+                      {/* 面板 / 卡片预览 */}
                       <Box sx={{ display: "flex", gap: 0.5, mb: 2, flexWrap: "wrap" }}>
-                        {(tpl.panels || []).slice(0, 5).map((p: any, i: number) => (
-                          <Chip key={i} label={p.title} size="small" variant="outlined"
+                        {(tpl.panel_titles || (tpl.panels || []).map((p: any) => p.title) || []).slice(0, 5).map((title: string, i: number) => (
+                          <Chip key={i} label={title} size="small" variant="outlined"
                             sx={{ fontSize: 10, height: 20, borderColor: "#E5E7EB", color: "#6B7280" }} />
                         ))}
                       </Box>
@@ -380,203 +510,219 @@ export default function BiDashboardPage() {
         );
       default:
         return (
-          <Box sx={{ p: 4 }}>
-            {/* 横幅 */}
-            <Box sx={{
-              p: 4, mb: 4, borderRadius: 3,
-              background: "linear-gradient(135deg, #6366F1 0%, #8B5CF6 40%, #A855F7 100%)",
-              color: "white", position: "relative", overflow: "hidden",
-            }}>
-              <Box sx={{ position: "absolute", top: -40, right: -20, opacity: 0.1, fontSize: 180, pointerEvents: "none" }}>📊</Box>
-              <Typography variant="h4" fontWeight={800} gutterBottom sx={{ position: "relative", zIndex: 1 }}>明策BI</Typography>
-              <Typography variant="body1" sx={{ opacity: 0.9, maxWidth: 600, position: "relative", zIndex: 1 }}>
-                自研先进的BI引擎 · 垂直电商行业 · AI 驱动分析。从数据入库到智能洞察，一站式自研 BI。
-              </Typography>
-              <Box sx={{ display: "flex", gap: 1.5, mt: 3, position: "relative", zIndex: 1 }}>
-                <Button variant="contained" startIcon={<TrendingUp />} onClick={() => setActiveNav("templates")}
-                  sx={{ bgcolor: "rgba(255,255,255,0.2)", "&:hover": { bgcolor: "rgba(255,255,255,0.35)" }, textTransform: "none", fontWeight: 600, borderRadius: 2 }}>
-                  浏览模板
-                </Button>
+          <Box sx={{ height: "100%", minHeight: 0, overflow: "auto", bgcolor: "#F5F5F7" }}>
+            <Box sx={{ p: 3, minHeight: "100%", display: "flex", flexDirection: "column" }}>
+              {/* 头标卡：保留在内容区最上方 */}
+              <Box sx={{
+                flexShrink: 0, mb: 2, p: 4, borderRadius: "20px",
+                background: "linear-gradient(135deg, #6366F1 0%, #8B5CF6 40%, #A855F7 100%)",
+                color: "white", position: "relative", overflow: "hidden",
+              }}>
+                <Box sx={{ position: "absolute", top: -40, right: -20, opacity: 0.1, fontSize: 180, pointerEvents: "none" }}>📊</Box>
+                <Typography variant="h4" fontWeight={800} gutterBottom sx={{ position: "relative", zIndex: 1 }}>明策BI</Typography>
+                <Typography variant="body1" sx={{ opacity: 0.9, maxWidth: 600, position: "relative", zIndex: 1 }}>
+                  自研先进的BI引擎 · 垂直电商行业 · AI 驱动分析。从数据入库到智能洞察，一站式自研 BI。
+                </Typography>
+                <Box sx={{ display: "flex", gap: 1.5, mt: 3, position: "relative", zIndex: 1 }}>
+                  <Button variant="contained" startIcon={<TrendingUp />} onClick={() => selectView("templates")}
+                    sx={{ bgcolor: "rgba(255,255,255,0.2)", "&:hover": { bgcolor: "rgba(255,255,255,0.35)" }, textTransform: "none", fontWeight: 600, borderRadius: 2 }}>
+                    浏览模板
+                  </Button>
+                </Box>
               </Box>
-            </Box>
 
-            {/* 搜索 */}
-            <Box sx={{ display: "flex", alignItems: "center", gap: 2, mb: 3 }}>
-              <TextField size="small" placeholder="搜索看板..." value={search}
-                onChange={e => setSearch(e.target.value)}
-                InputProps={{
-                  startAdornment: <InputAdornment position="start"><Search sx={{ color: "text.secondary", fontSize: 18 }} /></InputAdornment>,
-                  sx: { borderRadius: 2, fontSize: 13 },
-                }} sx={{ width: 300 }} />
-            </Box>
+              <Box sx={{
+                flex: "1 0 auto", display: "flex", flexDirection: "column",
+                bgcolor: "#fff", borderRadius: "20px", px: 4, py: 3.5,
+                boxShadow: "0 1px 2px rgba(15,23,42,0.04)",
+              }}>
+                {/* 标题栏：与「项目」页同构 —— 大标题 + 右侧搜索 */}
+                <Box sx={{ display: "flex", alignItems: "center", minHeight: 44, mb: 3.5, gap: 1 }}>
+                  <Typography sx={{ fontSize: 27, fontWeight: 600, letterSpacing: "-0.02em", color: INK }}>
+                    我的看板
+                  </Typography>
+                  <Box sx={{ flex: 1 }} />
+                  {searchOpen ? (
+                    <TextField
+                      autoFocus size="small" placeholder="搜索看板" value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Escape") { setSearch(""); setSearchOpen(false); } }}
+                      onBlur={() => { if (!search) setSearchOpen(false); }}
+                      sx={{
+                        width: 220,
+                        "& .MuiOutlinedInput-root": {
+                          borderRadius: 2, fontSize: 13,
+                          "& fieldset": { borderColor: CARD_BORDER },
+                        },
+                      }}
+                    />
+                  ) : (
+                    <IconButton onClick={() => setSearchOpen(true)} sx={{ color: MUTED, "&:hover": { color: INK } }}>
+                      <Search sx={{ fontSize: 21 }} />
+                    </IconButton>
+                  )}
+                </Box>
 
-            {loading ? (
-              <Box sx={{ textAlign: "center", py: 8 }}><CircularProgress /></Box>
-            ) : filtered.length === 0 ? (
-              <Box sx={{ textAlign: "center", py: 12 }}>
-                <Dashboard sx={{ fontSize: 48, color: "text.disabled", mb: 2 }} />
-                <Typography variant="h6" fontWeight={600} gutterBottom>暂无看板</Typography>
-                <Typography color="text.secondary">前往模板库新建你的第一个数据看板</Typography>
-              </Box>
-            ) : (
-              <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 2 }}>
-                {filtered.map(d => (
-                  <Card key={d.id}
-                    sx={{
-                      borderRadius: 2.5,
-                      border: "1px solid", borderColor: "divider",
-                      transition: "all 0.15s",
-                      "&:hover": { borderColor: "#6366F1", boxShadow: `0 0 0 1px ${alpha("#6366F1", 0.25)}` },
-                      position: "relative",
-                    }}>
-                    <CardContent sx={{ pb: 1 }}>
-                      <Box sx={{ display: "flex", alignItems: "flex-start", gap: 1.5 }}>
+                {loading ? (
+                  <Box sx={{ py: 10, display: "flex", justifyContent: "center" }}>
+                    <CircularProgress size={24} />
+                  </Box>
+                ) : filtered.length === 0 ? (
+                  <Box sx={{ py: 10, textAlign: "center" }}>
+                    <Dashboard sx={{ fontSize: 34, color: "#DCDCE1" }} />
+                    <Typography sx={{ mt: 1, fontSize: 14, fontWeight: 500, color: INK }}>
+                      {search ? "没有匹配的看板" : "暂无看板"}
+                    </Typography>
+                    {!search && (
+                      <Typography sx={{ mt: 0.5, fontSize: 12.5, color: MUTED }}>
+                        在左侧「模板库」挑一个模板开始
+                      </Typography>
+                    )}
+                  </Box>
+                ) : (
+                  <Box sx={{
+                    display: "grid", gridTemplateColumns: "repeat(auto-fill, 208px)",
+                    columnGap: "40px", rowGap: "32px",
+                  }}>
+                    {filtered.map((b) => (
+                      <Box key={b.key} sx={{ "&:hover .more-btn": { opacity: 1 } }}>
                         <Box
-                          onClick={() => nav(`/bi/view/${d.id}`)}
-                          sx={{ cursor: "pointer", width: 42, height: 42, borderRadius: 2.5, flexShrink: 0,
-                          background: alpha("#6366F1", 0.08), display: "flex", alignItems: "center",
-                          justifyContent: "center", color: "#6366F1" }}>
-                          <Dashboard fontSize="small" />
+                          onClick={() => openBoard(b)}
+                          sx={{
+                            borderRadius: "12px", border: `1px solid ${CARD_BORDER}`, bgcolor: "#fff",
+                            aspectRatio: "16 / 10", position: "relative", overflow: "hidden",
+                            cursor: "pointer", transition: "border-color .16s ease, box-shadow .16s ease",
+                            "&:hover": { borderColor: "#C9C9D2", boxShadow: "0 4px 16px rgba(15,23,42,0.07)" },
+                          }}>
+                          <BoardThumb doc={b.kind === "page" ? boardDocs[b.id] : undefined} />
+                          {b.teamShared && (
+                            <Chip label="协同" size="small"
+                              sx={{
+                                position: "absolute", top: 6, left: 6, height: 18, fontSize: 10,
+                                fontWeight: 700, color: "#fff", bgcolor: "rgba(16,185,129,0.92)",
+                                "& .MuiChip-label": { px: 0.75 },
+                              }} />
+                          )}
+                          <IconButton
+                            className="more-btn" size="small"
+                            onClick={(e) => { e.stopPropagation(); setBoardMenu({ el: e.currentTarget, board: b }); }}
+                            sx={{
+                              position: "absolute", top: 6, right: 6, width: 24, height: 24,
+                              bgcolor: "rgba(255,255,255,0.92)", color: MUTED, opacity: 0,
+                              transition: "opacity .15s ease",
+                              "&:hover": { bgcolor: "#fff", color: INK },
+                              "& .MuiSvgIcon-root": { fontSize: 16 },
+                            }}>
+                            <MoreHoriz />
+                          </IconButton>
                         </Box>
-                        <Box sx={{ flex: 1, minWidth: 0 }} onClick={() => nav(`/bi/view/${d.id}`)} style={{ cursor: "pointer" }}>
-                          <Typography variant="subtitle2" fontWeight={700} noWrap fontSize={14}>{d.name}</Typography>
-                          <Typography variant="caption" color="text.secondary">
-                            {d.panels?.length || 0} 个图表 · {d.updated_at?.slice(0, 10) || ""}
-                          </Typography>
-                        </Box>
-                        <IconButton
-                          size="small"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setMenuAnchor({ el: e.currentTarget, dashId: d.id });
-                          }}
-                          sx={{ p: 0.5, opacity: 0.6, "&:hover": { opacity: 1 } }}
-                        >
-                          <MoreVert fontSize="small" />
-                        </IconButton>
+                        <Typography
+                          noWrap title={b.name}
+                          onClick={() => openBoard(b)}
+                          sx={{
+                            mt: 1.5, textAlign: "center", fontSize: 14, color: INK, fontWeight: 500,
+                            cursor: "pointer", px: 0.5,
+                          }}>
+                          {b.name}
+                        </Typography>
                       </Box>
-
-                      {/* 操作按钮行 */}
-                      <Box sx={{ display: "flex", gap: 0.5, mt: 1.5, flexWrap: "wrap" }}>
-                        <Tooltip title="打开看板">
-                          <Button size="small" variant="outlined"
-                            onClick={() => nav(`/bi/view/${d.id}`)}
-                            startIcon={<OpenInNew sx={{ fontSize: 14 }} />}
-                            sx={{ borderRadius: 1.5, textTransform: "none", fontSize: 11, py: 0.25, minWidth: "auto" }}>
-                            打开
-                          </Button>
-                        </Tooltip>
-                        <Tooltip title="重命名">
-                          <IconButton size="small"
-                            onClick={() => { setRenameDialog(d); setRenameValue(d.name); }}
-                            sx={{ borderRadius: 1.5, p: 0.5 }}>
-                            <Edit sx={{ fontSize: 16 }} />
-                          </IconButton>
-                        </Tooltip>
-                        <Tooltip title="共享给团队成员">
-                          <IconButton size="small"
-                            onClick={() => openShareDialog(d)}
-                            sx={{ borderRadius: 1.5, p: 0.5 }}>
-                            <Share sx={{ fontSize: 16 }} />
-                          </IconButton>
-                        </Tooltip>
-                        <Tooltip title="删除">
-                          <IconButton size="small"
-                            onClick={() => setDeleteDialog(d)}
-                            sx={{ borderRadius: 1.5, p: 0.5, ml: "auto", color: "error.main" }}>
-                            <Delete sx={{ fontSize: 16 }} />
-                          </IconButton>
-                        </Tooltip>
-                      </Box>
-                    </CardContent>
-
-                    {/* 下拉菜单（备用，当前已用 inline 按钮替代） */}
-                    <Menu
-                      open={!!menuAnchor && menuAnchor.dashId === d.id}
-                      anchorEl={menuAnchor?.el}
-                      onClose={() => setMenuAnchor(null)}
-                      anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
-                      transformOrigin={{ vertical: "top", horizontal: "right" }}
-                    >
-                      <MenuItem onClick={() => { setMenuAnchor(null); nav(`/bi/view/${d.id}`); }}>
-                        <OpenInNew sx={{ fontSize: 16, mr: 1 }} /> 打开看板
-                      </MenuItem>
-                      <MenuItem onClick={() => { setRenameDialog(d); setRenameValue(d.name); setMenuAnchor(null); }}>
-                        <Edit sx={{ fontSize: 16, mr: 1 }} /> 重命名
-                      </MenuItem>
-                      <MenuItem onClick={() => openShareDialog(d)}>
-                        <Share sx={{ fontSize: 16, mr: 1 }} /> 共享设置
-                      </MenuItem>
-                      <Divider />
-                      <MenuItem onClick={() => { setDeleteDialog(d); setMenuAnchor(null); }}
-                        sx={{ color: "error.main" }}>
-                        <Delete sx={{ fontSize: 16, mr: 1 }} /> 删除看板
-                      </MenuItem>
-                    </Menu>
-                  </Card>
-                ))}
+                    ))}
+                  </Box>
+                )}
               </Box>
-            )}
+            </Box>
           </Box>
         );
     }
   };
 
   return (
-    <Box sx={{ height: "calc(100vh - 64px)", display: "flex", overflow: "hidden" }}>
+    <Box sx={{ height: "100%", minHeight: 0, display: "flex", overflow: "hidden" }}>
       {/* 左侧边栏 */}
-      <Box sx={{
-        width: 250, flexShrink: 0, display: "flex", flexDirection: "column",
-        borderRight: "1px solid", borderColor: "divider",
-        bgcolor: alpha(theme.palette.background.paper, 0.7),
-        backdropFilter: "blur(12px)",
-      }}>
-        <Box sx={{ px: 2.5, py: 2.5, borderBottom: "1px solid", borderColor: "divider" }}>
-          <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
-            <Avatar sx={{ width: 38, height: 38, borderRadius: 2.5,
-              background: "linear-gradient(135deg, #6366F1, #8B5CF6)",
-              fontSize: 18, fontWeight: 800,
-              boxShadow: "0 4px 12px rgba(99,102,241,0.35)", }}>BI</Avatar>
-            <Box>
-              <Typography variant="h6" fontWeight={800} fontSize={18} letterSpacing={-0.5}
-                sx={{ background: "linear-gradient(135deg, #6366F1, #8B5CF6)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
-                明策BI
-              </Typography>
-              <Typography variant="caption" color="text.secondary" fontSize={11}>ECharts · 自研引擎</Typography>
-            </Box>
-          </Box>
-        </Box>
-
-        <Box sx={{ flexGrow: 1, px: 1.5, pt: 2, overflow: "auto" }}>
-          <Typography variant="overline" sx={{ px: 1, fontWeight: 600, color: "text.secondary", fontSize: 11, letterSpacing: 1 }}>菜单</Typography>
-          {NAV_ITEMS.map((item) => (
-            <Box key={item.view}
-              onClick={() => (item as any).action === 'nav' ? nav('/bi/editor') : (item as any).action === 'modal' ? setAiDialogOpen(true) : setActiveNav(item.view)}
-              sx={{
-                display: "flex", alignItems: "center", gap: 1.5,
-                px: 1.5, py: 1.2, borderRadius: 2, mt: 0.5, cursor: "pointer",
-                color: activeNav === item.view ? item.color : "text.secondary",
-                bgcolor: activeNav === item.view ? alpha(item.color, 0.08) : "transparent",
-                fontWeight: activeNav === item.view ? 600 : 400,
-                transition: "all 0.15s",
-                "&:hover": { bgcolor: alpha(item.color, 0.06) },
-              }}>
-              <Box sx={{ fontSize: 20, display: "flex" }}>{item.icon}</Box>
-              <Typography variant="body2" fontSize={13} fontWeight="inherit">{item.label}</Typography>
-            </Box>
-          ))}
-        </Box>
-
-        <Box sx={{ px: 1.5, py: 2, borderTop: "1px solid", borderColor: "divider" }}>
-          <Box sx={{ display: "flex", justifyContent: "space-between", px: 1.5 }}>
-            <Typography variant="caption" color="text.secondary">我的看板</Typography>
-            <Typography variant="caption" fontWeight={700} color="#6366F1">{myDashboards.length}</Typography>
-          </Box>
-        </Box>
-      </Box>
+      <BiSideNav
+        items={BI_NAV_ITEMS}
+        activeKey={activeNav}
+        onSelect={handleNav}
+        count={boards.length}
+        countLabel="我的看板"
+      />
 
       {/* 主内容区 */}
       <Box sx={{ flex: 1, overflow: "auto" }}>{renderContent()}</Box>
+
+      {/* 卡片 ⋯ 操作菜单 */}
+      <Menu
+        anchorEl={boardMenu?.el ?? null} open={!!boardMenu} onClose={() => setBoardMenu(null)}
+        slotProps={{ paper: { sx: { borderRadius: 2, minWidth: 148, border: `1px solid ${CARD_BORDER}` } } }}
+      >
+        <MenuItem dense sx={{ fontSize: 13, gap: 1.25 }}
+          onClick={() => { const b = boardMenu?.board; setBoardMenu(null); if (b) openBoard(b); }}>
+          <Visibility sx={{ fontSize: 16, color: MUTED }} />预览
+        </MenuItem>
+        {boardMenu?.board.kind === "page" && (
+          <MenuItem dense sx={{ fontSize: 13, gap: 1.25 }}
+            onClick={() => { const b = boardMenu?.board; setBoardMenu(null); if (b) editBoard(b); }}>
+            <OpenInNew sx={{ fontSize: 16, color: MUTED }} />编辑
+          </MenuItem>
+        )}
+        {boardMenu?.board.kind === "engine" && (
+          <MenuItem dense sx={{ fontSize: 13, gap: 1.25 }}
+            onClick={() => { const b = boardMenu?.board; setBoardMenu(null); if (b) void openShareDialog(b); }}>
+            <Share sx={{ fontSize: 16, color: MUTED }} />共享
+          </MenuItem>
+        )}
+        {boardMenu?.board.kind === "page" && boardMenu?.board.canManage && (
+          <MenuItem dense sx={{ fontSize: 13, gap: 1.25 }}
+            onClick={() => { const b = boardMenu?.board; setBoardMenu(null); if (b) void openTemplateShare(b); }}>
+            <Share sx={{ fontSize: 16, color: MUTED }} />分享到模板库
+          </MenuItem>
+        )}
+        {boardMenu?.board.kind === "page" && boardMenu?.board.canManage && (
+          <MenuItem dense sx={{ fontSize: 13, gap: 1.25 }}
+            onClick={() => {
+              const b = boardMenu?.board;
+              setBoardMenu(null);
+              if (b) setTeamShareBoard({ id: b.id, name: b.name });
+            }}>
+            <Groups sx={{ fontSize: 16, color: MUTED }} />分享到我的团队
+          </MenuItem>
+        )}
+        {boardMenu?.board.kind === "page" && boardMenu?.board.canManage && (
+          <MenuItem dense sx={{ fontSize: 13, gap: 1.25 }}
+            onClick={() => {
+              const b = boardMenu?.board;
+              setBoardMenu(null);
+              if (b) setAlertBoard({ id: b.id, name: b.name });
+            }}>
+            <NotificationsActive sx={{ fontSize: 16, color: MUTED }} />指标告警
+          </MenuItem>
+        )}
+        {boardMenu?.board.kind === "page" && boardMenu?.board.canManage && (
+          <MenuItem dense sx={{ fontSize: 13, gap: 1.25 }}
+            onClick={() => {
+              const b = boardMenu?.board;
+              setBoardMenu(null);
+              if (b) setReportBoard({ id: b.id, name: b.name });
+            }}>
+            <Schedule sx={{ fontSize: 16, color: MUTED }} />定时报表
+          </MenuItem>
+        )}
+        {boardMenu?.board.canManage && (
+          <MenuItem dense sx={{ fontSize: 13, gap: 1.25 }}
+            onClick={() => {
+              const b = boardMenu?.board; if (!b) return;
+              setRenameDialog(b); setRenameValue(b.name); setBoardMenu(null);
+            }}>
+            <DriveFileRenameOutline sx={{ fontSize: 16, color: MUTED }} />重命名
+          </MenuItem>
+        )}
+        {boardMenu?.board.canManage && (
+          <MenuItem dense sx={{ fontSize: 13, gap: 1.25, color: "error.main" }}
+            onClick={() => { const b = boardMenu?.board; setBoardMenu(null); if (b) setDeleteDialog(b); }}>
+            <DeleteOutline sx={{ fontSize: 16 }} />删除
+          </MenuItem>
+        )}
+      </Menu>
 
       {/* 克隆结果提示 */}
       <Snackbar
@@ -594,120 +740,6 @@ export default function BiDashboardPage() {
         </Alert>
       </Snackbar>
 
-      {/* ─── AI 生成看板 对话框 ─── */}
-      <Dialog open={aiDialogOpen} onClose={() => { if (!aiGenerating) { setAiDialogOpen(false); setAiResult(null); setAiError(""); }}} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 3 } }}>
-        <DialogTitle sx={{ fontWeight: 700, display: "flex", alignItems: "center", gap: 1 }}>
-          <AutoAwesome sx={{ color: "#8B5CF6" }} /> AI 生成看板
-        </DialogTitle>
-        <DialogContent sx={{ pt: 1 }}>
-          {aiResult ? (
-            <Box sx={{ py: 2, textAlign: "center" }}>
-              <Box sx={{ width: 56, height: 56, borderRadius: "50%", mx: "auto", mb: 2, bgcolor: "#8B5CF6", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 24 }}>✓</Box>
-              {aiResult.batch ? (
-                <>
-                  <Typography variant="h6" fontWeight={700} gutterBottom>批量生成完成</Typography>
-                  <Box sx={{ display: "flex", justifyContent: "center", gap: 1, mb: 2, flexWrap: "wrap" }}>
-                    {aiResult.dashboards?.map((d: any) => (
-                      <Chip key={d.dashboard_id} label={d.name} color="primary" variant="outlined" size="small" />
-                    ))}
-                  </Box>
-                  <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 2 }}>
-                    共 {aiResult.count} 个看板 · 领域: {aiResult.domain}
-                  </Typography>
-                </>
-              ) : (
-                <>
-                  <Typography variant="h6" fontWeight={700} gutterBottom>{aiResult.dashboard_name || aiResult.result?.dashboard_name}</Typography>
-                  <Box sx={{ display: "flex", justifyContent: "center", gap: 3, mb: 1 }}>
-                    <Chip label={`${aiResult.panels?.length || aiResult.panels_count || 0} 个图表`} color="primary" variant="outlined" size="small" />
-                    {aiResult.panels_count == null && aiResult.rows != null && <Chip label={`${aiResult.rows} 行`} variant="outlined" size="small" />}
-                    {aiResult.latency_ms != null && <Chip label={`${(aiResult.latency_ms / 1000).toFixed(1)}s`} variant="outlined" size="small" />}
-                  </Box>
-                  {aiResult.stages && (
-                    <Box sx={{ mb: 2 }}>
-                      {aiResult.stages.map((s: any) => (
-                        <Typography key={s.stage} variant="caption" color="text.secondary" sx={{ display: "block" }}>
-                          {s.stage}: {s.panels ? `${s.panels}图表` : s.actions ? `${s.actions}处修正` : s.checks ? `${s.checks}项通过` : s.error || "完成"}
-                        </Typography>
-                      ))}
-                    </Box>
-                  )}
-                </>
-              )}
-              <Button variant="contained" onClick={() => { setAiDialogOpen(false); setAiResult(null); setAiFile(null); nav("/bi"); }}
-                startIcon={<Dashboard />} sx={{ bgcolor: "#6366F1", borderRadius: 1.5 }}>
-                保存到我的看板
-              </Button>
-            </Box>
-          ) : (
-            <Box>
-              {/* Mode Tabs */}
-              <ToggleButtonGroup size="small" value={aiMode} exclusive onChange={(_, v) => v && setAiMode(v)} sx={{ mb: 2, width: "100%" }}>
-                <ToggleButton value="upload" sx={{ flex: 1, fontSize: 12 }}>📁 上传文件生成</ToggleButton>
-                <ToggleButton value="batch" sx={{ flex: 1, fontSize: 12 }}>📦 批量行业模板</ToggleButton>
-              </ToggleButtonGroup>
-
-              {aiMode === "upload" ? (
-                <>
-                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                    上传 Excel/CSV 数据文件，AI 自动分析并生成看板布局。
-                  </Typography>
-                  <label style={{ display: "block", cursor: "pointer" }}>
-                    <input type="file" hidden accept=".xlsx,.xls,.xlsm,.csv" onChange={e => { setAiFile(e.target.files?.[0] || null); setAiError(""); }} />
-                    <Box sx={{ border: `2px dashed ${aiFile ? "#8B5CF6" : "divider"}`, borderRadius: 2, p: 3, textAlign: "center", bgcolor: aiFile ? "rgba(139,92,246,0.04)" : "transparent", "&:hover": { borderColor: "#8B5CF6", bgcolor: "rgba(139,92,246,0.04)" } }}>
-                      <CloudUpload sx={{ fontSize: 32, color: aiFile ? "#8B5CF6" : "text.disabled", mb: 0.5 }} />
-                      <Typography variant="body2" fontWeight={600} color={aiFile ? "#8B5CF6" : "text.primary"}>{aiFile ? aiFile.name : "点击选择数据文件"}</Typography>
-                      <Typography variant="caption" color="text.disabled">支持 .xlsx .xls .csv</Typography>
-                    </Box>
-                  </label>
-                </>
-              ) : (
-                <Box>
-                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                    选择行业领域，AI 批量生成 3-5 套完整业务看板。
-                  </Typography>
-                  <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
-                    {["电商", "财务", "生产", "通用"].map(d => (
-                      <Button key={d} variant="outlined" size="small"
-                        onClick={() => handleBatchGenerate(d)}
-                        disabled={aiGenerating}
-                        sx={{ borderRadius: 1.5, fontSize: 12, textTransform: "none" }}>
-                        📊 {d}
-                      </Button>
-                    ))}
-                  </Box>
-                </Box>
-              )}
-
-              {aiGenerating && aiMode === "upload" && (
-                <Box sx={{ mt: 2 }}>
-                  <LinearProgress variant="determinate" value={aiProgress} sx={{ borderRadius: 1, height: 6 }} />
-                  <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5, textAlign: "center" }}>
-                    {aiMsg || `AI 生成中... ${aiProgress}%`}
-                  </Typography>
-                </Box>
-              )}
-              {aiError && <Alert severity="error" sx={{ mt: 1.5, fontSize: 13 }}>{aiError}</Alert>}
-            </Box>
-          )}
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2.5, pt: 0 }}>
-          {aiResult ? (
-            <Button onClick={() => { setAiDialogOpen(false); setAiResult(null); setAiFile(null); }}>关闭</Button>
-          ) : (
-            <>
-              <Button onClick={() => { setAiDialogOpen(false); setAiFile(null); }} disabled={aiGenerating}>取消</Button>
-              {aiMode === "upload" && (
-                <Button onClick={handleAiGenerate} variant="contained" disabled={!aiFile || aiGenerating}
-                  startIcon={aiGenerating ? <CircularProgress size={14} /> : <AutoAwesome />}
-                  sx={{ bgcolor: "#8B5CF6", borderRadius: 1.5, "&:hover": { bgcolor: "#7C3AED" } }}>
-                  {aiGenerating ? "AI 生成中..." : "开始生成"}
-                </Button>
-              )}
-            </>
-          )}
-        </DialogActions>
-      </Dialog>
       {/* ====== 重命名弹窗 ====== */}
       <Dialog open={!!renameDialog} onClose={() => setRenameDialog(null)} maxWidth="xs" fullWidth>
         <DialogTitle sx={{ fontWeight: 700, fontSize: 16 }}>重命名看板</DialogTitle>
@@ -752,7 +784,7 @@ export default function BiDashboardPage() {
             variant="contained"
             color="error"
             disabled={deleting}
-            startIcon={deleting ? <CircularProgress size={14} color="inherit" /> : <Delete />}
+            startIcon={deleting ? <CircularProgress size={14} color="inherit" /> : <DeleteOutline />}
             sx={{ borderRadius: 2, textTransform: "none" }}
           >
             {deleting ? "删除中..." : "确认删除"}
@@ -829,6 +861,89 @@ export default function BiDashboardPage() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* ====== 分享到模板库（看板模板 + 数据副本） ====== */}
+      <Dialog open={!!tplDialog} onClose={() => setTplDialog(null)} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ fontWeight: 700, fontSize: 16, display: "flex", alignItems: "center", gap: 1 }}>
+          <Share sx={{ fontSize: 20, color: "#6366F1" }} />
+          分享到模板库
+        </DialogTitle>
+        <DialogContent>
+          <Typography sx={{ fontSize: 12.5, color: "text.secondary", mb: 2 }}>
+            看板会复制一份到模板库，它用到的数据集也会复制到「测试数据集」页；别人用这个模板生成的看板直接用这份数据。
+          </Typography>
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
+            <TextField size="small" fullWidth label="模板名称" value={tplName}
+              onChange={(e) => setTplName(e.target.value)}
+              sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2, fontSize: 13 } }} />
+            <TextField size="small" fullWidth label="模板说明" value={tplDesc}
+              onChange={(e) => setTplDesc(e.target.value)}
+              multiline minRows={2}
+              placeholder="这个看板解决什么问题、适合谁用"
+              sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2, fontSize: 13 } }} />
+            <TextField select size="small" fullWidth label="分类" value={tplCategory}
+              onChange={(e) => setTplCategory(e.target.value)}
+              sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2, fontSize: 13 } }}>
+              {["通用", "拼多多", "天猫", "财务", "产品部"].map((cat) => (
+                <MenuItem key={cat} value={cat} sx={{ fontSize: 13 }}>{cat}</MenuItem>
+              ))}
+            </TextField>
+            <Box>
+              <Typography sx={{ fontSize: 12, color: "#64748B", mb: 0.5 }}>谁可以看</Typography>
+              <RadioGroup row value={tplPublic ? "all" : "members"}
+                onChange={(e) => setTplPublic(e.target.value === "all")}>
+                <FormControlLabel value="all" control={<Radio size="small" />}
+                  label={<Typography sx={{ fontSize: 12.5 }}>所有人可见</Typography>} />
+                <FormControlLabel value="members" control={<Radio size="small" />}
+                  label={<Typography sx={{ fontSize: 12.5 }}>指定成员</Typography>} />
+              </RadioGroup>
+            </Box>
+            {!tplPublic && (
+              <TextField select size="small" fullWidth label="选择成员" value={tplMembers}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setTplMembers(typeof value === "string" ? value.split(",").map(Number) : value as number[]);
+                }}
+                SelectProps={{
+                  multiple: true,
+                  renderValue: (selected) => (selected as number[])
+                    .map((id) => tplUsers.find((u) => u.id === id)?.username || `#${id}`)
+                    .join("、"),
+                }}
+                sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2, fontSize: 13 } }}>
+                {tplUsers.filter((u) => u.id !== user?.id).map((u) => (
+                  <MenuItem key={u.id} value={u.id} sx={{ fontSize: 13 }}>{u.username}</MenuItem>
+                ))}
+              </TextField>
+            )}
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5 }}>
+          <Button onClick={() => setTplDialog(null)} sx={{ textTransform: "none" }}>取消</Button>
+          <Button
+            onClick={submitTemplateShare}
+            variant="contained"
+            disabled={tplBusy || !tplName.trim() || (!tplPublic && tplMembers.length === 0)}
+            startIcon={tplBusy ? <CircularProgress size={14} color="inherit" /> : null}
+            sx={{ borderRadius: 2, textTransform: "none", bgcolor: "#6366F1" }}
+          >
+            {tplBusy ? "分享中..." : "分享"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* ====== 分享到我的团队（协同看板，不复制） ====== */}
+      <TeamShareDialog
+        board={teamShareBoard}
+        onClose={() => setTeamShareBoard(null)}
+        onChanged={() => { setTeamReload((n) => n + 1); void refreshPageBoards(); }}
+      />
+
+      {/* ====== 指标告警（阈值 / 波动 → 站内 + Webhook） ====== */}
+      <AlertRulesDialog board={alertBoard} onClose={() => setAlertBoard(null)} />
+
+      {/* ====== 定时报表（HTML / Excel → 站内 + Webhook） ====== */}
+      <ReportSubscriptionsDialog board={reportBoard} onClose={() => setReportBoard(null)} />
     </Box>
   );
 }

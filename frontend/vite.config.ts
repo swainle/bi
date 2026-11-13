@@ -5,17 +5,22 @@ import react from "@vitejs/plugin-react";
 export default defineConfig({
   plugins: [react()],
   server: {
-    port: 5173,
+    // 0.0.0.0 = 局域网可访问（手机/其他电脑用 http://<本机IP>:5300 打开）
+    host: "0.0.0.0",
+    port: 5300,
+    strictPort: true,
     proxy: {
-      "/api": { target: "http://127.0.0.1:8000", changeOrigin: true },
-      "/uploads": { target: "http://127.0.0.1:8000", changeOrigin: true },
+      "/api": { target: "http://127.0.0.1:8300", changeOrigin: true },
+      "/uploads": { target: "http://127.0.0.1:8300", changeOrigin: true },
     },
   },
   preview: {
-    port: 4173,
+    host: "0.0.0.0",
+    port: 5301,
+    strictPort: true,
     proxy: {
-      "/api": { target: "http://127.0.0.1:8000", changeOrigin: true },
-      "/uploads": { target: "http://127.0.0.1:8000", changeOrigin: true },
+      "/api": { target: "http://127.0.0.1:8300", changeOrigin: true },
+      "/uploads": { target: "http://127.0.0.1:8300", changeOrigin: true },
     },
   },
   build: {
@@ -27,7 +32,6 @@ export default defineConfig({
           vendor: ["react", "react-dom", "react-router-dom"],
           mui: ["@mui/material", "@mui/icons-material", "@emotion/react", "@emotion/styled"],
           echarts: ["echarts", "echarts-for-react"],
-          editor: ["@tiptap/react", "@tiptap/starter-kit"],
         },
         chunkFileNames: "assets/js/[name]-[hash].js",
         entryFileNames: "assets/js/[name]-[hash].js",

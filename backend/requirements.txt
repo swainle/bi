@@ -14,6 +14,9 @@ email-validator==2.1.1
 # ── 数据库（BI 依赖 PostgreSQL: jsonb / 窗口函数 / 物化视图）──
 sqlalchemy==2.0.30
 psycopg2-binary==2.9.9
+# MySQL 家族（MySQL / MariaDB / TiDB / Doris / StarRocks）走 PyMySQL；
+# 注意版本按发行版（pip）写，PyMySQL.__version__ 是历史遗留值（2.2.8），不是包版本
+PyMySQL==1.2.4
 
 # ── 认证 ──
 python-jose[cryptography]==3.3.0
@@ -28,12 +31,21 @@ openpyxl==3.1.2
 httpx==0.28.1
 requests==2.32.3
 
+# ── 无头浏览器渲染（报表 PDF / PNG，走 Chrome DevTools Protocol）──
+websockets>=13.0
+
 # ── 日志 / 中文拼音（团队目录命名）──
 structlog>=24.0.0
 pypinyin==0.50.0
 
+# ── SQL 解析 / 只读校验 / 行级权限注入（app/security）──
+sqlglot==30.30.0
+
 # ── 可选：Redis（布局缓存 / 分布式限流）──
 redis>=5.0.0
+
+# ── 测试（仅本地 / CI）──
+pytest>=9.0.0
 
 # ── 可选：系统监控端点 ──
 psutil>=5.9.0

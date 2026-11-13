@@ -1,380 +1,653 @@
-import { useState, useEffect } from "react";
+/** 数据源 —— Superset 的 Database 层：连接配置 / 源库选表 / 同步接入 / 文件导入 */
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Box, Typography, IconButton, Paper, Button, Chip,
-  Select, MenuItem, FormControl, InputLabel, TextField,
-  Dialog, DialogTitle, DialogContent, DialogActions,
+  Alert, Box, Button, Checkbox, Chip, CircularProgress, Dialog,
+  DialogActions, DialogContent, DialogTitle, IconButton, InputAdornment,
+  MenuItem, Paper, Select, Snackbar, Table, TableBody, TableCell, TableContainer,
+  TableHead, TableRow, TextField, Tooltip, Typography,
 } from "@mui/material";
 import {
-  Add as AddIcon, Close, FileUpload,
-  DeleteOutline, Check as CheckIcon,
+  Add, DeleteOutline, FileUpload, Link as LinkIcon, Refresh,
+  Rule, Search, Storage, TableChart, UploadFile,
 } from "@mui/icons-material";
 import client from "../../api/client";
-import {
-  DsConfig, DsCategory, DsTypeDef, DataRow,
-  DS_TYPES, DS_CATEGORIES, DbIcon,
-} from "./constants";
+import { DS_TYPES } from "./constants";
 
-// JDBC URL 模版
-const jdbcTemplates: Record<string, string> = {
-  mysql: "jdbc:mysql://{host}:{port}/{db}",
-  mariadb: "jdbc:mariadb://{host}:{port}/{db}",
-  oracle: "jdbc:oracle:thin:@{host}:{port}:{db}",
-  postgresql: "jdbc:postgresql://{host}:{port}/{db}",
-  sqlserver: "jdbc:sqlserver://{host}:{port};databaseName={db}",
-  db2: "jdbc:db2://{host}:{port}/{db}",
-  tidb: "jdbc:mysql://{host}:{port}/{db}",
-  dm: "jdbc:dm://{host}:{port}/{db}",
-  kingbase: "jdbc:kingbase8://{host}:{port}/{db}",
-  mongodb: "jdbc:mongo://{host}:{port}/{db}",
-  mongodb_bi: "jdbc:mysql://{host}:{port}/{db}",
-  clickhouse: "jdbc:clickhouse://{host}:{port}/{db}",
-  doris: "jdbc:mysql://{host}:{port}/{db}",
-  starrocks: "jdbc:mysql://{host}:{port}/{db}",
-  impala: "jdbc:impala://{host}:{port}/{db}",
-  presto: "jdbc:presto://{host}:{port}/{db}",
-  kylin: "jdbc:kylin://{host}:{port}/{db}",
-  elasticsearch: "jdbc:elasticsearch://{host}:{port}",
-  redshift: "jdbc:redshift://{host}:{port}/{db}",
-  hive: "jdbc:hive2://{host}:{port}/{db}",
-  maxcompute: "jdbc:odps://{host}:{port}/{db}",
-};
-
-interface DataSourcesProps {
-  rows: DataRow[];
-  setRows: React.Dispatch<React.SetStateAction<DataRow[]>>;
-  fields: string[];
-  setActiveTab: React.Dispatch<React.SetStateAction<number>>;
-  setSearchParams: (params: Record<string, string>, opts?: { replace?: boolean }) => void;
-  handleFileUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
+interface Source {
+  id: number; name: string; ds_type: string; host: string; port: number | null;
+  db_name: string; username: string; uri: boolean; table_count: number;
+  updated_at: string;
+}
+interface ColumnDrift { name: string; type?: string; from?: string; to?: string }
+interface Drift {
+  added?: ColumnDrift[];
+  removed?: ColumnDrift[];
+  changed?: ColumnDrift[];
+  has_changes?: boolean;
+}
+interface SyncedTable {
+  id: number; source_id: number | null; source_table: string; local_table: string;
+  row_count: number; kind: string; synced_at: string; source_name: string;
+  ds_type: string; dataset_count: number;
+  freshness?: "fresh" | "aging" | "stale" | "unknown";
+  age_hours?: number | null;
+  column_count?: number;
+  checked_at?: string;
+  drift?: Drift | null;
+  sync_interval_minutes?: number;
+  next_sync_at?: string;
+  last_sync_status?: string;
+  last_sync_error?: string;
+}
+interface RemoteTable {
+  table: string;
+  columns: string[];
+  schema?: string;
+  kind?: "table" | "view";
 }
 
-export default function DataSources({
-  rows, setRows, fields, setActiveTab, setSearchParams, handleFileUpload,
-}: DataSourcesProps) {
-  const [dsList, setDsList] = useState<DsConfig[]>(() => {
-    try { return JSON.parse(localStorage.getItem("mingzebi_bi_datasources") || "[]"); } catch { return []; }
+const th = { fontSize: 11.5, fontWeight: 600, color: "#64748B", py: 0.85, bgcolor: "#F8F9FC", borderColor: "#EEF3FB" } as const;
+const td = { fontSize: 12, py: 0.7, borderColor: "#F1F5F9" } as const;
+
+const DB_TYPES = DS_TYPES.filter((t) => t.category !== "文件" && t.category !== "API数据");
+
+function addr(s: Source) {
+  if (s.uri) return "URI";
+  const port = s.port ? `:${s.port}` : "";
+  return `${s.host || "—"}${port}${s.db_name ? `/${s.db_name}` : ""}`;
+}
+
+const FRESH_META: Record<string, { label: string; color: string; bg: string }> = {
+  fresh: { label: "新鲜", color: "#0E7490", bg: "rgba(8,145,178,0.10)" },
+  aging: { label: "待更新", color: "#B45309", bg: "rgba(217,119,6,0.10)" },
+  stale: { label: "过期", color: "#B91C1C", bg: "rgba(220,38,38,0.10)" },
+  unknown: { label: "未知", color: "#64748B", bg: "rgba(100,116,139,0.10)" },
+};
+
+function driftCount(d: Drift | null | undefined) {
+  if (!d) return 0;
+  return (d.added?.length || 0) + (d.removed?.length || 0) + (d.changed?.length || 0);
+}
+
+function driftText(d: Drift | null | undefined) {
+  if (!d) return "";
+  const lines: string[] = [];
+  if (d.added?.length) lines.push(`新增 ${d.added.length} 列：${d.added.map((c) => c.name).join("、")}`);
+  if (d.removed?.length) lines.push(`删除 ${d.removed.length} 列：${d.removed.map((c) => c.name).join("、")}`);
+  if (d.changed?.length) {
+    lines.push(`类型变更 ${d.changed.length} 列：${d.changed.map((c) => `${c.name}（${c.from} → ${c.to}）`).join("、")}`);
+  }
+  return lines.join("\n");
+}
+
+function ageText(hours: number | null | undefined) {
+  if (hours === null || hours === undefined) return "";
+  if (hours < 1) return "刚刚";
+  if (hours < 24) return `${Math.round(hours)} 小时前`;
+  return `${Math.round(hours / 24)} 天前`;
+}
+
+export default function DataSources() {
+  const [sources, setSources] = useState<Source[]>([]);
+  const [synced, setSynced] = useState<SyncedTable[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [ok, setOk] = useState("");
+  const [createOpen, setCreateOpen] = useState(false);
+  const [pickFor, setPickFor] = useState<Source | null>(null);
+  const [testing, setTesting] = useState<number | null>(null);
+  const [checking, setChecking] = useState<number | null>(null);
+  const [resyncing, setResyncing] = useState<number | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [keyword, setKeyword] = useState("");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [s, t] = await Promise.all([
+        client.get("/bi/sources"),
+        client.get("/bi/sources/files"),
+      ]);
+      setSources(s.data?.sources || []);
+      setSynced(t.data?.tables || []);
+    } catch (e: any) {
+      setError(e?.response?.data?.detail || "数据源加载失败");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const testSource = async (s: Source) => {
+    setTesting(s.id);
+    try {
+      const res = await client.post(`/bi/sources/${s.id}/test`);
+      setOk(res.data?.message || "连接成功");
+    } catch (e: any) {
+      setError(e?.response?.data?.detail || "连接失败");
+    } finally {
+      setTesting(null);
+    }
+  };
+
+  const removeSource = async (s: Source) => {
+    if (!window.confirm(`删除数据源「${s.name}」及其已同步的表？`)) return;
+    try {
+      await client.delete(`/bi/sources/${s.id}`);
+      await load();
+    } catch (e: any) {
+      setError(e?.response?.data?.detail || "删除失败");
+    }
+  };
+
+  const removeTable = async (t: SyncedTable) => {
+    try {
+      await client.delete(`/bi/sources/files/${t.id}`);
+      await load();
+      setOk(`已移除 ${t.local_table}`);
+    } catch (e: any) {
+      setError(e?.response?.data?.detail || "移除失败");
+    }
+  };
+
+  const checkSchema = async (s: Source) => {
+    setChecking(s.id);
+    try {
+      const res = await client.post(`/bi/sources/${s.id}/schema-check`);
+      const checked = res.data?.checked ?? 0;
+      const changed = res.data?.changed ?? 0;
+      await load();
+      setOk(changed ? `检查 ${checked} 张表 · ${changed} 张有变更` : `检查 ${checked} 张表 · 结构一致`);
+    } catch (e: any) {
+      setError(e?.response?.data?.detail || "结构检查失败");
+    } finally {
+      setChecking(null);
+    }
+  };
+
+  const resyncTable = async (t: SyncedTable) => {
+    if (!window.confirm(`重新同步「${t.source_table}」？会重拉整张表数据并覆盖本地表。`)) return;
+    setResyncing(t.id);
+    try {
+      const res = await client.post(`/bi/sources/files/${t.id}/resync`);
+      const rows = res.data?.synced?.rows ?? 0;
+      await load();
+      setOk(`已重新同步 ${t.source_table} · ${rows} 行`);
+    } catch (e: any) {
+      setError(e?.response?.data?.detail || "重新同步失败");
+    } finally {
+      setResyncing(null);
+    }
+  };
+
+  const upload = async (file: File) => {
+    setUploading(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await client.post("/bi/sources/upload", form, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      await load();
+      setOk(`已导入 ${res.data?.rows ?? 0} 行 → ${res.data?.local_table ?? ""}`);
+    } catch (e: any) {
+      setError(e?.response?.data?.detail || "导入失败");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const filteredSynced = useMemo(() => {
+    const kw = keyword.trim();
+    return kw
+      ? synced.filter((t) => t.local_table.includes(kw) || t.source_table.includes(kw))
+      : synced;
+  }, [synced, keyword]);
+
+  return (
+    <Box sx={{ p: 4 }}>
+      <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, mb: 2.5 }}>
+        <Typography sx={{ flex: 1, fontSize: 20, fontWeight: 800, color: "text.primary", letterSpacing: -0.2 }}>
+          数据源
+        </Typography>
+        <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls,.json,.tsv" hidden
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) upload(f);
+            e.target.value = "";
+          }} />
+        <Button size="small" variant="outlined"
+          startIcon={uploading ? <CircularProgress size={14} /> : <UploadFile sx={{ fontSize: 16 }} />}
+          onClick={() => fileRef.current?.click()} disabled={uploading}
+          sx={{ textTransform: "none", fontSize: 12.5, borderRadius: 2, height: 36 }}>
+          导入表格
+        </Button>
+        <Button size="small" variant="contained" startIcon={<Add sx={{ fontSize: 16 }} />}
+          onClick={() => setCreateOpen(true)}
+          sx={{ bgcolor: "#6366F1", textTransform: "none", fontSize: 12.5, borderRadius: 2, px: 2, height: 36 }}>
+          新建数据源
+        </Button>
+      </Box>
+
+      {loading ? (
+        <Box sx={{ textAlign: "center", py: 8 }}><CircularProgress size={26} /></Box>
+      ) : (
+        <>
+          <TableContainer component={Paper} elevation={0}
+            sx={{ borderRadius: 2.5, border: "1px solid", borderColor: "#EEF3FB" }}>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell sx={{ ...th, pl: 2 }}>数据源</TableCell>
+                  <TableCell sx={th}>类型</TableCell>
+                  <TableCell sx={th}>地址</TableCell>
+                  <TableCell sx={th} align="right">已接入表</TableCell>
+                  <TableCell sx={th}>更新时间</TableCell>
+                  <TableCell sx={{ ...th, pr: 2 }} align="right">操作</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {sources.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={6} sx={{ py: 7, textAlign: "center", borderBottom: 0 }}>
+                      <Storage sx={{ fontSize: 36, color: "text.disabled", mb: 1 }} />
+                      <Typography sx={{ fontSize: 13, fontWeight: 600, color: "text.secondary" }}>
+                        还没有数据源
+                      </Typography>
+                    </TableCell>
+                  </TableRow>
+                ) : sources.map((s) => (
+                  <TableRow key={s.id} hover>
+                    <TableCell sx={{ ...td, pl: 2 }}>
+                      <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                        <Box sx={{
+                          width: 26, height: 26, borderRadius: 1.5, flexShrink: 0,
+                          bgcolor: "rgba(99,102,241,0.08)", color: "#6366F1", display: "grid", placeItems: "center",
+                        }}>
+                          <Storage sx={{ fontSize: 15 }} />
+                        </Box>
+                        <Typography sx={{ fontSize: 13, fontWeight: 600 }}>{s.name}</Typography>
+                      </Box>
+                    </TableCell>
+                    <TableCell sx={td}>
+                      <Chip label={s.ds_type} size="small"
+                        sx={{ fontSize: 10.5, height: 20, bgcolor: "#F1F5F9", color: "#475569" }} />
+                    </TableCell>
+                    <TableCell sx={{ ...td, color: "#475569", fontFamily: "ui-monospace", fontSize: 11.5 }}>
+                      {addr(s)}
+                    </TableCell>
+                    <TableCell sx={{ ...td, textAlign: "right", color: "#475569" }}>{s.table_count}</TableCell>
+                    <TableCell sx={{ ...td, color: "text.secondary" }}>{s.updated_at?.slice(0, 16)}</TableCell>
+                    <TableCell sx={{ ...td, pr: 2, textAlign: "right", whiteSpace: "nowrap" }}>
+                      <Button size="small" onClick={() => setPickFor(s)}
+                        sx={{ textTransform: "none", fontSize: 11.5, borderRadius: 1.5, minWidth: "auto", px: 1 }}>
+                        选表接入
+                      </Button>
+                      <Tooltip title="检查结构变更">
+                        <IconButton size="small" aria-label="检查结构变更" onClick={() => checkSchema(s)}
+                          disabled={checking === s.id} sx={{ p: 0.6 }}>
+                          {checking === s.id ? <CircularProgress size={14} /> : <Rule sx={{ fontSize: 16 }} />}
+                        </IconButton>
+                      </Tooltip>
+                      <Tooltip title="测连通">
+                        <IconButton size="small" onClick={() => testSource(s)} disabled={testing === s.id} sx={{ p: 0.6 }}>
+                          {testing === s.id ? <CircularProgress size={14} /> : <LinkIcon sx={{ fontSize: 16 }} />}
+                        </IconButton>
+                      </Tooltip>
+                      <Tooltip title="删除">
+                        <IconButton size="small" onClick={() => removeSource(s)} sx={{ p: 0.6, color: "error.main" }}>
+                          <DeleteOutline sx={{ fontSize: 16 }} />
+                        </IconButton>
+                      </Tooltip>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, mt: 3.5, mb: 1.5 }}>
+            <Typography sx={{ fontSize: 14, fontWeight: 700, color: "text.primary" }}>
+              已接入表
+            </Typography>
+            <Typography sx={{ fontSize: 11.5, color: "text.secondary" }}>
+              {synced.length} 张
+            </Typography>
+            <Box sx={{ flex: 1 }} />
+            <TextField size="small" placeholder="搜索表..." value={keyword}
+              onChange={(e) => setKeyword(e.target.value)}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <Search sx={{ fontSize: 16, color: "text.secondary" }} />
+                  </InputAdornment>
+                ),
+                sx: { borderRadius: 2, fontSize: 12.5 },
+              }}
+              sx={{ width: 220 }} />
+          </Box>
+          <TableContainer component={Paper} elevation={0}
+            sx={{ borderRadius: 2.5, border: "1px solid", borderColor: "#EEF3FB" }}>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell sx={{ ...th, pl: 2 }}>本地表</TableCell>
+                  <TableCell sx={th}>来源</TableCell>
+                  <TableCell sx={th} align="right">行数</TableCell>
+                  <TableCell sx={th} align="right">数据集</TableCell>
+                  <TableCell sx={th}>新鲜度</TableCell>
+                  <TableCell sx={th}>同步时间</TableCell>
+                  <TableCell sx={{ ...th, pr: 2 }} align="right">操作</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {filteredSynced.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={7} sx={{ py: 6, textAlign: "center", borderBottom: 0 }}>
+                      <TableChart sx={{ fontSize: 32, color: "text.disabled", mb: 1 }} />
+                      <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>
+                        {keyword ? "没有匹配的表" : "还没有接入表"}
+                      </Typography>
+                    </TableCell>
+                  </TableRow>
+                ) : filteredSynced.map((t) => (
+                  <TableRow key={t.id} hover>
+                    <TableCell sx={{ ...td, pl: 2 }}>
+                      <Box sx={{ display: "flex", alignItems: "center", gap: 0.8 }}>
+                        <code style={{ fontSize: 11.5, color: "#0F172A" }}>{t.local_table}</code>
+                        {driftCount(t.drift) > 0 && (
+                          <Tooltip title={<span style={{ whiteSpace: "pre-line" }}>{driftText(t.drift)}</span>}>
+                            <Chip label={`结构已变 · ${driftCount(t.drift)}`} size="small"
+                              sx={{
+                                height: 18, fontSize: 10, fontWeight: 600,
+                                color: "#B45309", bgcolor: "rgba(217,119,6,0.12)",
+                              }} />
+                          </Tooltip>
+                        )}
+                      </Box>
+                    </TableCell>
+                    <TableCell sx={{ ...td, color: "#475569" }}>
+                      {t.kind === "file" ? (
+                        <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                          <FileUpload sx={{ fontSize: 14, color: "#94A3B8" }} />
+                          {t.source_table}
+                        </Box>
+                      ) : (
+                        <span>{t.source_name} · {t.source_table}</span>
+                      )}
+                    </TableCell>
+                    <TableCell sx={{ ...td, textAlign: "right", color: "#475569" }}>{t.row_count}</TableCell>
+                    <TableCell sx={{ ...td, textAlign: "right", color: "#475569" }}>{t.dataset_count}</TableCell>
+                    <TableCell sx={td}>
+                      <Tooltip title={t.checked_at ? `结构检查：${t.checked_at.slice(0, 16)}` : "还没有检查过结构"}>
+                        <Chip
+                          label={`${(FRESH_META[t.freshness || "unknown"] || FRESH_META.unknown).label}${
+                            ageText(t.age_hours) ? ` · ${ageText(t.age_hours)}` : ""
+                          }`}
+                          size="small"
+                          sx={{
+                            height: 20, fontSize: 10.5,
+                            color: (FRESH_META[t.freshness || "unknown"] || FRESH_META.unknown).color,
+                            bgcolor: (FRESH_META[t.freshness || "unknown"] || FRESH_META.unknown).bg,
+                          }} />
+                      </Tooltip>
+                    </TableCell>
+                    <TableCell sx={{ ...td, color: "text.secondary" }}>{t.synced_at?.slice(0, 16)}</TableCell>
+                    <TableCell sx={{ ...td, pr: 2, textAlign: "right" }}>
+                      {t.kind === "db" && (
+                        <Tooltip title="重新同步（重拉数据）">
+                          <IconButton size="small" aria-label="重新同步" onClick={() => resyncTable(t)}
+                            disabled={resyncing === t.id} sx={{ p: 0.6 }}>
+                            {resyncing === t.id
+                              ? <CircularProgress size={14} />
+                              : <Refresh sx={{ fontSize: 16 }} />}
+                          </IconButton>
+                        </Tooltip>
+                      )}
+                      <Tooltip title="移除（会删本地表）">
+                        <IconButton size="small" onClick={() => removeTable(t)} sx={{ p: 0.6, color: "error.main" }}>
+                          <DeleteOutline sx={{ fontSize: 16 }} />
+                        </IconButton>
+                      </Tooltip>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </>
+      )}
+
+      {createOpen && (
+        <CreateSourceDialog onClose={() => setCreateOpen(false)}
+          onCreated={async () => { setCreateOpen(false); await load(); }}
+          onError={setError} onOk={setOk} />
+      )}
+      {pickFor && (
+        <PickTablesDialog source={pickFor} onClose={() => setPickFor(null)}
+          onDone={async (msg) => { setPickFor(null); await load(); setOk(msg); }}
+          onError={setError} />
+      )}
+
+      <Snackbar open={!!ok} autoHideDuration={3000} onClose={() => setOk("")}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}>
+        <Alert severity="success" onClose={() => setOk("")} sx={{ borderRadius: 2, fontSize: 12.5 }}>{ok}</Alert>
+      </Snackbar>
+      <Snackbar open={!!error} autoHideDuration={4000} onClose={() => setError("")}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}>
+        <Alert severity="error" onClose={() => setError("")} sx={{ borderRadius: 2, fontSize: 12.5 }}>{error}</Alert>
+      </Snackbar>
+    </Box>
+  );
+}
+
+/* ── 新建数据源 ─────────────────────────────────────────── */
+function CreateSourceDialog({
+  onClose, onCreated, onError, onOk,
+}: {
+  onClose: () => void;
+  onCreated: () => void;
+  onError: (m: string) => void;
+  onOk: (m: string) => void;
+}) {
+  const [dsType, setDsType] = useState("postgresql");
+  const [name, setName] = useState("");
+  const [host, setHost] = useState("127.0.0.1");
+  const [port, setPort] = useState("5432");
+  const [dbName, setDbName] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [uri, setUri] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const payload = () => ({
+    name: name.trim(), ds_type: dsType, host: host.trim(),
+    port: port ? Number(port) : null, db_name: dbName.trim(),
+    username: username.trim(), password, uri: uri.trim(),
   });
-  const [dsDialogOpen, setDsDialogOpen] = useState(false);
-  const [dsEditTarget, setDsEditTarget] = useState<DsConfig | null>(null);
-  const [dsTypeFilter, _setDsTypeFilter] = useState<DsCategory | "all">("all");
-  const [dsForm, setDsForm] = useState<Partial<DsConfig>>({});
-  const [dsSelectedType, setDsSelectedType] = useState<DsTypeDef | null>(null);
-  const [dsTestResult, setDsTestResult] = useState<"" | "success" | "error">("");
-  const [dsConMode, setDsConMode] = useState<"basic" | "jdbc">("basic");
 
-  useEffect(() => { localStorage.setItem("mingzebi_bi_datasources", JSON.stringify(dsList)); }, [dsList]);
+  const test = async () => {
+    setBusy(true);
+    try {
+      const t = await client.post("/bi/sources/test", payload());
+      onOk(t.data?.message || "连接成功");
+    } catch (e: any) {
+      onError(e?.response?.data?.detail || "连接失败");
+    } finally {
+      setBusy(false);
+    }
+  };
 
-  const genJdbcUrl = () => {
-    const t = dsForm.type || "";
-    const h = dsForm.host || "localhost";
-    const p = dsForm.port || "";
-    const d = dsForm.dbName || "";
-    const tmpl = jdbcTemplates[t];
-    if (!tmpl) return "";
-    return tmpl.replace("{host}", h).replace("{port}", String(p)).replace("{db}", d);
+  const submit = async () => {
+    if (!name.trim()) return;
+    setBusy(true);
+    try {
+      await client.post("/bi/sources", payload());
+      onCreated();
+    } catch (e: any) {
+      onError(e?.response?.data?.detail || "保存失败");
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
-    <Box sx={{ flex: 1, overflow: "auto", p: 3 }}>
-      {/* 数据源管理标题栏 */}
-      <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
-        <Typography variant="subtitle1" fontWeight={700}>🔌 数据源管理 · {dsList.length} 个</Typography>
-        <Box sx={{ display: "flex", gap: 1 }}>
-          <Button component="label" size="small" variant="outlined" startIcon={<FileUpload />}
-            sx={{ borderRadius: 2, textTransform: "none", fontSize: 12 }}>
-            导入数据<input type="file" accept=".csv,.xlsx,.xls,.json" hidden onChange={handleFileUpload} />
-          </Button>
-          <Button size="small" variant="contained" startIcon={<AddIcon />}
-            onClick={() => { setDsEditTarget(null); setDsForm({}); setDsSelectedType(null); setDsTestResult(""); setDsConMode("basic"); setDsDialogOpen(true); }}
-            sx={{ borderRadius: 2, textTransform: "none", fontSize: 12, bgcolor: "#6366F1" }}>
-            添加数据源
-          </Button>
-        </Box>
-      </Box>
-
-      {/* 已配置的数据源列表 */}
-      {dsList.length > 0 && (
-        <Paper elevation={0} sx={{ p: 2, borderRadius: 3, border: "1px solid", borderColor: "#EBEDF0", mb: 3 }}>
-          <Typography variant="overline" sx={{ fontWeight: 700, color: "text.secondary", letterSpacing: 1, mb: 1.5, display: "block" }}>
-            已连接数据源
-          </Typography>
-          <Box sx={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 1 }}>
-            {dsList.map(ds => (
-              <Paper key={ds.id} elevation={0} sx={{
-                p: 1.5, borderRadius: 2, border: "1px solid", borderColor: "#EBEDF0",
-                display: "flex", alignItems: "center", gap: 1,
-                "&:hover": { borderColor: "#6366F1", bgcolor: "#F5F3FF" }, cursor: "pointer", transition: "all 0.15s",
-              }} onClick={() => {
-                const t = DS_TYPES.find(t => t.id === ds.type);
-                setDsEditTarget(ds); setDsForm({ ...ds }); setDsSelectedType(t || null);
-                setDsTestResult(""); setDsDialogOpen(true);
-              }}>
-                <Box sx={{ color: "#6366F1", fontSize: 20, flexShrink: 0 }}>
-                  {DS_TYPES.find(t => t.id === ds.type)?.icon || <DbIcon type="mysql" />}
-                </Box>
-                <Box sx={{ flex: 1, minWidth: 0 }}>
-                  <Typography noWrap sx={{ fontSize: 13, fontWeight: 600 }}>{ds.name}</Typography>
-                  <Typography noWrap variant="caption" color="text.secondary" sx={{ fontSize: 11 }}>
-                    {DS_TYPES.find(t => t.id === ds.type)?.label || ds.type} {ds.host ? `· ${ds.host}` : ""}
-                  </Typography>
-                </Box>
-                <IconButton size="small" onClick={e => {
-                  e.stopPropagation();
-                  setDsList(prev => prev.filter(d => d.id !== ds.id));
-                }} sx={{ opacity: 0.4, "&:hover": { opacity: 1, color: "error.main" } }}>
-                  <DeleteOutline sx={{ fontSize: 14 }} />
-                </IconButton>
-              </Paper>
+    <Dialog open onClose={onClose} maxWidth="sm" fullWidth>
+      <DialogTitle sx={{ fontSize: 16, fontWeight: 700 }}>新建数据源</DialogTitle>
+      <DialogContent sx={{ pt: 1 }}>
+        <Box sx={{ display: "flex", gap: 1.5, mt: 1 }}>
+          <TextField select size="small" label="类型" value={dsType}
+            onChange={(e) => {
+              setDsType(e.target.value);
+              const d = DB_TYPES.find((t) => t.id === e.target.value);
+              setPort(String(d?.defaultPort || ""));
+            }}
+            sx={{ width: 190, "& .MuiOutlinedInput-root": { borderRadius: 2 } }}>
+            {DB_TYPES.map((t) => (
+              <MenuItem key={t.id} value={t.id} sx={{ fontSize: 13 }}>{t.label}</MenuItem>
             ))}
-          </Box>
-        </Paper>
-      )}
+          </TextField>
+          <TextField size="small" label="名称" value={name} onChange={(e) => setName(e.target.value)}
+            sx={{ flex: 1, "& .MuiOutlinedInput-root": { borderRadius: 2 } }} />
+        </Box>
+        <TextField fullWidth size="small" label="连接串 URI（可选，填了优先用）" value={uri}
+          onChange={(e) => setUri(e.target.value)}
+          placeholder="postgresql://user:password@host:5432/dbname"
+          InputProps={{ sx: { fontFamily: "ui-monospace", fontSize: 12 } }}
+          sx={{ mt: 2, "& .MuiOutlinedInput-root": { borderRadius: 2 } }} />
+        <Box sx={{ display: "flex", gap: 1.5, mt: 2 }}>
+          <TextField size="small" label="主机" value={host} onChange={(e) => setHost(e.target.value)}
+            sx={{ flex: 2, "& .MuiOutlinedInput-root": { borderRadius: 2 } }} />
+          <TextField size="small" label="端口" value={port} onChange={(e) => setPort(e.target.value)}
+            sx={{ flex: 1, "& .MuiOutlinedInput-root": { borderRadius: 2 } }} />
+        </Box>
+        <TextField fullWidth size="small" label="数据库" value={dbName} onChange={(e) => setDbName(e.target.value)}
+          sx={{ mt: 2, "& .MuiOutlinedInput-root": { borderRadius: 2 } }} />
+        <Box sx={{ display: "flex", gap: 1.5, mt: 2 }}>
+          <TextField size="small" label="用户名" value={username} onChange={(e) => setUsername(e.target.value)}
+            sx={{ flex: 1, "& .MuiOutlinedInput-root": { borderRadius: 2 } }} />
+          <TextField size="small" label="密码" type="password" value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            sx={{ flex: 1, "& .MuiOutlinedInput-root": { borderRadius: 2 } }} />
+        </Box>
+      </DialogContent>
+      <DialogActions sx={{ px: 3, pb: 2.5 }}>
+        <Button onClick={test} disabled={busy}
+          sx={{ textTransform: "none", mr: "auto", color: "#475569" }}>测试连接</Button>
+        <Button onClick={onClose} sx={{ textTransform: "none" }}>取消</Button>
+        <Button variant="contained" onClick={submit} disabled={busy || !name.trim()}
+          startIcon={busy ? <CircularProgress size={13} color="inherit" /> : null}
+          sx={{ bgcolor: "#6366F1", textTransform: "none", borderRadius: 2 }}>保存</Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
 
-      {/* 支持的数据源类型总览 */}
-      <Paper elevation={0} sx={{ p: 3, borderRadius: 3, border: "1px solid", borderColor: "#EBEDF0" }}>
-        <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 0.5 }}>
-          📡 支持 {DS_TYPES.length} 种数据源（对标 DataEase 全量）
-        </Typography>
-        <Typography variant="caption" color="text.secondary" sx={{ mb: 2, display: "block" }}>
-          支持 OLTP · OLAP · 数据湖 · API 数据 · 文件 五大类，{24} 种数据源引擎
-        </Typography>
+/* ── 选表接入 ───────────────────────────────────────────── */
+function PickTablesDialog({
+  source, onClose, onDone, onError,
+}: {
+  source: Source;
+  onClose: () => void;
+  onDone: (msg: string) => void;
+  onError: (m: string) => void;
+}) {
+  const [tables, setTables] = useState<RemoteTable[]>([]);
+  const [picked, setPicked] = useState<Record<string, boolean>>({});
+  const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  const [keyword, setKeyword] = useState("");
 
-        {DS_CATEGORIES.map(cat => (
-          <Box key={cat.key} sx={{ mb: 2.5 }}>
-            <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, mb: 1 }}>
-              <Box sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: cat.color, flexShrink: 0 }} />
-              <Typography variant="overline" sx={{ fontWeight: 700, fontSize: 11, color: cat.color, letterSpacing: 0.5 }}>
-                {cat.label} · {DS_TYPES.filter(t => t.category === cat.key).length} 种
+  useEffect(() => {
+    client.get(`/bi/sources/${source.id}/tables`)
+      .then((res) => setTables(res.data?.tables || []))
+      .catch((e) => onError(e?.response?.data?.detail || "读取表清单失败"))
+      .finally(() => setLoading(false));
+  }, [source.id]);
+
+  const shown = keyword.trim()
+    ? tables.filter((t) => t.table.toLowerCase().includes(keyword.trim().toLowerCase()))
+    : tables;
+  const count = Object.values(picked).filter(Boolean).length;
+
+  const sync = async () => {
+    const names = Object.entries(picked).filter(([, v]) => v).map(([k]) => k);
+    if (!names.length) return;
+    setSyncing(true);
+    try {
+      const res = await client.post(`/bi/sources/${source.id}/sync`, { tables: names });
+      const syncedCount = res.data?.synced?.length || 0;
+      const rows = (res.data?.synced || []).reduce((a: number, s: any) => a + (s.rows || 0), 0);
+      onDone(`已接入 ${syncedCount} 张表 · 共 ${rows} 行`);
+    } catch (e: any) {
+      onError(e?.response?.data?.detail || "同步失败");
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  return (
+    <Dialog open onClose={onClose} maxWidth="sm" fullWidth>
+      <DialogTitle sx={{ fontSize: 16, fontWeight: 700 }}>
+        选表接入 · {source.name}
+      </DialogTitle>
+      <DialogContent sx={{ pt: 1 }}>
+        <TextField fullWidth size="small" placeholder="搜索源库表..." value={keyword}
+          onChange={(e) => setKeyword(e.target.value)}
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <Search sx={{ fontSize: 16, color: "text.secondary" }} />
+              </InputAdornment>
+            ),
+            sx: { borderRadius: 2, fontSize: 12.5 },
+          }}
+          sx={{ mt: 1 }} />
+        <Box sx={{
+          mt: 1.5, maxHeight: 380, overflow: "auto", border: "1px solid #EEF3FB", borderRadius: 2,
+        }}>
+          {loading ? (
+            <Box sx={{ textAlign: "center", py: 6 }}><CircularProgress size={22} /></Box>
+          ) : shown.length === 0 ? (
+            <Box sx={{ textAlign: "center", py: 6 }}>
+              <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>
+                {keyword ? "没有匹配的表" : "源库里没有表"}
               </Typography>
             </Box>
-            <Box sx={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 0.75, pl: 2 }}>
-              {DS_TYPES.filter(t => t.category === cat.key).map(dt => {
-                const configured = dsList.filter(d => d.type === dt.id);
-                return (
-                <Paper key={dt.id} elevation={0}
-                  onClick={() => {
-                    setDsEditTarget(null); setDsForm({ type: dt.id, host: "", port: dt.defaultPort || undefined, dbName: "", username: "", password: "", url: "", filePath: "" });
-                    setDsSelectedType(dt); setDsTestResult(""); setDsConMode("basic"); setDsDialogOpen(true);
-                  }}
-                  sx={{
-                    p: 1.25, borderRadius: 2, cursor: "pointer", textAlign: "center",
-                    border: "1px solid", borderColor: configured.length > 0 ? cat.color : "#EBEDF0",
-                    bgcolor: configured.length > 0 ? `${cat.color}08` : "#fff",
-                    "&:hover": { borderColor: cat.color, bgcolor: `${cat.color}10`, transform: "translateY(-1px)" },
-                    transition: "all 0.15s",
-                  }}>
-                  <Box sx={{ color: cat.color, fontSize: 30, mb: 0.5, display: "flex", justifyContent: "center" }}>{dt.icon}</Box>
-                  <Typography sx={{ fontSize: 13, fontWeight: 700, lineHeight: 1.3, mb: 0.25 }}>{dt.label}</Typography>
-                  <Typography variant="caption" sx={{ fontSize: 10, color: "text.disabled" }}>{dt.desc}</Typography>
-                  {configured.length > 0 && (
-                    <Chip label={`${configured.length}`} size="small" color="primary" variant="outlined"
-                      sx={{ height: 16, fontSize: 9, mt: 0.5 }} />
-                  )}
-                </Paper>
-                );
-              })}
-            </Box>
-          </Box>
-        ))}
-      </Paper>
-
-      {/* 原始数据表格（折叠） */}
-      {rows.length > 0 && (
-        <Paper elevation={0} sx={{ mt: 3, p: 3, borderRadius: 3, border: "1px solid", borderColor: "#EBEDF0" }}>
-          <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1.5 }}>📋 当前加载数据 · {rows.length} 行</Typography>
-          <Box sx={{ overflow: "auto", maxHeight: 300 }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-              <thead><tr>
-                <th style={{ textAlign: "left", padding: "8px 12px", borderBottom: "2px solid #E5E7EB", color: "#6B7280" }}>#</th>
-                {fields.map(f => <th key={f} style={{ textAlign: "left", padding: "8px 12px", borderBottom: "2px solid #E5E7EB", color: "#6B7280" }}>{f}</th>)}
-              </tr></thead>
-              <tbody>
-                {rows.slice(0, 100).map((r, i) => (
-                  <tr key={i} style={{ borderBottom: "1px solid #F3F4F6" }}>
-                    <td style={{ padding: "6px 12px", color: "#9CA3AF" }}>{i + 1}</td>
-                    {fields.map(f => <td key={f} style={{ padding: "6px 12px" }}>{typeof r[f] === "number" ? (r[f] as number).toLocaleString() : String(r[f])}</td>)}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {rows.length > 100 && <Typography variant="caption" color="text.secondary" sx={{ mt: 1 }}>仅显示前 100 行</Typography>}
-          </Box>
-        </Paper>
-      )}
-
-      {/* ====== 数据源连接配置弹窗 ====== */}
-      <Dialog open={dsDialogOpen} onClose={() => setDsDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle sx={{ fontWeight: 700, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          {dsEditTarget ? "✏️ 编辑数据源" : "➕ 添加数据源"}
-          <IconButton size="small" onClick={() => setDsDialogOpen(false)}><Close /></IconButton>
-        </DialogTitle>
-        <DialogContent>
-          {/* 数据源类型选择 */}
-          <FormControl fullWidth size="small" sx={{ mb: 2, mt: 1 }}>
-            <InputLabel>数据源类型</InputLabel>
-            <Select
-              value={dsForm.type || ""}
-              label="数据源类型"
-              onChange={e => {
-                const dt = DS_TYPES.find(t => t.id === e.target.value);
-                setDsSelectedType(dt || null);
-                setDsForm({ type: e.target.value, host: "", port: dt?.defaultPort || undefined, dbName: "", username: "", password: "", url: "", filePath: "" });
-                setDsTestResult("");
-              }}
-              disabled={!!dsEditTarget}
-            >
-              {DS_CATEGORIES.map(cat => [
-                <MenuItem key={cat.key} disabled sx={{ fontSize: 11, fontWeight: 700, color: cat.color, opacity: 1 }}>
-                  {cat.label}
-                </MenuItem>,
-                ...DS_TYPES.filter(t => t.category === cat.key).map(dt => (
-                  <MenuItem key={dt.id} value={dt.id} sx={{ pl: 4, fontSize: 12 }}>
-                    <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                      <Box sx={{ color: cat.color, fontSize: 16 }}>{dt.icon}</Box>
-                      <Box>
-                        <Typography sx={{ fontSize: 12 }}>{dt.label}</Typography>
-                        <Typography variant="caption" color="text.secondary">{dt.desc}</Typography>
-                      </Box>
-                    </Box>
-                  </MenuItem>
-                ))
-              ])}
-            </Select>
-          </FormControl>
-
-          {/* 连接配置表单 */}
-          {dsSelectedType && (
-            <Box sx={{ bgcolor: "#FAFBFC", p: 2, borderRadius: 2, border: "1px solid", borderColor: "#EBEDF0" }}>
-              <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 1.5 }}>
-                <Typography variant="caption" color="text.secondary">
-                  {dsSelectedType.label} 连接配置
-                </Typography>
-                {dsSelectedType.fields.includes("host") && (
-                  <Box sx={{ display: "flex", gap: 0.5, bgcolor: "#E5E7EB", borderRadius: 2, p: 0.25 }}>
-                    <Button size="small"
-                      variant={dsConMode === "basic" ? "contained" : "text"}
-                      onClick={() => setDsConMode("basic")}
-                      sx={{ fontSize: 10, textTransform: "none", py: 0, px: 1, minWidth: 0, borderRadius: 1.5,
-                        bgcolor: dsConMode === "basic" ? "#6366F1" : "transparent",
-                        color: dsConMode === "basic" ? "#fff" : "text.secondary" }}>
-                      基础
-                    </Button>
-                    <Button size="small"
-                      variant={dsConMode === "jdbc" ? "contained" : "text"}
-                      onClick={() => setDsConMode("jdbc")}
-                      sx={{ fontSize: 10, textTransform: "none", py: 0, px: 1, minWidth: 0, borderRadius: 1.5,
-                        bgcolor: dsConMode === "jdbc" ? "#6366F1" : "transparent",
-                        color: dsConMode === "jdbc" ? "#fff" : "text.secondary" }}>
-                      JDBC
-                    </Button>
-                  </Box>
-                )}
-              </Box>
-
-              {dsConMode === "jdbc" ? (
-                <TextField fullWidth size="small" label="JDBC 连接串" placeholder="jdbc:mysql://host:3306/db"
-                  value={genJdbcUrl()}
-                  onChange={e => setDsForm(prev => ({ ...prev, url: e.target.value }))}
-                  InputProps={{ sx: { fontSize: 11, fontFamily: "monospace", bgcolor: "#F9FAFB" } }}
-                  sx={{ mb: 1.5 }} />
-              ) : (
-                <>
-                  {dsSelectedType.fields.includes("url") && (
-                    <TextField fullWidth size="small" label="连接 URL" placeholder="https://api.example.com/data" value={dsForm.url || ""}
-                      onChange={e => setDsForm(prev => ({ ...prev, url: e.target.value }))} sx={{ mb: 1.5 }} />
-                  )}
-
-                  {dsSelectedType.fields.includes("host") && (
-                    <Box sx={{ display: "flex", gap: 1, mb: 1.5 }}>
-                      <TextField size="small" label="主机地址" placeholder="192.168.1.100" value={dsForm.host || ""}
-                        onChange={e => setDsForm(prev => ({ ...prev, host: e.target.value }))} sx={{ flex: 1 }} />
-                      <TextField size="small" label="端口" type="number" value={dsForm.port || ""}
-                        onChange={e => setDsForm(prev => ({ ...prev, port: parseInt(e.target.value) || undefined }))} sx={{ width: 120 }} />
-                    </Box>
-                  )}
-
-                  {dsSelectedType.fields.includes("dbName") && (
-                    <TextField fullWidth size="small" label="数据库名" placeholder="my_database" value={dsForm.dbName || ""}
-                      onChange={e => setDsForm(prev => ({ ...prev, dbName: e.target.value }))} sx={{ mb: 1.5 }} />
-                  )}
-                </>
-              )}
-
-              {dsSelectedType.fields.includes("username") && (
-                <Box sx={{ display: "flex", gap: 1, mb: 1.5 }}>
-                  <TextField size="small" label="用户名" placeholder="root" value={dsForm.username || ""}
-                    onChange={e => setDsForm(prev => ({ ...prev, username: e.target.value }))} sx={{ flex: 1 }} />
-                  {dsSelectedType.fields.includes("password") && (
-                    <TextField size="small" label="密码" type="password" placeholder="****" value={dsForm.password || ""}
-                      onChange={e => setDsForm(prev => ({ ...prev, password: e.target.value }))} sx={{ flex: 1 }} />
-                  )}
+          ) : shown.map((t) => (
+            <Box key={t.table}
+              onClick={() => setPicked((p) => ({ ...p, [t.table]: !p[t.table] }))}
+              sx={{
+                display: "flex", alignItems: "center", gap: 1, px: 1, py: 0.35,
+                cursor: "pointer", "&:hover": { bgcolor: "rgba(99,102,241,0.05)" },
+              }}>
+              <Checkbox size="small" checked={!!picked[t.table]} sx={{ p: 0.5 }} />
+              <Typography sx={{ fontSize: 12.5, fontFamily: "ui-monospace" }}>{t.table}</Typography>
+              {t.kind === "view" && (
+                <Box sx={{
+                  px: 0.6, py: 0.05, borderRadius: 0.75, fontSize: 10,
+                  color: "#0E7490", bgcolor: "rgba(8,145,178,0.1)",
+                }}>
+                  视图
                 </Box>
               )}
-
-              {dsSelectedType.fields.includes("filePath") && (
-                <TextField fullWidth size="small" label="文件路径" placeholder="/data/sales_2026.xlsx" value={dsForm.filePath || ""}
-                  onChange={e => setDsForm(prev => ({ ...prev, filePath: e.target.value }))} sx={{ mb: 1.5 }} />
-              )}
-
-              <Box sx={{ mt: 1.5 }}>
-                <TextField fullWidth size="small" label="数据源名称" placeholder="例如：生产库 MySQL" value={dsForm.name || ""}
-                  onChange={e => setDsForm(prev => ({ ...prev, name: e.target.value }))} />
-              </Box>
+              <Box sx={{ flex: 1 }} />
+              <Typography sx={{ fontSize: 11, color: "text.disabled" }}>{t.columns.length} 列</Typography>
             </Box>
-          )}
-
-          {/* 测试连接 + 查询 */}
-          <Box sx={{ display: "flex", gap: 1, mt: 1.5 }}>
-            <Button variant="outlined" onClick={async () => {
-              setDsTestResult("");
-              try {
-                const payload = { type: dsForm.type, host: dsForm.host || "", port: dsForm.port || 0, dbName: dsForm.dbName || "", username: dsForm.username || "", password: dsForm.password || "", url: dsForm.url || "", filePath: dsForm.filePath || "" };
-                const r = await client.post("/bi/datasource/test", payload);
-                setDsTestResult(r.data?.ok ? "success" : "error");
-                setTimeout(() => setDsTestResult(""), 3000);
-              } catch (e: any) {
-                setDsTestResult("error");
-                setTimeout(() => setDsTestResult(""), 3000);
-              }
-            }} size="small" sx={{ borderRadius: 2, textTransform: "none", fontSize: 11 }}>
-              测试连接
-            </Button>
-            <Button variant="outlined" onClick={async () => {
-              try {
-                const payload = { type: dsForm.type, host: dsForm.host || "", port: dsForm.port || 0, dbName: dsForm.dbName || "", username: dsForm.username || "", password: dsForm.password || "", url: dsForm.url || "", filePath: dsForm.filePath || "", sql: "SELECT * FROM (SELECT 1) t LIMIT 100", method: "GET", queryPath: dsForm.url || "" };
-                const r = await client.post("/bi/datasource/query", payload);
-                if (r.data?.rows?.length) {
-                  setRows(r.data.rows as DataRow[]);
-                  setDsDialogOpen(false);
-                  setActiveTab(0);
-                  setSearchParams({ tab: "0" }, { replace: true });
-                }
-              } catch (e: any) {
-                alert("查询失败: " + (e.response?.data?.detail || e.message));
-              }
-            }} size="small" sx={{ borderRadius: 2, textTransform: "none", fontSize: 11 }}>
-              查询数据
-            </Button>
-          </Box>
-          {dsTestResult === "success" && <Chip icon={<CheckIcon />} label={dsForm.type === "api" ? "API 可达" : "连接成功"} color="success" size="small" sx={{ mt: 1 }} />}
-          {dsTestResult === "error" && <Chip label="连接失败，请检查配置" color="error" size="small" sx={{ mt: 1 }} />}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDsDialogOpen(false)} sx={{ textTransform: "none" }}>取消</Button>
-          <Button variant="contained" onClick={() => {
-            if (!dsForm.type || !dsForm.name) return;
-            const now = Date.now();
-            if (dsEditTarget) {
-              setDsList(prev => prev.map(d => d.id === dsEditTarget.id ? { ...d, ...dsForm, id: d.id, createdAt: d.createdAt } as DsConfig : d));
-            } else {
-              setDsList(prev => [...prev, { id: "ds-" + now, ...dsForm, createdAt: now } as DsConfig]);
-            }
-            setDsDialogOpen(false);
-          }} sx={{ borderRadius: 2, textTransform: "none", bgcolor: "#6366F1" }}>
-            {dsEditTarget ? "保存" : "添加"}
-          </Button>
-        </DialogActions>
-      </Dialog>
-    </Box>
+          ))}
+        </Box>
+      </DialogContent>
+      <DialogActions sx={{ px: 3, pb: 2.5 }}>
+        <Button onClick={onClose} sx={{ textTransform: "none", mr: "auto" }}>取消</Button>
+        <Button variant="contained" onClick={sync} disabled={syncing || !count}
+          startIcon={syncing ? <CircularProgress size={13} color="inherit" /> : <Refresh sx={{ fontSize: 15 }} />}
+          sx={{ bgcolor: "#6366F1", textTransform: "none", borderRadius: 2 }}>
+          接入{count ? ` ${count} 张` : ""}
+        </Button>
+      </DialogActions>
+    </Dialog>
   );
 }

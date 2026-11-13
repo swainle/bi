@@ -36,5 +36,5 @@ fi
 # 4) 启动
 exec .venv/bin/python -m uvicorn app.main:app \
   --host "${HOST:-127.0.0.1}" \
-  --port "${PORT:-8000}" \
+  --port "${PORT:-8300}" \
   --reload

@@ -19,6 +19,13 @@ from app.middleware.auth import get_current_user
 from app.middleware.audit import log_audit
 from app.models.user import User
 
+# ═══════ 安全内核（独立模块，改这里不会牵连路由逻辑）═══════
+from app.security.errors import RlsBlockedError, SecurityError
+from app.security.rls import apply_to_sql, decide as rls_decide, where_sql as rls_where
+from app.security.rls.injector import inject_conditions
+from app.security.rls.models import RlsDecision
+from app.security.sql_guard import guard_readonly, referenced_tables
+
 # ═══════ 分布式读写分离 ═══════
 import os as _os
 _BI_REPLICA_URL = _os.environ.get("BI_READ_REPLICA", "")
@@ -86,6 +93,13 @@ def _parse_function(func_type: str, metric_col: str, time_col: str) -> str:
 def _validate_col(col: str):
     if not _re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', col):
         raise HTTPException(400, f"非法列名: {col}")
+
+
+# 查询构建器允许的筛选运算符（白名单，值一律走绑定参数）
+_FILTER_OPS = {
+    "=", "!=", "<>", ">", "<", ">=", "<=",
+    "IN", "NOT IN", "BETWEEN", "LIKE", "ILIKE",
+}
 
 
 FUNC_META = {
@@ -269,17 +283,13 @@ except Exception:
 
 _cache.start_auto_refresh(interval=120)
 
-def _cache_key(table: str, limit: int = 500, offset: int = 0, func: str = "") -> str:
-    raw = f"{table}:{limit}:{offset}:{func}"
+def _cache_key(table: str, limit: int = 500, offset: int = 0, func: str = "", rls: str = "-") -> str:
+    """缓存键 —— 必须带行级规则指纹，否则会跨用户串数据。"""
+    raw = f"{table}:{limit}:{offset}:{func}:{rls}"
     return hashlib.md5(raw.encode()).hexdigest()
 
-# 白名单：允许查询的业务表
-ALLOWED_TABLES = {
-    "bi_finance", "bi_pdd_ops", "bi_tmall", "bi_douyin",
-    "bi_pdd_stores", "bi_pdd_annual", "bi_pdd_traffic",
-    "bi_products", "bi_tmall_monthly", "bi_tmall_campaigns",
-    "bi_douyin_live", "bi_pdd_profit",
-}
+# 白名单：允许查询的业务表（唯一事实来源在 app/query/whitelist.py）
+from app.query.whitelist import ALLOWED_TABLES  # noqa: E402,F401
 
 # 模板名称 → 表名
 TEMPLATE_MAP = {
@@ -377,29 +387,14 @@ def accelerator_status(db: Session = Depends(get_db)):
     return {"views": status, "total_views": len(ACCEL_MAP)}
 
 
-# ═══════ 列脱敏自动应用 ═══════
+# ═══════ 列脱敏自动应用（实现已下沉到 app/security/masking.py）═══════
 
-MASK_FUNCS = {
-    "phone":    lambda v: str(v)[:3] + "****" + str(v)[-4:] if v and len(str(v)) >= 11 else "***",
-    "id_card":  lambda v: str(v)[:4] + "**********" + str(v)[-4:] if v and len(str(v)) >= 18 else "***",
-    "email":    lambda v: str(v).split("@")[0][:2] + "***@" + str(v).split("@")[-1] if v and "@" in str(v) else "***",
-    "custom":   lambda v, p: p.replace("{val}", str(v)) if p else "***",
-}
+from app.security.masking import MASK_FUNCS, apply_masks as _mask_impl  # noqa: E402
+
 
 def _apply_masks(table: str, rows: list[dict], db: Session) -> list[dict]:
-    """对查询结果自动应用列脱敏规则"""
-    mask_rules = db.execute(text(
-        "SELECT column_name, mask_type, mask_pattern FROM bi_column_masks WHERE table_name=:t"
-    ), {"t": table}).fetchall()
-    if not mask_rules:
-        return rows
-    for col, mtype, pattern in mask_rules:
-        fn = MASK_FUNCS.get(mtype)
-        if not fn: continue
-        for r in rows:
-            if col in r and r[col] is not None:
-                r[col] = fn(r[col]) if mtype != "custom" else fn(r[col], pattern)
-    return rows
+    """对查询结果自动应用列脱敏规则（委托安全内核，语义查询共用同一套）."""
+    return _mask_impl(table, rows, db)
 
 
 # ═══════ 并发控制 + 查询排队 ═══════
@@ -421,6 +416,13 @@ def get_table_data(
     if table not in ALLOWED_TABLES and not table.startswith("bi_ai_"):
         raise HTTPException(status_code=404, detail=f"表 {table} 不在白名单中")
 
+    # 行级权限：先算结论（fail-closed）
+    try:
+        decision = rls_decide(db, table, current_user)
+    except RlsBlockedError as exc:
+        raise HTTPException(exc.http_status, exc.message) from exc
+    rls_active = bool(decision.conditions)
+
     # 并发控制
     global _active_queries
     if _active_queries >= MAX_CONCURRENT:
@@ -434,12 +436,13 @@ def get_table_data(
         read_db = _get_read_db()
 
     source_table = table
-    if precomputed:
+    # 有行级规则时禁止走物化视图（聚合视图里没有明细行，规则无法下推）
+    if precomputed and not rls_active:
         source_table, used_accel = _use_accel(table, db)
     else:
         used_accel = False
 
-    ck = _cache_key(source_table, limit, offset)
+    ck = _cache_key(source_table, limit, offset, rls=decision.fingerprint)
     if cache:
         cached = _cache.get(ck)
         if cached:
@@ -449,8 +452,10 @@ def get_table_data(
     try:
         t0 = _time.time()
         order_clause = "id" if table == source_table else "1"
+        where_clause = rls_where(decision)
+        where_sql_part = f" WHERE {where_clause}" if where_clause else ""
         rows = read_db.execute(
-            text(f"SELECT * FROM {source_table} ORDER BY {order_clause} LIMIT :limit OFFSET :offset"),
+            text(f"SELECT * FROM {source_table}{where_sql_part} ORDER BY {order_clause} LIMIT :limit OFFSET :offset"),
             {"limit": limit, "offset": offset},
         ).fetchall()
         elapsed = (_time.time() - t0) * 1000
@@ -473,6 +478,8 @@ def get_table_data(
                 "accelerated": used_accel,
                 "elapsed_ms": round(elapsed, 1),
             }
+        if rls_active:
+            result["rls"] = True
         if cache:
             _cache.set(ck, result, table_dep=table)
         return result
@@ -494,8 +501,16 @@ def export_excel(
     if table not in ALLOWED_TABLES:
         raise HTTPException(status_code=404, detail=f"表 {table} 不在白名单中")
 
+    # 行级权限：导出与查询必须同口径，否则「查不到但导出得到」就是漏洞
     try:
-        rows = db.execute(text(f"SELECT * FROM {table} ORDER BY id")).fetchall()
+        decision = rls_decide(db, table, current_user)
+    except RlsBlockedError as exc:
+        raise HTTPException(exc.http_status, exc.message) from exc
+    where_clause = rls_where(decision)
+    where_sql_part = f" WHERE {where_clause}" if where_clause else ""
+
+    try:
+        rows = db.execute(text(f"SELECT * FROM {table}{where_sql_part} ORDER BY id")).fetchall()
         if not rows:
             raise HTTPException(404, "无数据")
 
@@ -862,11 +877,27 @@ def query_builder(
     order_by = payload.get("order_by", "")
     limit = payload.get("limit", 500)
 
-    # Build SELECT
+    # Build SELECT（维度支持时间粒度：字符串=列名，字典={"column","grain"}）
+    from app.query.column_types import column_types as _col_types, needs_cast
+    from app.query.grain import grain_expression
+
+    _types = _col_types(db, table)
     select_parts = []
+    dim_exprs: list[str] = []
     for d in dimensions:
-        _validate_col(str(d))
-        select_parts.append(f'"{d}"')
+        if isinstance(d, dict):
+            col = str(d.get("column", ""))
+            grain = d.get("grain")
+        else:
+            col, grain = str(d), None
+        _validate_col(col)
+        if grain:
+            expr = grain_expression(f'"{col}"', grain, cast=needs_cast(_types.get(col)))
+            select_parts.append(f'{expr} AS "{col}"')
+            dim_exprs.append(expr)
+        else:
+            select_parts.append(f'"{col}"')
+            dim_exprs.append(f'"{col}"')
     if not metrics:
         select_parts.append("count(*) AS count")
     else:
@@ -880,29 +911,63 @@ def query_builder(
 
     # Build GROUP BY / FROM / WHERE
     group_clause = ""
-    if dimensions:
-        group_clause = "GROUP BY " + ", ".join(f'"{d}"' for d in dimensions)
+    if dim_exprs:
+        group_clause = "GROUP BY " + ", ".join(dim_exprs)
 
     where_clauses = []
-    for f in filters:
-        col = str(f["col"]); op = str(f["op"]); val = f["val"]
+    params: dict = {}
+    for idx, f in enumerate(filters):
+        col = str(f["col"])
+        op = str(f["op"]).upper().strip()
+        val = f["val"]
         _validate_col(col)
-        if op.upper() in ("IN", "NOT IN"):
-            vals = ",".join(f"'{v}'" for v in val) if isinstance(val, list) else f"'{val}'"
-            where_clauses.append(f'"{col}" {op.upper()} ({vals})')
-        elif op.upper() == "BETWEEN":
-            where_clauses.append(f'"{col}" BETWEEN {val[0]} AND {val[1]}')
+        if op not in _FILTER_OPS:
+            raise HTTPException(400, f"不支持的筛选运算符: {op}")
+
+        # 值一律走绑定参数（不再拼进 SQL 字符串）
+        if op in ("IN", "NOT IN"):
+            seq = val if isinstance(val, list) else [val]
+            keys = []
+            for pos, item in enumerate(seq):
+                key = f"f{idx}_{pos}"
+                params[key] = item
+                keys.append(f":{key}")
+            where_clauses.append(f'"{col}" {op} ({", ".join(keys)})')
+        elif op == "BETWEEN":
+            lo, hi = f"f{idx}_lo", f"f{idx}_hi"
+            params[lo] = val[0]
+            params[hi] = val[1]
+            where_clauses.append(f'"{col}" BETWEEN :{lo} AND :{hi}')
         else:
-            where_clauses.append(f'"{col}" {op} {val}')
+            key = f"f{idx}"
+            params[key] = val
+            where_clauses.append(f'"{col}" {op} :{key}')
+
+    # 行级权限（主表 + JOIN 表）：条件已在编译期校验，这里只做 AND
+    rls_conditions: list[str] = []
+    try:
+        for t in dict.fromkeys([table] + [str(j["table"]) for j in joins]):
+            rls_conditions.extend(rls_decide(db, t, current_user).conditions)
+    except RlsBlockedError as exc:
+        raise HTTPException(exc.http_status, exc.message) from exc
+    where_clauses.extend(f"({c})" for c in rls_conditions)
+
     where_clause = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
 
-    order_clause = f"ORDER BY {order_by}" if order_by else (f"ORDER BY {dimensions[0]}" if dimensions else "")
+    first_dim = ""
+    if dimensions:
+        first_dim = (
+            str(dimensions[0].get("column", ""))
+            if isinstance(dimensions[0], dict)
+            else str(dimensions[0])
+        )
+    order_clause = f"ORDER BY {order_by}" if order_by else (f'ORDER BY "{first_dim}"' if first_dim else "")
 
     sql = f"""SELECT {", ".join(select_parts)} FROM {from_clause}
 {where_clause} {group_clause} {order_clause} LIMIT {limit}"""
 
     try:
-        rows = db.execute(text(sql)).fetchall()
+        rows = db.execute(text(sql), params).fetchall()
         if not rows:
             return {"sql": sql, "columns": [], "rows": [], "count": 0}
         columns = list(rows[0]._mapping.keys())
@@ -964,14 +1029,33 @@ def set_row_permission(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """设置行级过滤规则：{table_name, user_id, filter_rule: 'department_id=5'}"""
+    """设置行级过滤规则：{table_name, user_id|role_name, filter_rule: 'store_id = 5'}"""
     if current_user.role not in ("admin", "super_admin"):
         raise HTTPException(403, "仅管理员可设置行权限")
+
+    table_name = str(payload.get("table_name", "")).strip()
+    if table_name not in ALLOWED_TABLES:
+        raise HTTPException(404, f"表 {table_name} 不在白名单中")
+
+    # 存库前把关：非法规则直接拒绝，避免把坏规则留到查询期（那时只能 fail-closed）
+    from app.security.rls import compile_rule_text
+
+    try:
+        rule = compile_rule_text(str(payload.get("filter_rule", "")))
+    except SecurityError as exc:
+        raise HTTPException(exc.http_status, exc.message) from exc
+
     db.execute(text(
-        "INSERT INTO bi_row_permissions (table_name, user_id, filter_rule) VALUES (:t,:uid,:rule) ON CONFLICT DO NOTHING"
-    ), {"t": payload["table_name"], "uid": payload.get("user_id"), "rule": payload["filter_rule"]})
+        "INSERT INTO bi_row_permissions (table_name, user_id, role_name, filter_rule) "
+        "VALUES (:t,:uid,:role,:rule) ON CONFLICT DO NOTHING"
+    ), {
+        "t": table_name,
+        "uid": payload.get("user_id"),
+        "role": payload.get("role_name"),
+        "rule": rule,
+    })
     db.commit()
-    return {"success": True}
+    return {"success": True, "table": table_name, "rule": rule}
 
 
 # ═══════ 数据集版本管理 ═══════
@@ -1079,32 +1163,38 @@ def system_monitor(current_user: User = Depends(get_current_user)):
 # ═══════ 模板市场 ═══════
 
 @router.get("/market")
-def list_marketplace(category: str = Query(default=""), db: Session = Depends(get_db)):
-    """行业模板市场列表"""
-    query = "SELECT id, name, description, category, panels, table_map, downloads, rating, is_official, author_id, created_at FROM bi_template_market"
-    params = {}
-    if category:
-        query += " WHERE category = :cat"
-        params["cat"] = category
-    query += " ORDER BY downloads DESC LIMIT 50"
-    rows = db.execute(text(query), params).fetchall()
-    return {"templates": [dict(r._mapping) for r in rows],
-            "categories": ["拼多多", "天猫", "财务", "产品部"]}
+def list_marketplace(
+    category: str = Query(default=""),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """模板库列表：公开模板 + 自己发布的 + 指定给自己看的（管理员看全部）."""
+    from app import template_market
+
+    return {
+        "templates": template_market.list_templates(db, current_user, category),
+        "categories": list(template_market.CATEGORIES),
+    }
 
 
 @router.get("/market/{template_id}")
-def get_market_template(template_id: int, db: Session = Depends(get_db)):
-    """获取模板详情（含面板定义）"""
-    row = db.execute(text(
-        "SELECT id, name, description, category, panels, table_map, downloads, rating FROM bi_template_market WHERE id=:id"
-    ), {"id": template_id}).fetchone()
-    if not row: raise HTTPException(404, "模板不存在")
-    return dict(row._mapping)
+def get_market_template(
+    template_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """获取模板详情（含面板定义 / 看板文档）."""
+    from app import template_market
+
+    try:
+        return template_market.get_template(db, template_id, current_user)
+    except template_market.TemplateError as exc:
+        raise HTTPException(exc.status, exc.message) from exc
 
 
 @router.post("/market")
 def publish_to_market(payload: dict = Body(...), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """发布看板到模板市场"""
+    """发布看板到模板市场（旧版引擎面板；新看板请用 /market/share）."""
     db.execute(text(
         "INSERT INTO bi_template_market (name, description, category, panels, table_map, author_id) VALUES (:n,:d,:c,CAST(:p AS jsonb),CAST(:t AS jsonb),:uid)"
     ), {"n": payload["name"], "d": payload.get("description", ""), "c": payload.get("category", "通用"),
@@ -1115,48 +1205,43 @@ def publish_to_market(payload: dict = Body(...), current_user: User = Depends(ge
     return {"id": result, "name": payload["name"]}
 
 
+@router.post("/market/share")
+def share_board_to_market(
+    payload: dict = Body(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """把「我的看板」分享到模板库：看板文档深拷贝 + 数据集复制到测试数据集."""
+    from app import template_market
+
+    board_id = payload.get("board_id")
+    try:
+        board_id = int(board_id)
+    except (TypeError, ValueError):
+        raise HTTPException(400, "缺少看板 ID") from None
+    try:
+        return template_market.share_board(db, board_id, current_user, payload)
+    except template_market.TemplateError as exc:
+        raise HTTPException(exc.status, exc.message) from exc
+
+
 @router.post("/market/{template_id}/clone")
 def clone_template_to_dashboard(
     template_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """将模板库中的模板克隆到当前用户的"我的看板"。
+    """把模板克隆到当前用户的「我的看板」。
 
-    - 深拷贝模板的 panels + table_map 到 bi_dashboards 新记录
-    - 模板库原数据完全只读，不做任何修改（downloads +1 作为使用计数）
-    - 返回新看板 ID，前端跳转到该看板的编辑页
+    看板模板：深拷贝文档（数据集已指向模板自己的公共副本），新建一块可编辑看板；
+    旧版引擎模板：panels + table_map 深拷贝到 bi_dashboards。
     """
-    row = db.execute(text(
-        "SELECT name, description, category, panels, table_map FROM bi_template_market WHERE id=:id"
-    ), {"id": template_id}).fetchone()
-    if not row:
-        raise HTTPException(404, "模板不存在")
+    from app import template_market
 
-    mapping = row._mapping
-    panels_json = mapping["panels"] if isinstance(mapping["panels"], str) else json.dumps(mapping["panels"])
-    table_map_json = mapping["table_map"] if isinstance(mapping["table_map"], str) else json.dumps(mapping["table_map"])
-    new_name = f"{mapping['name']}（副本）"
-
-    result = db.execute(
-        text(
-            "INSERT INTO bi_dashboards (name, owner_id, panels, table_map) "
-            "VALUES (:name, :uid, CAST(:panels AS jsonb), CAST(:tmap AS jsonb)) RETURNING id"
-        ),
-        {"name": new_name, "uid": current_user.id, "panels": panels_json, "tmap": table_map_json},
-    )
-    dashboard_id = result.scalar()
-
-    # 使用计数 +1（只修改 downloads，不修改模板内容）
-    db.execute(text("UPDATE bi_template_market SET downloads = downloads + 1 WHERE id = :id"), {"id": template_id})
-    db.commit()
-
-    return {
-        "id": dashboard_id,
-        "name": new_name,
-        "source_template_id": template_id,
-        "message": f"已从模板「{mapping['name']}」创建看板",
-    }
+    try:
+        return template_market.clone_template(db, template_id, current_user)
+    except template_market.TemplateError as exc:
+        raise HTTPException(exc.status, exc.message) from exc
 
 
 @router.post("/metrics/execute/{metric_id}")
@@ -1738,7 +1823,7 @@ def list_dashboards(
     """获取当前用户的所有看板"""
     rows = db.execute(
         text("""
-            SELECT DISTINCT d.id, d.name, d.panels, d.table_map, d.created_at, d.updated_at
+            SELECT DISTINCT d.id, d.name, d.panels, d.table_map, d.created_at, d.updated_at, d.owner_id
             FROM bi_dashboards d
             LEFT JOIN bi_resource_permissions p ON p.resource_type='dashboard' AND p.resource_id=d.id AND p.user_id=:uid
             WHERE d.owner_id = :uid OR p.user_id IS NOT NULL
@@ -1748,7 +1833,8 @@ def list_dashboards(
     ).fetchall()
     return {
         "dashboards": [
-            {"id": r[0], "name": r[1], "panels": r[2], "table_map": r[3], "created_at": str(r[4]), "updated_at": str(r[5])}
+            {"id": r[0], "name": r[1], "panels": r[2], "table_map": r[3], "created_at": str(r[4]),
+             "updated_at": str(r[5]), "owner_id": r[6]}
             for r in rows
         ]
     }
@@ -1833,19 +1919,38 @@ def delete_dashboard(
 
 import re as _re
 
-SQL_BLACKLIST = ["drop", "delete", "truncate", "insert", "update", "alter", "create", "grant", "revoke", "exec", "execute"]
 
 
-def _validate_sql(sql: str) -> str:
-    sql_lower = sql.lower().strip()
-    if not sql_lower.startswith("select"):
-        raise HTTPException(400, "仅允许 SELECT 查询")
-    for kw in SQL_BLACKLIST:
-        if _re.search(rf"\b{kw}\b", sql_lower):
-            raise HTTPException(400, f"禁止使用 {kw.upper()} 语句")
-    if not any(tbl in sql_lower for tbl in ALLOWED_TABLES):
-        raise HTTPException(400, f"查询表必须在白名单内: {', '.join(sorted(ALLOWED_TABLES))}")
-    return sql
+def _validate_sql(sql: str):
+    """只读校验 —— 交给安全内核（sqlglot AST），不再用正则黑名单。
+
+    返回 AST 供调用方复用（表白名单 + 行级权限都要用它）。
+    兼容旧口径：至少引用一张受管辖表（白名单 或 bi_ai_* 前缀）。
+    """
+    try:
+        root = guard_readonly(sql)
+    except SecurityError as exc:
+        raise HTTPException(status_code=exc.http_status, detail=exc.message) from exc
+
+    tables = referenced_tables(root)
+    if not (tables & ALLOWED_TABLES) and not any(
+        t.startswith("bi_ai_") for t in tables
+    ):
+        raise HTTPException(
+            400, f"查询表必须在白名单内: {', '.join(sorted(ALLOWED_TABLES))}"
+        )
+    return root
+
+
+def _query_rls_conditions(db: Session, tables: set[str], user: User) -> list[str]:
+    """把多张表的行级规则合并（用于手拼 SQL 的查询入口）."""
+    conditions: list[str] = []
+    for table in sorted(tables):
+        if table not in ALLOWED_TABLES and not table.startswith("bi_ai_"):
+            continue
+        decision = rls_decide(db, table, user)
+        conditions.extend(decision.conditions)
+    return conditions
 
 
 @router.post("/query")
@@ -1858,7 +1963,16 @@ def execute_sql(
     sql = payload.get("sql", "").strip()
     if not sql:
         raise HTTPException(400, "SQL 不能为空")
-    _validate_sql(sql)
+    root = _validate_sql(sql)
+
+    # 行级权限：把受管辖表的规则 AND 进 WHERE（fail-closed）
+    try:
+        conditions = _query_rls_conditions(db, referenced_tables(root), current_user)
+    except RlsBlockedError as exc:
+        raise HTTPException(exc.http_status, exc.message) from exc
+    if conditions:
+        sql = inject_conditions(sql, conditions)
+
     try:
         rows = db.execute(text(sql), {"uid": current_user.id}).fetchall()
         if not rows:

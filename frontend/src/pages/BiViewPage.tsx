@@ -19,6 +19,7 @@ import client from "../api/client";
 import ChartPanelView from "../features/bi-dashboard/ChartPanel";
 import ChartConfigPanel, { type ChartStyle } from "../features/bi-dashboard/ChartConfigPanel";
 import BigScreen from "../features/bi-dashboard/BigScreen";
+import BoardViewer from "../features/components/board/BoardViewer";
 import PddCockpitView from "../features/bi-dashboard/PddCockpitView";
 import PddProfitDashboard from "../features/bi-dashboard/PddProfitDashboard";
 import WatermarkOverlay from "../components/WatermarkOverlay";
@@ -35,6 +36,8 @@ export default function BiViewPage() {
   const nav = useNavigate();
   const [rows, setRows] = useState<DataRow[]>([]);
   const [panels, setPanels] = useState<ChartPanel[]>([]);
+  // 画布发布出来的看板：直接按画布布局只读渲染
+  const [canvasItems, setCanvasItems] = useState<any[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [title, setTitle] = useState("");
@@ -147,6 +150,16 @@ export default function BiViewPage() {
       if (!dash) { setError("看板未找到"); return; }
       setTitle(dash.name);
 
+      // 画布发布出来的看板：面板是 {kind, spec, x, y, w, h}，直接按画布布局渲染
+      const earlyPanels = dash.panels || [];
+      const isCanvasDash = earlyPanels.length > 0 &&
+        earlyPanels.every((p: any) => p && p.spec && p.kind && typeof p.x === "number");
+      if (isCanvasDash) {
+        setCanvasItems(earlyPanels);
+        setPanels([]);
+        return;
+      }
+
       // 优先使用看板自带的 table_map（克隆模板时保存的）
       const dashTableMap = dash.table_map || {};
       const vals = Object.values(dashTableMap).filter(v => typeof v === "string");
@@ -185,6 +198,15 @@ export default function BiViewPage() {
 
       // 转换 panels：模板格式(有 metric 字段) → ChartPanel 格式(有 size/order 字段)
       const rawPanels = dash.panels || [];
+      const looksCanvas = Array.isArray(rawPanels) && rawPanels.length > 0 &&
+        rawPanels.every((p: any) => p && p.spec && p.kind && typeof p.x === "number");
+      if (looksCanvas) {
+        setCanvasItems(rawPanels);
+        setPanels([]);
+        return;
+      }
+      setCanvasItems(null);
+
       const convertedPanels = rawPanels.map((p: any, i: number) => ({
         id: p.id || `p${i}`,
         type: p.type as ChartPanel["type"],
@@ -400,6 +422,8 @@ export default function BiViewPage() {
           <Box sx={{ display: "flex", justifyContent: "center", pt: 20 }}><CircularProgress /></Box>
         ) : error ? (
           <Box sx={{ textAlign: "center", pt: 20, color: "error.main" }}>{error}</Box>
+        ) : canvasItems && canvasItems.length > 0 ? (
+          <BoardViewer items={canvasItems} docId={Number(id) || undefined} />
         ) : panels.length === 0 ? (
           <Box sx={{ textAlign: "center", pt: 20, color: "text.secondary" }}>暂无图表</Box>
         ) : (
