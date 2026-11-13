@@ -347,6 +347,19 @@ cd backend && ./.venv/bin/python -m pytest     # 83 用例：SQL 网关 / 行级
 
 ---
 
+## 授权与声明
+
+本软件为专有软件，保留所有权利。使用、分发或商用前请阅读：
+
+| 文件 | 内容 |
+|:--|:--|
+| [LICENSE](LICENSE) | 专有许可协议：未经书面许可不得复制、分发、转授权或商用 |
+| [COPYRIGHT.md](COPYRIGHT.md) | 著作权与自主研发范围说明（模块清单、原创实现特征、举证材料） |
+| [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) | 第三方组件与许可证，含 Apache-2.0 / LGPL 的履行方式 |
+| [DATA-POLICY.md](DATA-POLICY.md) | 数据与素材边界：仓库不含真实平台数据与个人信息 |
+
+---
+
 ## 与旧仓库的关系
 
 本仓库由旧平台中的自研 BI 模块抽取而来，已剔除：
@@ -465,3 +478,11 @@ MingzeBI/
 ├── AGENTS.md                       # 开发规则（视觉令牌 / 布局算式 / 组件链路 / 数据红线 / 已知的坑）
 └── README.md
 ```
+
+---
+
+<div align="center">
+
+© 2026 cavan199 · 明策BI 专有软件 · 保留所有权利
+
+</div>
