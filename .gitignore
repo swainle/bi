@@ -11,6 +11,10 @@ venv/
 .env.local
 .env.*.local
 .jwt_secret
+# GlitchTip 只读 API Token（agent 读异常用，本机生成，不入库）
+deploy/glitchtip/.api-token
+# 每日异常日报（运行时生成，含堆栈与请求信息，不入库）
+docs/异常日报/
 
 # ── 运行时数据 ──
 backend/uploads/
