@@ -89,7 +89,6 @@ export default function LineCard({ payload, ui, area, compact }: Props & { compa
       <ReactEChartsCore
         option={option}
         notMerge
-        lazyUpdate
         style={{ width: "100%", height: "100%" }}
         opts={{ renderer: "canvas" }}
       />

@@ -180,7 +180,7 @@ export default function ScatterCard({ payload, ui, compact }: { payload: RenderP
           || (payload.quads ? Object.entries(payload.quads).map(([k, v]) => `${QUAD_LABEL[k] ?? k} ${v}`).join(" · ") : undefined))}
       note={compact ? undefined : payload.subtitle}
     >
-      <ReactEChartsCore option={option} notMerge lazyUpdate
+      <ReactEChartsCore option={option} notMerge
         style={{ width: "100%", height: "100%" }} opts={{ renderer: "canvas" }} />
     </CardShell>
   );

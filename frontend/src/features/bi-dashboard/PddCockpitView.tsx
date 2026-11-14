@@ -500,7 +500,7 @@ export default function PddCockpitView({ onBack }: PddCockpitProps) {
           <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1, fontSize: 13.5, color: '#111827' }}>
             部门收入 & 利润率分析
           </Typography>
-          <ReactEChartsCore option={chartDeptOption} style={{ height: 340 }} opts={{ renderer: 'canvas' }} notMerge lazyUpdate />
+          <ReactEChartsCore option={chartDeptOption} style={{ height: 340 }} opts={{ renderer: 'canvas' }} notMerge />
         </Paper>
 
         {/* 图表2: 店铺收入排名 + 图表3: 费用结构 并排或上下排列 */}
@@ -509,14 +509,14 @@ export default function PddCockpitView({ onBack }: PddCockpitProps) {
             <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1, fontSize: 13.5, color: '#111827' }}>
               店铺收入 TOP15 排名
             </Typography>
-            <ReactEChartsCore option={chartStoreRankOption} style={{ height: 360 }} opts={{ renderer: 'canvas' }} notMerge lazyUpdate />
+            <ReactEChartsCore option={chartStoreRankOption} style={{ height: 360 }} opts={{ renderer: 'canvas' }} notMerge />
           </Paper>
 
           <Paper elevation={0} sx={{ p: 2, borderRadius: 3, bgcolor: '#FFF', border: '1px solid #E5E7EB' }}>
             <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1, fontSize: 13.5, color: '#111827' }}>
               费用结构分布（TOP10店铺）
             </Typography>
-            <ReactEChartsCore option={chartCostOption} style={{ height: 360 }} opts={{ renderer: 'canvas' }} notMerge lazyUpdate />
+            <ReactEChartsCore option={chartCostOption} style={{ height: 360 }} opts={{ renderer: 'canvas' }} notMerge />
           </Paper>
         </Box>
 

@@ -158,7 +158,6 @@ export default function MapCard({ payload, ui, compact, onSliceClick }: {
       onEvents={{ click: (params: { data?: { rawName?: string }; name?: string }) =>
         onSliceClick?.(String(params?.data?.rawName || params?.name || "")) }}
       notMerge
-      lazyUpdate
       style={{ width: "100%", height: "100%" }}
       opts={{ renderer: "canvas" }}
     />,

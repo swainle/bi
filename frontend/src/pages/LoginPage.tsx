@@ -11,6 +11,7 @@ import {
   InputAdornment,
   IconButton,
   CircularProgress,
+  MenuItem,
 } from "@mui/material";
 import {
   Visibility,
@@ -19,6 +20,7 @@ import {
 } from "@mui/icons-material";
 import { useAuth } from "../hooks/useAuth";
 import { extractErrorMessage } from "../api/client";
+import { getDepartments, type DepartmentOption } from "../api/auth";
 
 const BRAND = "#4F46E5";
 const BRAND_DEEP = "#4338CA";
@@ -36,9 +38,14 @@ export default function LoginPage() {
   const [regContact, setRegContact] = useState("");
   const [regPassword, setRegPassword] = useState("");
   const [regConfirm, setRegConfirm] = useState("");
+  const [regDept, setRegDept] = useState("");
+  const [departments, setDepartments] = useState<DepartmentOption[]>([]);
+  const [deptLoading, setDeptLoading] = useState(false);
   const [showPwd, setShowPwd] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  // 注册提交成功后的提示（待审批，不自动登录）
+  const [notice, setNotice] = useState("");
 
   const redirect = params.get("redirect") || "/bi";
 
@@ -54,6 +61,7 @@ export default function LoginPage() {
     }
     setLoading(true);
     setError("");
+    setNotice("");
     try {
       await login(account.trim(), password);
       nav(redirect, { replace: true });
@@ -93,11 +101,29 @@ export default function LoginPage() {
       setError("两次输入的密码不一致");
       return;
     }
+    if (!regDept) {
+      setError("请选择所在部门");
+      return;
+    }
     setLoading(true);
     setError("");
     try {
-      await register(username, isEmail ? contact : "", isEmail ? "" : contact, regPassword);
-      nav(redirect, { replace: true });
+      const result = await register(
+        username,
+        isEmail ? contact : "",
+        isEmail ? "" : contact,
+        regPassword,
+        Number(regDept),
+      );
+      // 注册只是提交申请：不登录、不签发 token，等审批通过后再登录
+      setRegName("");
+      setRegContact("");
+      setRegPassword("");
+      setRegConfirm("");
+      setRegDept("");
+      setMode("login");
+      setError("");
+      setNotice(result.message || "注册申请已提交，待部门负责人或管理员审批通过后即可登录");
     } catch (err: any) {
       setError(extractErrorMessage(err, "注册失败，请稍后重试"));
     } finally {
@@ -108,8 +134,20 @@ export default function LoginPage() {
   const switchMode = (next: "login" | "register") => {
     setMode(next);
     setError("");
+    setNotice("");
     setShowPwd(false);
   };
+
+  // 注册页的部门选项：只在进入注册时拉一次，拿不到就提示「联系管理员」
+  useEffect(() => {
+    if (mode !== "register" || departments.length > 0 || deptLoading) return;
+    setDeptLoading(true);
+    getDepartments()
+      .then((list) => setDepartments(list))
+      .catch(() => setError("部门清单读取失败，请稍后重试或联系管理员"))
+      .finally(() => setDeptLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode]);
 
   const fieldSx = {
     "& .MuiOutlinedInput-root": {
@@ -228,6 +266,17 @@ export default function LoginPage() {
           <Typography sx={{ mt: 0.5, fontSize: 12.5, color: MUTED }}>
             {mode === "login" ? "登录你的数据工作台" : "创建你的明策BI账号"}
           </Typography>
+
+          {notice && (
+            <Box sx={{
+              mt: 2, px: 1.5, py: 1, borderRadius: "8px",
+              bgcolor: "#ECFDF5", border: "1px solid #BBF7D0",
+            }}>
+              <Typography sx={{ fontSize: 12, color: "#047857", lineHeight: 1.6 }}>
+                {notice}
+              </Typography>
+            </Box>
+          )}
 
           <Box sx={{ display: "flex", gap: 2.5, mt: 2.5, mb: 2.5, borderBottom: "1px solid #EEF0F5" }}>
             {(["login", "register"] as const).map((key) => (
@@ -352,6 +401,40 @@ export default function LoginPage() {
                   inputProps={{ "aria-label": "确认密码" }}
                   sx={fieldSx}
                 />
+                <TextField
+                  select
+                  value={regDept}
+                  onChange={(e) => setRegDept(e.target.value)}
+                  size="small"
+                  fullWidth
+                  sx={fieldSx}
+                  SelectProps={{
+                    displayEmpty: true,
+                    inputProps: { "aria-label": "所在部门" },
+                    renderValue: (value) => {
+                      const hit = departments.find((d) => String(d.id) === value);
+                      return (
+                        <Typography
+                          component="span"
+                          sx={{ fontSize: 13.5, color: hit ? "#1D1D1F" : "#9AA5B5" }}
+                        >
+                          {hit ? hit.name : deptLoading ? "部门读取中…" : "选择所在部门"}
+                        </Typography>
+                      );
+                    },
+                  }}
+                >
+                  {departments.map((dept) => (
+                    <MenuItem key={dept.id} value={String(dept.id)} sx={{ fontSize: 13 }}>
+                      {dept.name}
+                    </MenuItem>
+                  ))}
+                </TextField>
+                {!deptLoading && departments.length === 0 && (
+                  <Typography sx={{ fontSize: 10.5, color: "#B45309" }}>
+                    还没有可选部门，请联系管理员在「用户管理 · 部门管理」里添加
+                  </Typography>
+                )}
 
                 {error && (
                   <Typography sx={{ fontSize: 12, color: "error.main" }}>
@@ -363,7 +446,7 @@ export default function LoginPage() {
                   type="submit"
                   variant="contained"
                   size="large"
-                  disabled={loading}
+                  disabled={loading || (!deptLoading && departments.length === 0)}
                   sx={{
                     mt: 0.25,
                     height: 42,
@@ -376,8 +459,11 @@ export default function LoginPage() {
                     "&:hover": { bgcolor: BRAND_DEEP },
                   }}
                 >
-                  {loading ? <CircularProgress size={18} color="inherit" /> : "注册并登录"}
+                  {loading ? <CircularProgress size={18} color="inherit" /> : "提交注册申请"}
                 </Button>
+                <Typography sx={{ fontSize: 10.5, color: "#A8B7CC", textAlign: "center", lineHeight: 1.6 }}>
+                  提交后需所在部门负责人或管理员审批，通过后才能登录
+                </Typography>
               </Box>
             </form>
           )}

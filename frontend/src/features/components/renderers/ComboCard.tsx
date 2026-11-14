@@ -119,7 +119,7 @@ export default function ComboCard({ payload, ui, compact }: Props) {
         ? undefined
         : (payload.subtitle || payload.combo?.note || `柱 ${barName} · 线 ${lineName}`)}
     >
-      <ReactEChartsCore option={option} notMerge lazyUpdate
+      <ReactEChartsCore option={option} notMerge
         style={{ width: "100%", height: "100%" }} opts={{ renderer: "canvas" }} />
     </CardShell>
   );

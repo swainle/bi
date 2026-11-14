@@ -3,17 +3,40 @@
 import type { ApiResponse, AuthData, User } from "../types";
 import client from "./client";
 
-/** 用户注册 — 邮箱和手机号至少一个 */
+/** 部门选项（注册页必选） */
+export interface DepartmentOption {
+  id: number;
+  name: string;
+}
+
+/** 注册页的部门清单（公开接口） */
+export async function getDepartments(): Promise<DepartmentOption[]> {
+  const res = await client.get<{ items: DepartmentOption[] }>("/auth/departments");
+  return res.data?.items || [];
+}
+
+/** 注册结果 —— 只是「已提交申请」，不签发 token（待审批） */
+export interface RegisterResult {
+  id: number;
+  username: string;
+  email: string;
+  status: string;
+  message: string;
+}
+
+/** 用户注册 — 邮箱和手机号至少一个；部门必选；注册后进入待审批，不自动登录 */
 export async function register(
   username: string,
   email?: string,
   phone?: string,
   password?: string,
-): Promise<AuthData> {
-  const body: Record<string, string> = { username, password: password || "" };
+  departmentId?: number,
+): Promise<RegisterResult> {
+  const body: Record<string, string | number> = { username, password: password || "" };
   if (email) body.email = email;
   if (phone) body.phone = phone;
-  const res = await client.post<ApiResponse<AuthData>>("/auth/register", body);
+  if (departmentId) body.department_id = departmentId;
+  const res = await client.post<ApiResponse<RegisterResult>>("/auth/register", body);
   return res.data.data;
 }
 

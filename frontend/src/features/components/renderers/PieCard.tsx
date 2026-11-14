@@ -44,7 +44,6 @@ export default function PieCard({ payload, ui, donut, compact, onSliceClick }: {
         option={option}
         onEvents={{ click: (params: { name?: string }) => onSliceClick?.(String(params?.name ?? "")) }}
         notMerge
-        lazyUpdate
         style={{ width: "100%", height: "100%" }}
         opts={{ renderer: "canvas" }}
       />

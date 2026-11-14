@@ -171,6 +171,17 @@ export default function BiDashboardPage() {
 
   const editBoard = (b: BoardCardMeta) => nav(`/bi/canvas?doc=${b.id}`);
 
+  /** 业务入口权限：管理员直通，其余看角色/部门下发的权限码 */
+  const navCan = useCallback(
+    (perm?: string) => {
+      if (!perm) return true;
+      if (user?.role === "admin" || user?.role === "super_admin") return true;
+      return (user?.effective_permissions || []).includes(perm);
+    },
+    [user],
+  );
+  const navItems = useMemo(() => BI_NAV_ITEMS.filter((item) => navCan(item.perm)), [navCan]);
+
   /** 视图切换：同时把视图写进 ?view=，刷新 / 回退都还在这一屏 */
   const selectView = useCallback((key: string) => {
     setActiveNav(key);
@@ -180,14 +191,24 @@ export default function BiDashboardPage() {
   }, [searchParams, setSearchParams]);
 
   const handleNav = (item: SideNavItem) => {
+    if (item.perm && !navCan(item.perm)) return;
     if (item.path) { nav(item.path); return; }
     selectView(item.key);
   };
 
-  /** 从「项目」页点菜单回来时，URL 变了要跟上 */
+  /** 从「项目」页点菜单回来时，URL 变了要跟上；没权限的入口回落到「我的看板」 */
   useEffect(() => {
     const next = searchParams.get("view");
-    if (next && next !== activeNav) setActiveNav(next);
+    if (!next) return;
+    const item = BI_NAV_ITEMS.find((i) => i.key === next);
+    if (item?.perm && !navCan(item.perm)) {
+      setActiveNav("dashboards");
+      const fixed = new URLSearchParams(searchParams);
+      fixed.delete("view");
+      setSearchParams(fixed, { replace: true });
+      return;
+    }
+    if (next !== activeNav) setActiveNav(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
@@ -640,7 +661,7 @@ export default function BiDashboardPage() {
     <Box sx={{ height: "100%", minHeight: 0, display: "flex", overflow: "hidden" }}>
       {/* 左侧边栏 */}
       <BiSideNav
-        items={BI_NAV_ITEMS}
+        items={navItems}
         activeKey={activeNav}
         onSelect={handleNav}
         count={boards.length}
@@ -659,7 +680,7 @@ export default function BiDashboardPage() {
           onClick={() => { const b = boardMenu?.board; setBoardMenu(null); if (b) openBoard(b); }}>
           <Visibility sx={{ fontSize: 16, color: MUTED }} />预览
         </MenuItem>
-        {boardMenu?.board.kind === "page" && (
+        {boardMenu?.board.kind === "page" && navCan("bi:nav:editor") && (
           <MenuItem dense sx={{ fontSize: 13, gap: 1.25 }}
             onClick={() => { const b = boardMenu?.board; setBoardMenu(null); if (b) editBoard(b); }}>
             <OpenInNew sx={{ fontSize: 16, color: MUTED }} />编辑

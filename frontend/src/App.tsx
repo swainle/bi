@@ -23,6 +23,7 @@ const ComponentEditorPage = lazy(() => import("./pages/ComponentEditorPage"));
 const CanvasBoardPage = lazy(() => import("./pages/CanvasBoardPage"));
 const ProjectsPage = lazy(() => import("./pages/ProjectsPage"));
 const DashboardPage = lazy(() => import("./pages/DashboardPage"));
+const AdminPage = lazy(() => import("./pages/AdminPage"));
 
 function PageLoader() {
   return (
@@ -48,6 +49,7 @@ function Shell({ children }: { children?: ReactNode }) {
     pathname.startsWith("/bi/canvas") ||
     pathname.startsWith("/bi/projects") ||
     pathname.startsWith("/bi/dashboards") ||
+    pathname.startsWith("/bi/admin") ||
     pathname === "/bi" ||
     pathname.startsWith("/bi/view");
   return (
@@ -101,11 +103,40 @@ function ThemedApp() {
                     <Route path="bi/view/:id" element={<BiViewPage />} />
                     <Route path="bi/editor" element={<Navigate to="/bi/canvas" replace />} />
                     <Route path="bi/audit" element={<AuditLogPage />} />
-                    <Route path="bi/components" element={<ComponentLibraryPage />} />
+                    <Route path="bi/admin" element={<AdminPage />} />
+                    <Route
+                      path="bi/components"
+                      element={
+                        <ProtectedRoute permKey="bi:nav:components">
+                          <ComponentLibraryPage />
+                        </ProtectedRoute>
+                      }
+                    />
                     <Route path="bi/test-data" element={<Navigate to="/bi?view=test-data" replace />} />
-                    <Route path="bi/components/:id/edit" element={<ComponentEditorPage />} />
-                    <Route path="bi/projects" element={<ProjectsPage />} />
-                    <Route path="bi/canvas" element={<CanvasBoardPage />} />
+                    <Route
+                      path="bi/components/:id/edit"
+                      element={
+                        <ProtectedRoute permKey="bi:nav:components">
+                          <ComponentEditorPage />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="bi/projects"
+                      element={
+                        <ProtectedRoute permKey="bi:nav:editor">
+                          <ProjectsPage />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="bi/canvas"
+                      element={
+                        <ProtectedRoute permKey="bi:nav:editor">
+                          <CanvasBoardPage />
+                        </ProtectedRoute>
+                      }
+                    />
                     <Route path="bi/dashboards" element={<Navigate to="/bi" replace />} />
                     <Route path="bi/dashboards/:id" element={<DashboardPage />} />
                   </Route>

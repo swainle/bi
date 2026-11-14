@@ -79,7 +79,7 @@ export default function HeatmapCard({ payload, ui, compact }: Props & { compact?
 
   return (
     <CardShell compact={compact} title={payload.title || "矩阵"} accent={token.main}>
-      <ReactEChartsCore option={option} notMerge lazyUpdate style={{ height: "100%", width: "100%" }} />
+      <ReactEChartsCore option={option} notMerge style={{ height: "100%", width: "100%" }} />
     </CardShell>
   );
 }
