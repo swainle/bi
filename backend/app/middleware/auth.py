@@ -76,10 +76,17 @@ def get_current_user(
 
 
 def _dict_to_user(data: dict, db: Session) -> User:
-    """从缓存字典重建 User 对象（不持久化到会话，避免冲突）."""
+    """从缓存重建 User；**用户已被删除时直接 401**，绝不拿残缺字典伪造登录态."""
     from app.models.user import User as UserModel
-    u = db.query(UserModel).filter(UserModel.id == data["id"]).first()
-    return u if u else UserModel(**data)
+
+    user = db.query(UserModel).filter(UserModel.id == data["id"]).first()
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="账号不存在或已注销，请重新登录",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return user
 
 
 def get_optional_user(

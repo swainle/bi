@@ -6,9 +6,11 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, status, Request, UploadFile, File
 from fastapi.responses import JSONResponse
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.middleware.audit import log_audit
 from app.middleware.auth import get_current_user
 from app.middleware.csrf import generate_csrf_token, CSRF_COOKIE_NAME
 from app.models.user import User
@@ -43,25 +45,41 @@ def get_csrf_token(request: Request):
     return response
 
 
-@router.post("/register", response_model=ApiResponse[AuthResponse])
-def register(request: Request, data: UserCreate, db: Session = Depends(get_db)):
-    """用户注册.
+@router.get("/departments")
+def list_register_departments(db: Session = Depends(get_db)):
+    """注册页的部门清单（公开：只有 id + 名称，不含人数等内部信息）."""
+    try:
+        rows = db.execute(
+            text(
+                "SELECT id, name FROM departments "
+                "WHERE COALESCE(is_deleted, false) = false "
+                "ORDER BY sort_order NULLS LAST, id"
+            )
+        ).fetchall()
+    except Exception:
+        return {"items": []}
+    return {"items": [{"id": int(r[0]), "name": r[1]} for r in rows]}
 
-    Args:
-        data: 注册数据（用户名、邮箱、密码）.
-        db: 数据库会话.
+
+@router.post("/register", response_model=ApiResponse[dict])
+def register(request: Request, data: UserCreate, db: Session = Depends(get_db)):
+    """提交注册申请（**不登录、不签发 Token**）.
+
+    账号进入 `approval_status=pending`，由管理员或该部门负责人审批通过后才能登录 ——
+    否则任何人选「股东高层」注册就能看核心数据。
 
     Returns:
-        ApiResponse[AuthResponse]: 用户信息 + Token.
+        ApiResponse[dict]: {id, username, email, status: "pending", message}
 
     Raises:
-        409: 用户名或邮箱已被注册.
+        409: 用户名 / 邮箱已被注册，或所选部门无效.
     """
     try:
         result = auth_service.register_user(db, data)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
-    return ApiResponse(data=AuthResponse(**result))
+    log_audit(int(result["id"]), "auth.register_apply", "user", int(result["id"]), {"username": result["username"]})
+    return ApiResponse(data=result, message=result.get("message"))
 
 
 @router.post("/login", response_model=ApiResponse[AuthResponse])
@@ -85,8 +103,48 @@ def login(request: Request, data: UserLogin, db: Session = Depends(get_db)):
     return ApiResponse(data=AuthResponse(**result))
 
 
+def _user_payload(db: Session, user: User) -> dict:
+    """用户响应：基础字段 + 有效权限码 + 负责的部门（前端据此决定入口与分区）."""
+    from app.admin.permissions import admin_scope, approval_scope, data_scope, effective_permissions
+
+    data = UserResponse.model_validate(user).model_dump()
+    data["effective_permissions"] = effective_permissions(db, user)
+    data["approval_status"] = getattr(user, "approval_status", "") or "approved"
+    data["department_id"] = getattr(user, "department_id", None)
+    try:
+        if user.department_id:
+            row = db.execute(
+                text("SELECT name FROM departments WHERE id = :id"),
+                {"id": int(user.department_id)},
+            ).fetchone()
+            data["department_name"] = (row[0] if row else "") or ""
+        else:
+            data["department_name"] = ""
+    except Exception:
+        data["department_name"] = ""
+    data["admin_scope"] = admin_scope(db, user)
+    data["approval_scope"] = approval_scope(db, user)
+    data["data_scope"] = data_scope(db, user)
+    try:
+        rows = db.execute(
+            text(
+                "SELECT id FROM departments "
+                "WHERE leader_id = :uid AND COALESCE(is_deleted, false) = false "
+                "ORDER BY sort_order NULLS LAST, id"
+            ),
+            {"uid": user.id},
+        ).fetchall()
+        data["led_department_ids"] = [int(r[0]) for r in rows]
+    except Exception:
+        data["led_department_ids"] = []
+    return data
+
+
 @router.get("/me", response_model=ApiResponse[UserResponse])
-def get_me(current_user: User = Depends(get_current_user)):
+def get_me(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """获取当前用户信息（需认证）.
 
     Args:
@@ -95,7 +153,7 @@ def get_me(current_user: User = Depends(get_current_user)):
     Returns:
         ApiResponse[UserResponse]: 当前用户信息.
     """
-    return ApiResponse(data=UserResponse.model_validate(current_user))
+    return ApiResponse(data=_user_payload(db, current_user))
 
 @router.put("/profile", response_model=ApiResponse[UserResponse])
 def update_profile(
@@ -110,7 +168,7 @@ def update_profile(
         )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
-    return ApiResponse(data=UserResponse.model_validate(user))
+    return ApiResponse(data=_user_payload(db, user))
 
 
 # 头像存储目录
@@ -152,7 +210,7 @@ async def upload_avatar(
     db.commit()
     db.refresh(current_user)
 
-    return ApiResponse(data=UserResponse.model_validate(current_user))
+    return ApiResponse(data=_user_payload(db, current_user))
 
 
 @router.put("/password", response_model=ApiResponse[dict])

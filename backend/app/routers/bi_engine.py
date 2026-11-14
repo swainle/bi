@@ -15,6 +15,7 @@ import openpyxl
 import pandas as pd
 
 from app.database import get_db
+from app.security.nav_guard import require_nav
 from app.middleware.auth import get_current_user
 from app.middleware.audit import log_audit
 from app.models.user import User
@@ -244,38 +245,109 @@ class LRUCache:
 # 内存缓存 — 启动时注册定时刷新（每5分钟）
 _cache = LRUCache(max_size=200, default_ttl=300)
 
+def _incremental_tables(db) -> set[str]:
+    """只有真的带 updated_at 的物理表才能做增量同步。
+
+    bi_demand_merged / bi_demand_overview 是视图、bi_demo_sku 没有 updated_at —— 直接拼 SQL 会报
+    UndefinedColumn；旧实现把异常吞掉又不回滚，事务停在 aborted、连接不归还，连接池被慢慢吃满。
+    """
+    rows = db.execute(text(
+        "SELECT table_name FROM information_schema.columns "
+        "WHERE table_schema = current_schema() AND column_name = 'updated_at'"
+    )).fetchall()
+    return {r[0] for r in rows}
+
+
+def _refresh_once() -> dict:
+    """跑一轮「增量同步 + 物化视图刷新 + 老告警检查」。
+
+    每张表独立提交 / 回滚：任何一张失败都不影响其它表，也不会把连接留在 aborted 事务里。
+    返回本轮成功同步的表名，便于测试与手动触发。
+    """
+    import time
+    from app.database import SessionLocal
+
+    synced: list[str] = []
+    skipped: list[str] = []
+    db = SessionLocal()
+    try:
+        incremental = _incremental_tables(db)
+        # 只刷新真实存在的物化视图：ACCEL_MAP 是按白名单拼的 <table>_agg，多数并没有建
+        existing_mv = {r[0] for r in db.execute(text(
+            "SELECT matviewname FROM pg_matviews WHERE schemaname = current_schema()"
+        )).fetchall()}
+        for tbl in ALLOWED_TABLES:
+            if tbl not in incremental:
+                skipped.append(tbl)
+                continue
+            try:
+                last = SYNC_STATE.get(tbl, "1970-01-01")
+                rows = db.execute(
+                    text(f"SELECT count(*) FROM {tbl} WHERE updated_at > :last"),
+                    {"last": last},
+                ).scalar() or 0
+                if rows > 0:
+                    db.execute(text(
+                        "INSERT INTO bi_sync_logs (table_name, sync_type, rows_synced, duration_ms, status, started_at, finished_at) "
+                        "VALUES (:t, 'incremental', :r, 0, 'success', NOW(), NOW())"
+                    ), {"t": tbl, "r": rows})
+                    SYNC_STATE[tbl] = time.strftime("%Y-%m-%d %H:%M:%S")
+                db.commit()
+                synced.append(tbl)
+            except Exception as exc:
+                db.rollback()
+                print(f"[refresh] {tbl} 同步跳过：{str(exc)[:160]}")
+                continue
+            mv = ACCEL_MAP.get(tbl, "")
+            if mv and mv in existing_mv:
+                try:
+                    db.execute(text(f"REFRESH MATERIALIZED VIEW CONCURRENTLY {mv}"))
+                    db.commit()
+                except Exception as exc:
+                    db.rollback()
+                    print(f"[refresh] {mv} 刷新失败：{str(exc)[:160]}")
+
+        # 告警定时检查
+        try:
+            alerts = db.execute(text(
+                "SELECT id, name, table_name, metric_col, operator, threshold, owner_id "
+                "FROM bi_alerts WHERE enabled=true"
+            )).fetchall()
+            for a in alerts:
+                try:
+                    val = db.execute(text(f"SELECT {a[3]}({a[4]}) FROM {a[2]}")).scalar() or 0
+                    hit = (a[4] == '>' and val > a[5]) or (a[4] == '<' and val < a[5]) or (a[4] == '=' and val == a[5])
+                    if hit:
+                        db.execute(text("UPDATE bi_alerts SET last_triggered=NOW() WHERE id=:id"), {"id": a[0]})
+                        db.commit()
+                except Exception:
+                    db.rollback()
+        except Exception:
+            db.rollback()
+
+        return {"synced": synced, "skipped": skipped}
+    except Exception as exc:
+        db.rollback()
+        print(f"[refresh] 本轮跳过：{str(exc)[:160]}")
+        return {"synced": synced, "skipped": skipped, "error": str(exc)[:160]}
+    finally:
+        db.close()
+
+
+def _auto_refresh_loop() -> None:
+    """后台线程：每 5 分钟跑一轮 _refresh_once。"""
+    import time
+    while True:
+        time.sleep(300)
+        try:
+            _refresh_once()
+        except Exception as exc:  # 后台线程不能因为一轮失败退出
+            print(f"[refresh] 线程异常：{str(exc)[:160]}")
+
+
 try:
     import threading
-    def _auto_refresh_loop():
-        """后台线程：每5分钟增量同步 + 刷新物化视图 + 告警检查"""
-        import time
-        while True:
-            time.sleep(300)
-            try:
-                from app.database import SessionLocal
-                db = SessionLocal()
-                for tbl in ALLOWED_TABLES:
-                    last = SYNC_STATE.get(tbl, "1970-01-01")
-                    rows = db.execute(text(f"SELECT count(*) FROM {tbl} WHERE updated_at > '{last}'")).scalar()
-                    if rows > 0:
-                        db.execute(text(f"INSERT INTO bi_sync_logs (table_name, sync_type, rows_synced, duration_ms, status, started_at, finished_at) VALUES ('{tbl}','incremental',{rows},0,'success',NOW(),NOW())"))
-                        SYNC_STATE[tbl] = time.strftime("%Y-%m-%d %H:%M:%S")
-                    mv = ACCEL_MAP.get(tbl, "")
-                    if mv:
-                        try: db.execute(text(f"REFRESH MATERIALIZED VIEW CONCURRENTLY {mv}")); db.commit()
-                        except Exception: db.rollback()
-                # 告警定时检查
-                alerts = db.execute(text("SELECT id, name, table_name, metric_col, operator, threshold, owner_id FROM bi_alerts WHERE enabled=true")).fetchall()
-                for a in alerts:
-                    try:
-                        val = db.execute(text(f"SELECT {a[3]}({a[4]}) FROM {a[2]}")).scalar() or 0
-                        hit = (a[4]=='>' and val > a[5]) or (a[4]=='<' and val < a[5]) or (a[4]=='=' and val==a[5])
-                        if hit:
-                            db.execute(text("UPDATE bi_alerts SET last_triggered=NOW() WHERE id=:id"), {"id": a[0]})
-                    except Exception: pass
-                db.commit()
-                db.close()
-            except Exception: pass
+
     _refresh_thread = threading.Thread(target=_auto_refresh_loop, daemon=True)
     _refresh_thread.start()
 except Exception:
@@ -1297,13 +1369,22 @@ def sync_table(
     t0 = _time.time()
     if sync_type == "full":
         where = ""
+        params = {}
     else:
+        # 视图 / 没有 updated_at 的表不能增量：提前给 400，别让 SQL 报错后把事务停在 aborted
+        has_updated_at = db.execute(text(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_schema = current_schema() AND table_name = :t AND column_name = 'updated_at'"
+        ), {"t": table}).first()
+        if not has_updated_at:
+            raise HTTPException(400, f"表 {table} 没有 updated_at，不能增量同步；请用 full 全量同步")
         last = SYNC_STATE.get(table, "1970-01-01")
-        where = f" WHERE updated_at > '{last}'"
+        where = " WHERE updated_at > :last"
+        params = {"last": last}
 
     try:
         # 增量抽取：重新计算物化视图依赖的数据
-        rows = db.execute(text(f"SELECT count(*) FROM {table}{where}")).scalar()
+        rows = db.execute(text(f"SELECT count(*) FROM {table}{where}"), params).scalar()
         db.execute(text(
             "INSERT INTO bi_sync_logs (table_name, sync_type, rows_synced, duration_ms, status, started_at, finished_at) VALUES (:t,:st,:r,:d,'success',NOW(),NOW())"),
             {"t": table, "st": sync_type, "r": rows, "d": int((_time.time()-t0)*1000)})
@@ -1316,13 +1397,16 @@ def sync_table(
         except Exception: db.rollback()
         return {"table": table, "sync_type": sync_type, "rows_synced": rows, "synced_at": SYNC_STATE[table]}
     except Exception as e:
-        # 失败重试（指数退避，最多3次）
-        retry = 0
-        db.execute(text(
-            "INSERT INTO bi_sync_logs (table_name, sync_type, status, error_message, retry_count, started_at, finished_at) VALUES (:t,:st,'failed',:e,1,NOW(),NOW())"),
-            {"t": table, "st": sync_type, "e": str(e)[:200]})
-        db.commit()
-        raise HTTPException(500, f"同步失败(已记录日志): {str(e)[:100]}")
+        # 事务已 aborted，先回滚恢复连接，再尝试写失败日志；日志写不进去也不能掩盖原始错误
+        db.rollback()
+        try:
+            db.execute(text(
+                "INSERT INTO bi_sync_logs (table_name, sync_type, status, error_message, retry_count, started_at, finished_at) VALUES (:t,:st,'failed',:e,1,NOW(),NOW())"),
+                {"t": table, "st": sync_type, "e": str(e)[:200]})
+            db.commit()
+        except Exception:
+            db.rollback()
+        raise HTTPException(500, f"同步失败: {str(e)[:100]}")
 
 
 @router.get("/sync/logs")
@@ -1953,7 +2037,7 @@ def _query_rls_conditions(db: Session, tables: set[str], user: User) -> list[str
     return conditions
 
 
-@router.post("/query")
+@router.post("/query", dependencies=[Depends(require_nav("bi:nav:sql"))])
 def execute_sql(
     payload: dict = Body(...),
     current_user: User = Depends(get_current_user),
@@ -2287,7 +2371,18 @@ import requests as _requests
 from pathlib import Path as _Path
 
 def _load_default_llm() -> dict | None:
-    """加载默认 AI 模型配置（从 ai_models.json 中取 isDefault=true 的）。"""
+    """加载默认 AI 模型配置。
+
+    顺序：管理后台维护的库表 → data/ai_models.json → 环境变量（见 app/services/ai_models.py）。
+    """
+    try:
+        from app.services.ai_models import legacy_chat_config
+
+        cfg = legacy_chat_config()
+        if cfg:
+            return cfg
+    except Exception:
+        pass
     models_file = _Path(__file__).parent.parent.parent / "data" / "ai_models.json"
     if not models_file.exists():
         return None
@@ -2320,8 +2415,9 @@ def _call_llm(prompt: str, system: str = "", max_tokens: int = 4096) -> str:
     messages.append({"role": "user", "content": prompt})
 
     try:
+        endpoint = cfg.get("chat_url") or f"{str(cfg['baseURL']).rstrip('/')}/chat/completions"
         r = _requests.post(
-            f"{cfg['baseURL']}/chat/completions",
+            endpoint,
             json={
                 "model": cfg.get("model", "deepseek-v4-pro"),
                 "messages": messages,

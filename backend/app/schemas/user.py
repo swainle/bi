@@ -13,6 +13,8 @@ class UserCreate(BaseModel):
     email: Optional[EmailStr] = Field(default=None, description="邮箱（与手机号至少填一个）")
     phone: Optional[str] = Field(default=None, min_length=11, max_length=20, description="手机号（与邮箱至少填一个）")
     password: str = Field(..., min_length=6, max_length=128, description="密码（至少6位）")
+    # 注册时必须选部门（管理后台「用户管理 · 部门管理」维护清单）
+    department_id: int = Field(..., ge=1, description="所属部门")
 
     @field_validator("password")
     @classmethod
@@ -57,6 +59,24 @@ class UserResponse(BaseModel):
     is_active: bool = True
     avatar_url: Optional[str] = None
     created_at: datetime
+    # 有效权限码（由「角色 → 权限」现算；管理员为全部）。用户表里那列是历史字段，别混用
+    effective_permissions: list[str] = Field(default_factory=list)
+    # 注册审批状态 / 本人负责的部门（部门负责人可审批本部门注册）
+    approval_status: str = "approved"
+    led_department_ids: list[int] = Field(default_factory=list)
+    # 管理员范围：global 全后台 / department 只管本部门 / "" 普通账号
+    admin_scope: str = ""
+    # 注册审批范围：all / department / ""
+    approval_scope: str = ""
+    # 数据范围：all / dept_and_children / dept / self
+    data_scope: str = "self"
+    # 权限（账号类型）：admin / user
+    account_type: str = "user"
+    # 职位：member / supervisor / manager / director
+    position: str = "member"
+    # 所属部门（id + 名称，头标卡展示「部门」）
+    department_id: int | None = None
+    department_name: str = ""
 
     model_config = {"from_attributes": True}
 

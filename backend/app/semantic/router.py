@@ -20,6 +20,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.security.nav_guard import require_nav
 from app.middleware.auth import get_current_user
 from app.models.user import User
 from app.query.contract import QueryObject
@@ -192,7 +193,7 @@ def list_template_datasets(
     return {"datasets": template_market.list_template_datasets(db, current_user)}
 
 
-@router.post("/datasets/test")
+@router.post("/datasets/test", dependencies=[Depends(require_nav("bi:nav:datasets"))])
 def ensure_test_dataset(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -210,7 +211,7 @@ def ensure_test_dataset(
     return {"id": dataset_id, "name": seed_demo.DATASET_NAME, "fields": fields}
 
 
-@router.post("/datasets")
+@router.post("/datasets", dependencies=[Depends(require_nav("bi:nav:datasets"))])
 def create_dataset(
     payload: dict = Body(...),
     current_user: User = Depends(get_current_user),
@@ -294,7 +295,7 @@ def create_dataset(
     return full.to_dict() if full else {"id": dataset.id}
 
 
-@router.patch("/datasets/{dataset_id}")
+@router.patch("/datasets/{dataset_id}", dependencies=[Depends(require_nav("bi:nav:datasets"))])
 def update_dataset(
     dataset_id: int,
     payload: dict = Body(...),
@@ -326,7 +327,7 @@ def _can_rename(dataset, user: User) -> bool:
     return dataset.owner_id in (None, user.id) or user.role in ("admin", "super_admin")
 
 
-@router.patch("/datasets/{dataset_id}/name")
+@router.patch("/datasets/{dataset_id}/name", dependencies=[Depends(require_nav("bi:nav:datasets"))])
 def rename_dataset(
     dataset_id: int,
     payload: dict = Body(...),
@@ -352,7 +353,7 @@ def rename_dataset(
     return renamed.to_dict(with_items=False)
 
 
-@router.post("/datasets/{dataset_id}/sync")
+@router.post("/datasets/{dataset_id}/sync", dependencies=[Depends(require_nav("bi:nav:datasets"))])
 def sync_dataset_columns(
     dataset_id: int,
     current_user: User = Depends(get_current_user),
@@ -390,7 +391,7 @@ def dataset_usages(
     return {"dataset_id": dataset_id, "count": len(rows), "usages": rows}
 
 
-@router.delete("/datasets/{dataset_id}")
+@router.delete("/datasets/{dataset_id}", dependencies=[Depends(require_nav("bi:nav:datasets"))])
 def delete_dataset(
     dataset_id: int,
     current_user: User = Depends(get_current_user),

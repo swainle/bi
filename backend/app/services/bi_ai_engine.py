@@ -18,21 +18,39 @@ from fastapi import HTTPException
 
 # ═══════ LLM 调用 ═══════
 def _call_llm(prompt: str, system: str = "", max_tokens: int = 4096) -> str:
-    """调用 DeepSeek / 本地 LLM"""
+    """调用默认 LLM（管理后台配置 → 环境变量）"""
     import requests, os
-    api_key = os.environ.get("LLM_API_KEY") or os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("OPENAI_API_KEY", "")
-    api_base = os.environ.get("LLM_API_BASE") or os.environ.get("DEEPSEEK_API_BASE", "https://api.deepseek.com")
+
+    from app.services.ai_models import default_config
+
+    cfg = None
+    try:
+        cfg = default_config()
+    except Exception:
+        cfg = None
+
+    if cfg:
+        endpoint = cfg["chat_url"]
+        api_key = cfg["api_key"]
+        model = cfg["model"]
+        temperature = cfg["temperature"]
+    else:
+        api_key = os.environ.get("LLM_API_KEY") or os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("OPENAI_API_KEY", "")
+        api_base = os.environ.get("LLM_API_BASE") or os.environ.get("DEEPSEEK_API_BASE", "https://api.deepseek.com")
+        endpoint = f"{api_base.rstrip('/')}/v1/chat/completions" if not api_base.rstrip("/").endswith("/v1") else f"{api_base.rstrip('/')}/chat/completions"
+        model = os.environ.get("LLM_MODEL") or os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
+        temperature = 0.3
     if not api_key:
         return '{"error": "no_api_key"}'
 
     resp = requests.post(
-        f"{api_base}/v1/chat/completions",
+        endpoint,
         headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
         json={
-            "model": os.environ.get("LLM_MODEL") or os.environ.get("DEEPSEEK_MODEL", "deepseek-chat"),
+            "model": model,
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": prompt}],
             "max_tokens": max_tokens,
-            "temperature": 0.3,
+            "temperature": temperature,
         },
         timeout=120,
     )

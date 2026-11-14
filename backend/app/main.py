@@ -19,6 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy.exc import TimeoutError as SATimeoutError
 
 from app.config import settings
 from app.database import Base, engine
@@ -162,6 +163,11 @@ from app.errors import router as errors_router  # noqa: E402
 
 app.include_router(errors_router.router, prefix="/api")
 
+# ── 管理后台（概览 / 用户 / 角色权限 / 模型配置 / 运维）──────────────
+from app.admin import router as admin_router  # noqa: E402
+
+app.include_router(admin_router, prefix="/api")
+
 
 # ── 健康检查 ───────────────────────────────────────────────────
 def _probe_database() -> bool:
@@ -247,6 +253,38 @@ def version():
 
 
 # ── 前端错误上报在 app/errors/router.py（POST /api/report）──
+
+# ── 连接池耗尽：快速失败成 503，别把 30s 等待变成 500 并刷屏错误日志 ──
+_pool_timeout_log_at = 0.0
+
+
+@app.exception_handler(SATimeoutError)
+async def pool_timeout_handler(request: Request, exc: SATimeoutError):
+    """SQLAlchemy QueuePool 取连接超时 = 数据库繁忙，返回 503 + Retry-After。
+
+    这里不写 bi_error_log、不抛给 Sentry：连接池耗尽是一次可恢复的容量事件，
+    按请求逐条上报只会把真正的异常淹没（2026-11-14 的 40 条 500 就是这么来的）。
+    日志按 60s 汇总打一条，仍然能在运行日志里看到频率。
+    """
+    global _pool_timeout_log_at
+    import time as _time
+
+    now = _time.time()
+    if now - _pool_timeout_log_at >= 60:
+        _pool_timeout_log_at = now
+        print(f"[db] 连接池耗尽（60s 内首次）：{request.method} {request.url.path} · {str(exc)[:160]}")
+    try:
+        from app.query import metrics as query_metrics
+
+        query_metrics.incr("pool_timeout")
+    except Exception:
+        pass
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "数据库繁忙，请稍后重试"},
+        headers={"Retry-After": "2"},
+    )
+
 
 # ── 全局异常：避免堆栈外泄（同时落错误日志，管理员可查）──────────
 @app.exception_handler(Exception)

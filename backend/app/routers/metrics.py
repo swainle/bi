@@ -58,7 +58,7 @@ def collect() -> dict:
             "version": settings.app_version,
             "uptime_seconds": int(time.time() - _STARTED_AT),
         },
-        "database": get_pool_status(),
+        "database": {**get_pool_status(), "pool_timeouts": int(counters.get("pool_timeout", 0))},
         "redis": {"enabled": redis_bus.client() is not None},
         "query": {
             "in_flight": max(0, int(counters.get("query.in_flight", 0))),

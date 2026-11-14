@@ -41,6 +41,21 @@ class User(Base):
     department_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("departments.id"), nullable=True, index=True
     )
+    # 权限（账号类型）：admin 管理员 / user 普通用户
+    account_type: Mapped[str] = mapped_column(
+        String(20), default="user", server_default="user", nullable=False
+    )
+    # 职位：member 员工 / supervisor 主管 / manager 经理 / director 总监
+    position: Mapped[str] = mapped_column(
+        String(20), default="member", server_default="member", nullable=False
+    )
+    # 注册审批：pending 待审批（不能登录）/ approved 已通过 / rejected 已驳回
+    approval_status: Mapped[str] = mapped_column(
+        String(20), default="approved", server_default="approved", nullable=False
+    )
+    approved_by: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    approved_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    reject_reason: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
     # 头像 URL（相对于 uploads 目录或绝对 URL）
     avatar_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     # 令牌版本号：每次登录 +1，旧令牌自动失效（单设备登录）

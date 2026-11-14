@@ -8,6 +8,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.components.resolver import apply_dataset_switch, resolve as resolve_component
+from app.security.nav_guard import require_nav
 from app.components.spec import ComponentSpecError, validate_spec
 from app.dashboards import drill as drill_mod
 from app.dashboards import render_cache
@@ -212,7 +213,7 @@ def _blank_doc() -> dict:
     }
 
 
-@router.post("")
+@router.post("", dependencies=[Depends(require_nav("bi:nav:editor"))])
 def create_dashboard(
     payload: dict = Body(default={}),
     current_user: User = Depends(get_current_user),
@@ -411,7 +412,7 @@ def list_dashboard_sources(
     return {"dashboard_id": dashboard_id, "sources": sources.list_for(db, dashboard_id)}
 
 
-@router.patch("/{dashboard_id}")
+@router.patch("/{dashboard_id}", dependencies=[Depends(require_nav("bi:nav:editor"))])
 def rename_dashboard(
     dashboard_id: int,
     payload: dict = Body(...),
@@ -433,7 +434,7 @@ def rename_dashboard(
     return {"id": saved.id, "name": saved.name, "updated_at": str(saved.updated_at or "")}
 
 
-@router.delete("/{dashboard_id}")
+@router.delete("/{dashboard_id}", dependencies=[Depends(require_nav("bi:nav:editor"))])
 def delete_dashboard(
     dashboard_id: int,
     current_user: User = Depends(get_current_user),

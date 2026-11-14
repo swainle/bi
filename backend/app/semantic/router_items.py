@@ -10,6 +10,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.security.nav_guard import require_nav
 from app.middleware.auth import get_current_user
 from app.models.user import User
 from app.semantic import repository as repo
@@ -61,7 +62,7 @@ def field_usages(
     }
 
 
-@router.post("/datasets/{dataset_id}/fields")
+@router.post("/datasets/{dataset_id}/fields", dependencies=[Depends(require_nav("bi:nav:datasets"))])
 def add_field(
     dataset_id: int,
     payload: dict = Body(...),
@@ -88,7 +89,7 @@ def add_field(
     return field.to_dict()
 
 
-@router.patch("/datasets/{dataset_id}/fields/{field_id}")
+@router.patch("/datasets/{dataset_id}/fields/{field_id}", dependencies=[Depends(require_nav("bi:nav:datasets"))])
 def update_field(
     dataset_id: int,
     field_id: int,
@@ -107,7 +108,7 @@ def update_field(
     return field.to_dict() if field else {"id": field_id}
 
 
-@router.delete("/datasets/{dataset_id}/fields/{field_id}")
+@router.delete("/datasets/{dataset_id}/fields/{field_id}", dependencies=[Depends(require_nav("bi:nav:datasets"))])
 def delete_field(
     dataset_id: int,
     field_id: int,
@@ -128,7 +129,7 @@ def list_metrics(
     return {"metrics": [m.to_dict() for m in repo.list_metrics(db, dataset_id)]}
 
 
-@router.post("/datasets/{dataset_id}/metrics")
+@router.post("/datasets/{dataset_id}/metrics", dependencies=[Depends(require_nav("bi:nav:datasets"))])
 def add_metric(
     dataset_id: int,
     payload: dict = Body(...),
@@ -153,7 +154,7 @@ def add_metric(
     return metric.to_dict()
 
 
-@router.patch("/datasets/{dataset_id}/metrics/{metric_id}")
+@router.patch("/datasets/{dataset_id}/metrics/{metric_id}", dependencies=[Depends(require_nav("bi:nav:datasets"))])
 def update_metric(
     dataset_id: int,
     metric_id: int,
@@ -173,7 +174,7 @@ def update_metric(
     return metric.to_dict() if metric else {"id": metric_id}
 
 
-@router.delete("/datasets/{dataset_id}/metrics/{metric_id}")
+@router.delete("/datasets/{dataset_id}/metrics/{metric_id}", dependencies=[Depends(require_nav("bi:nav:datasets"))])
 def delete_metric(
     dataset_id: int,
     metric_id: int,
@@ -215,7 +216,7 @@ def preview_model_import(
     return result
 
 
-@router.post("/datasets/{dataset_id}/model-import")
+@router.post("/datasets/{dataset_id}/model-import", dependencies=[Depends(require_nav("bi:nav:datasets"))])
 def run_model_import(
     dataset_id: int,
     payload: dict = Body(...),
@@ -259,7 +260,7 @@ def _require_dataset_owner(db: Session, dataset_id: int, user: User):
     return dataset
 
 
-@router.post("/datasets/{dataset_id}/security/row-rules")
+@router.post("/datasets/{dataset_id}/security/row-rules", dependencies=[Depends(require_nav("bi:nav:datasets"))])
 def add_dataset_row_rule(
     dataset_id: int,
     payload: dict = Body(default={}),
@@ -283,7 +284,7 @@ def add_dataset_row_rule(
         raise HTTPException(400, str(exc)) from exc
 
 
-@router.delete("/datasets/{dataset_id}/security/row-rules/{rule_id}")
+@router.delete("/datasets/{dataset_id}/security/row-rules/{rule_id}", dependencies=[Depends(require_nav("bi:nav:datasets"))])
 def delete_dataset_row_rule(
     dataset_id: int,
     rule_id: int,
@@ -296,7 +297,7 @@ def delete_dataset_row_rule(
     return dataset_rules.delete_row_rule(db, dataset_id, rule_id)
 
 
-@router.post("/datasets/{dataset_id}/security/masks")
+@router.post("/datasets/{dataset_id}/security/masks", dependencies=[Depends(require_nav("bi:nav:datasets"))])
 def set_dataset_mask(
     dataset_id: int,
     payload: dict = Body(default={}),
@@ -319,7 +320,7 @@ def set_dataset_mask(
         raise HTTPException(400, str(exc)) from exc
 
 
-@router.delete("/datasets/{dataset_id}/security/masks/{column_name}")
+@router.delete("/datasets/{dataset_id}/security/masks/{column_name}", dependencies=[Depends(require_nav("bi:nav:datasets"))])
 def delete_dataset_mask(
     dataset_id: int,
     column_name: str,
@@ -345,7 +346,7 @@ def metric_versions(
     return {"metric_id": metric_id, "count": len(versions), "versions": versions}
 
 
-@router.post("/datasets/{dataset_id}/metrics/{metric_id}/certify")
+@router.post("/datasets/{dataset_id}/metrics/{metric_id}/certify", dependencies=[Depends(require_nav("bi:nav:datasets"))])
 def certify_metric(
     dataset_id: int,
     metric_id: int,

@@ -21,6 +21,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.components import catalog as chart_catalog
+from app.security.nav_guard import require_nav
 from app.components import repository as repo
 from app.components.compute import fmt_number
 from app.components.resolver import resolve
@@ -75,7 +76,7 @@ def component_catalog():
     return chart_catalog.catalog()
 
 
-@router.post("/from-catalog")
+@router.post("/from-catalog", dependencies=[Depends(require_nav("bi:nav:components"))])
 def create_from_catalog(
     payload: dict = Body(...),
     current_user: User = Depends(get_current_user),
@@ -127,7 +128,7 @@ def component_meta():
     }
 
 
-@router.post("")
+@router.post("", dependencies=[Depends(require_nav("bi:nav:components"))])
 def create_component(
     payload: dict = Body(...),
     current_user: User = Depends(get_current_user),
@@ -166,7 +167,7 @@ def get_component(
     return component.to_dict()
 
 
-@router.put("/{component_id}")
+@router.put("/{component_id}", dependencies=[Depends(require_nav("bi:nav:components"))])
 def update_component(
     component_id: int,
     payload: dict = Body(...),
@@ -188,7 +189,7 @@ def update_component(
     return updated.to_dict()
 
 
-@router.delete("/{component_id}")
+@router.delete("/{component_id}", dependencies=[Depends(require_nav("bi:nav:components"))])
 def delete_component(
     component_id: int,
     current_user: User = Depends(get_current_user),

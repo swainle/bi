@@ -85,11 +85,16 @@ except ValueError:
 
 @event.listens_for(engine, "before_cursor_execute")
 def _before_exec(conn, cursor, statement, parameters, context, executemany):
-    conn.info.setdefault("_start", _time.time())
+    # 每条语句都覆盖起点：请求中途被取消（客户端断开）时 after_cursor_execute 不会执行，
+    # 用 setdefault 会把旧起点留到下一次语句，日志里就会出现假的 600s / 784s「慢查询」。
+    conn.info["_start"] = _time.time()
 
 @event.listens_for(engine, "after_cursor_execute")
 def _after_exec(conn, cursor, statement, parameters, context, executemany):
-    elapsed = _time.time() - conn.info.pop("_start", _time.time())
+    start = conn.info.pop("_start", None)
+    if start is None:
+        return
+    elapsed = _time.time() - start
     if _SLOW_QUERY_MS > 0 and elapsed * 1000 > _SLOW_QUERY_MS:  # 慢查询告警阈值可调
         _slow_log.warning(f"SLOW QUERY ({elapsed:.2f}s): {statement[:200]}")
 

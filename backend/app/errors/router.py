@@ -67,7 +67,10 @@ def list_errors(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    if current_user.role not in ("admin", "super_admin"):
+    # 管理员直通；其余人被授予「错误日志」(bi:error:view) 才能看（管理后台可分配）
+    from app.admin.permissions import has_permission
+
+    if not has_permission(db, current_user, "bi:error:view"):
         raise HTTPException(403, "只有管理员可以查看错误日志")
     source = (source or "").strip() or None
     level = (level or "").strip() or None

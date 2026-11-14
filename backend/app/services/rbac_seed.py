@@ -22,6 +22,19 @@ PERMISSIONS = [
     # 系统管理
     ("system:settings", "系统设置", "system"),
     ("system:audit", "查看审计日志", "system"),
+    # 管理后台（概览 / 用户 / 权限 / 模型 / 错误 / 运维）
+    ("bi:overview", "查看概览", "管理后台"),
+    ("bi:user:manage", "用户管理", "管理后台"),
+    ("bi:user:approve", "注册审批", "管理后台"),
+    ("bi:role:manage", "角色与权限", "管理后台"),
+    ("bi:model:manage", "模型配置", "管理后台"),
+    ("bi:error:view", "错误日志", "管理后台"),
+    ("bi:ops:manage", "运维操作", "管理后台"),
+    ("bi:nav:datasets", "数据集入口", "业务入口"),
+    ("bi:nav:datasources", "数据源入口", "业务入口"),
+    ("bi:nav:sql", "SQL 查询入口", "业务入口"),
+    ("bi:nav:components", "组件库入口", "业务入口"),
+    ("bi:nav:editor", "编辑设计入口", "业务入口"),
 ]
 
 DEFAULT_ROLES = {
@@ -29,24 +42,29 @@ DEFAULT_ROLES = {
         "name": "管理员",
         "description": "超级管理员，拥有所有权限",
         "permissions": [p[0] for p in PERMISSIONS],
+        "data_scope": "all",
+        "sort_order": 100,
     },
     "manager": {
-        "name": "部门主管",
-        "description": "可管理本部门的知识库和文件",
-        "permissions": ["kb:view", "kb:create", "kb:edit", "kb:delete", "kb:share",
-                        "teamspace:view", "teamspace:create", "teamspace:edit", "teamspace:delete",
-                        "user:view"],
+        "name": "主管",
+        "description": "可查看概览、审批本部门注册",
+        "permissions": ["bi:overview", "bi:user:manage", "bi:user:approve", "bi:role:manage"],
+        "data_scope": "dept_and_children",
+        "sort_order": 70,
     },
     "member": {
-        "name": "普通成员",
-        "description": "可查看和创建知识库",
-        "permissions": ["kb:view", "kb:create", "kb:edit", "kb:share",
-                        "teamspace:view", "teamspace:create", "teamspace:edit"],
+        "name": "员工",
+        "description": "基础成员：默认只读看板",
+        "permissions": [],
+        "data_scope": "self",
+        "sort_order": 60,
     },
     "viewer": {
         "name": "访客",
         "description": "只读权限",
-        "permissions": ["kb:view", "teamspace:view"],
+        "permissions": [],
+        "data_scope": "self",
+        "sort_order": 50,
     },
 }
 
@@ -60,13 +78,25 @@ def seed_permissions(db: Session):
 
 
 def seed_roles(db: Session):
+    """补缺失的内置角色。
+
+    注意：**只在角色第一次创建时写入默认权限**。旧实现每次启动都无条件覆盖
+    `role.permissions`，管理后台里配好的权限一重启就被冲掉 —— 那样「权限分配」就是花架子。
+    """
     for code, info in DEFAULT_ROLES.items():
         role = db.query(Role).filter(Role.code == code).first()
-        if not role:
-            role = Role(code=code, name=info["name"], description=info["description"], is_system=True)
-            db.add(role)
-            db.flush()
-        # 更新权限
+        if role:
+            continue
+        role = Role(
+            code=code,
+            name=info["name"],
+            description=info["description"],
+            is_system=True,
+            data_scope=info.get("data_scope", "dept"),
+            sort_order=info.get("sort_order", 0),
+        )
+        db.add(role)
+        db.flush()
         perms = db.query(Permission).filter(Permission.code.in_(info["permissions"])).all()
         role.permissions = perms
     db.commit()

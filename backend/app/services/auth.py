@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 import bcrypt
 from jose import jwt, JWTError
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -74,12 +75,25 @@ def register_user(db: Session, data: UserCreate) -> dict:
         if db.query(User).filter(User.phone == data.phone).first():
             raise ValueError("手机号已被注册")
 
+    department_id = int(getattr(data, "department_id", 0) or 0)
+    if department_id:
+        exists = db.execute(
+            text("SELECT 1 FROM departments WHERE id = :id AND COALESCE(is_deleted, false) = false"),
+            {"id": department_id},
+        ).first()
+        if not exists:
+            raise ValueError("所选部门不存在，请重新选择")
+
     user = User(
         username=data.username,
         email=data.email or f"phone:{data.phone}@mingzebi.local",  # 仅有手机号时生成占位邮箱
         phone=data.phone,
         password_hash=hash_password(data.password),
         token_version=1,
+        department_id=department_id or None,
+        # 注册不自动生效：先进入待审批，管理员或该部门负责人通过后才能登录
+        is_active=False,
+        approval_status="pending",
     )
     db.add(user)
     db.commit()
@@ -89,9 +103,8 @@ def register_user(db: Session, data: UserCreate) -> dict:
         "id": user.id,
         "username": user.username,
         "email": user.email,
-        "role": user.role or "user",
-        "access_token": create_access_token(user.id, user.token_version),
-        "refresh_token": create_refresh_token(user.id, user.token_version),
+        "status": "pending",
+        "message": "注册申请已提交，待部门负责人或管理员审批通过后即可登录",
     }
 
 
@@ -124,10 +137,17 @@ def login_user(db: Session, data: UserLogin) -> dict:
 
     if not user:
         raise ValueError("账号或密码错误")
-    if not user.is_active:
-        raise ValueError("账号已被禁用")
+    # 先验密码再报账号状态：避免用错误密码探测「这个账号存在且被禁/待审批」
     if not verify_password(data.password, user.password_hash):
         raise ValueError("账号或密码错误")
+    approval = (getattr(user, "approval_status", "") or "approved").strip() or "approved"
+    if approval == "pending":
+        raise ValueError("注册申请待审批，审批通过后即可登录")
+    if approval == "rejected":
+        reason = (getattr(user, "reject_reason", "") or "").strip()
+        raise ValueError("注册申请未通过" + (f"：{reason}" if reason else ""))
+    if not user.is_active:
+        raise ValueError("账号已被停用")
 
     # 每次登录递增 token_version，使旧 token 失效（单设备登录）
     user.token_version = (user.token_version or 0) + 1

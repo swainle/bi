@@ -20,6 +20,7 @@ from fastapi import APIRouter, Body, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.security.nav_guard import require_nav
 from app.middleware.auth import get_current_user
 from app.models.user import User
 from app.sources import repository as repo
@@ -54,7 +55,7 @@ def list_sources(
     return {"sources": repo.list_sources(db)}
 
 
-@router.post("")
+@router.post("", dependencies=[Depends(require_nav("bi:nav:datasources"))])
 def create_source(
     payload: dict = Body(...),
     current_user: User = Depends(get_current_user),
@@ -66,7 +67,7 @@ def create_source(
         raise _guard(exc) from exc
 
 
-@router.patch("/{source_id}")
+@router.patch("/{source_id}", dependencies=[Depends(require_nav("bi:nav:datasources"))])
 def update_source(
     source_id: int,
     payload: dict = Body(...),
@@ -91,7 +92,7 @@ def delete_source(
         raise _guard(exc) from exc
 
 
-@router.post("/test")
+@router.post("/test", dependencies=[Depends(require_nav("bi:nav:datasources"))])
 def test_payload(
     payload: dict = Body(...),
     current_user: User = Depends(get_current_user),
@@ -103,7 +104,7 @@ def test_payload(
         raise _guard(exc) from exc
 
 
-@router.post("/{source_id}/test")
+@router.post("/{source_id}/test", dependencies=[Depends(require_nav("bi:nav:datasources"))])
 def test_source(
     source_id: int,
     current_user: User = Depends(get_current_user),
@@ -133,7 +134,7 @@ def remote_tables(
         raise _guard(exc) from exc
 
 
-@router.post("/{source_id}/sync")
+@router.post("/{source_id}/sync", dependencies=[Depends(require_nav("bi:nav:datasources"))])
 def sync_tables(
     source_id: int,
     payload: dict = Body(default={}),
@@ -151,7 +152,7 @@ def sync_tables(
         raise _guard(exc) from exc
 
 
-@router.post("/{source_id}/schema-check")
+@router.post("/{source_id}/schema-check", dependencies=[Depends(require_nav("bi:nav:datasources"))])
 def check_schema(
     source_id: int,
     current_user: User = Depends(get_current_user),
@@ -167,7 +168,7 @@ def check_schema(
         raise _guard(exc) from exc
 
 
-@router.post("/files/{table_id}/resync")
+@router.post("/files/{table_id}/resync", dependencies=[Depends(require_nav("bi:nav:datasources"))])
 def resync_table(
     table_id: int,
     current_user: User = Depends(get_current_user),
@@ -180,7 +181,7 @@ def resync_table(
         raise _guard(exc) from exc
 
 
-@router.patch("/files/{table_id}/schedule")
+@router.patch("/files/{table_id}/schedule", dependencies=[Depends(require_nav("bi:nav:datasources"))])
 def set_schedule(
     table_id: int,
     payload: dict = Body(default={}),
@@ -194,7 +195,7 @@ def set_schedule(
         raise _guard(exc) from exc
 
 
-@router.post("/sync/due")
+@router.post("/sync/due", dependencies=[Depends(require_nav("bi:nav:datasources"))])
 def sync_due(
     payload: dict = Body(default={}),
     current_user: User = Depends(get_current_user),
@@ -209,7 +210,7 @@ def sync_due(
     return sync_scheduler.run_once(limit)
 
 
-@router.post("/upload")
+@router.post("/upload", dependencies=[Depends(require_nav("bi:nav:datasources"))])
 async def upload_file(
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
@@ -232,7 +233,7 @@ def list_files(
     return {"tables": repo.list_source_tables(db)}
 
 
-@router.delete("/files/{table_id}")
+@router.delete("/files/{table_id}", dependencies=[Depends(require_nav("bi:nav:datasources"))])
 def drop_file(
     table_id: int,
     current_user: User = Depends(get_current_user),
