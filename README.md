@@ -160,9 +160,11 @@ VITE_SENTRY_DSN='https://key@127.0.0.1:8070/1' npm run build
 | [Issues](../../issues) | 需求 / 缺陷，走 `.github/ISSUE_TEMPLATE` 模板，自动带标签 |
 | [Pull Requests](../../pulls) | 变更说明，走 PR 模板（改动面 / 验证方式 / 回滚） |
 | [Actions](../../actions) | CI：后端 pytest + 前端构建与类型检查 |
+| [仓库操作规范](docs/仓库操作规范.md) | **发版必读**：脱敏、入库边界、版本号、禁用命令、八步发版流程、发布记录 |
+| [更新日志](docs/更新日志.md) | 逐条功能记录，只追加不改 |
 
 **提交约定**：`feat:` / `fix:` / `refactor:` / `docs:` / `chore:`，一次提交只做一件事；
-界面改动必须在 `docs/更新日志.md` 追加一条。
+界面改动必须在 `docs/更新日志.md` 追加一条；发版前按 `docs/仓库操作规范.md` 的八步流程走。
 
 ---
 
