@@ -25,7 +25,7 @@
 
 | 数据接入 | 分析画布 | AI 能力 | 企业能力 |
 |:--|:--|:--|:--|
-| **15 类数据源**<br>PG · MySQL 家族 · ClickHouse · SQL Server · Oracle · Db2 · Presto · Hive · Impala · Redshift + CSV/Excel | **双模式布局**<br>12 列栅格 / 自由悬浮 · 磁吸吸附 · 撤销重做 | **自然语言转 SQL**<br>一键生成看板 · 三阶段 Agent 管线 | **RBAC + 行级权限**<br>字段脱敏 · 操作审计 · 版本快照 |
+| **15 类数据源**<br>PG · MySQL 家族 · ClickHouse · SQL Server · Oracle · Db2 · Presto · Hive · Impala · Redshift + CSV/Excel | **双模式布局**<br>12 列栅格 / 自由悬浮 · 磁吸吸附 · 撤销重做 | **自然语言转 SQL**<br>一键生成看板 · 三阶段 Agent 管线 | **RBAC + 部门体系**<br>管理后台 · 注册审批 · 行级权限 · 操作审计 |
 
 ---
 
@@ -39,6 +39,11 @@
 **明细表** —— 列宽均分、数值右对齐，缩略图直连素材目录，点图看大图
 
 ![明细表](docs/images/detail-table.jpg)
+
+| 管理后台 · 用户管理 | 管理后台 · 模型配置 |
+|:--|:--|
+| <img src="docs/images/admin-users.jpg" width="440" alt="管理后台-用户管理"> | <img src="docs/images/admin-models.jpg" width="440" alt="管理后台-模型配置"> |
+| 按部门 / 角色 / 状态筛选；改密与停用推进 `token_version`，旧会话立即失效 | Key 加密存储、接口只回掩码；测试连接走真实 `chat/completions` |
 
 ---
 
@@ -209,6 +214,17 @@ macOS 防火墙对未签名的 node 会拦外部连接 —— `scripts/dev.sh` �
 - 看板权限（owner / 查看 / 编辑）、公开分享、分享链接（`/bi/share/{token}`）
 - 行级权限、字段脱敏、操作审计日志、看板版本快照
 - 缓存（连接池 / 查询缓存 / 布局缓存）、物化加速、PG→Doris 同步路由
+
+### 管理后台与组织
+- 入口：账号菜单「管理后台」→ `/bi/admin`，仅管理员或被授予任一管理权限的账号可见
+- 六个分区：概览 · 用户管理 · 角色权限 · 模型配置 · 错误日志 · 运维
+- 权限码 `bi:overview` / `bi:user:manage` / `bi:role:manage` / `bi:model:manage` /
+  `bi:error:view` / `bi:ops:manage`，**每次请求现算**，不信 JWT 旧快照
+- 防呆：不能停用自己、不能取消自己的管理员、不能关掉最后一个启用的管理员
+- 部门体系：默认 11 个部门，注册必选部门；部门管理员只能管本部门
+- 注册审批：待审列表 + 通过/驳回，走 `bi:user:approve` 权限
+- AI 模型：库表配置，Key 加密存储，解析顺序 **库表 > data/ai_models.json > 环境变量**
+- 错误观测：站内 `bi_error_log` + Sentry / GlitchTip 上报，每日 9:00 异常日报
 
 </details>
 
@@ -446,7 +462,9 @@ MingzeBI/
 │   │   ├── database.py             # 引擎 / 会话 / 连接池监控
 │   │   ├── bootstrap.py            # 建表 / 示例数据 / 默认管理员（幂等）
 │   │   ├── middleware/             # auth / csrf / audit / rate-limit / logging
-│   │   ├── models/                 # users / rbac
+│   │   ├── models/                 # users / rbac / department
+│   │   ├── admin/                  # 管理后台（权限码 / 用户 / 角色 / 模型 / 错误 / 运维）
+│   │   ├── observability.py        # Sentry / GlitchTip 接入（留空即关闭）
 │   │   ├── routers/
 │   │   │   ├── auth.py             # 登录 / 刷新 / 资料 / 头像
 │   │   │   ├── bi_engine.py        # BI 引擎主体（查询 / 看板 / AI / 模板 / 权限）
@@ -461,13 +479,17 @@ MingzeBI/
 │   │       ├── bi_persistence_engine.py  # 卡片批量持久化 / 快照
 │   │       ├── bi_csv_import.py    # CSV 解析导入
 │   │       ├── bi_share_links.py   # 分享链接
-│   │       └── query_router.py     # PG / Doris 路由
+│   │       ├── query_router.py     # PG / Doris 路由
+│   │       ├── ai_models.py        # 默认模型解析（库表 > json > 环境变量）
+│   │       └── rbac_seed.py        # 角色与权限种子
 │   ├── security/                   # 安全内核（独立，不依赖路由）
 │   │   ├── errors.py               # 统一异常族
 │   │   ├── denylist.py             # 危险函数 / 写节点
 │   │   ├── masking.py              # 列脱敏
 │   │   ├── sql_guard/              # 只读网关（sqlglot AST）
-│   │   └── rls/                    # 行级权限（编译 / 注入 / 指纹）
+│   │   ├── rls/                    # 行级权限（编译 / 注入 / 指纹）
+│   │   ├── dataset_rules.py        # 数据集行级安全规则
+│   │   └── nav_guard.py            # 导航按权限显隐
 │   ├── query/                      # 查询契约
 │   │   ├── contract.py             # QueryObject
 │   │   ├── grain.py                # 时间粒度（多方言）
@@ -483,7 +505,7 @@ MingzeBI/
 │   │   └── router*.py              # 数据集 / 字段 / 指标 API
 │   ├── schema/
 │   │   ├── schema.sql              # 38 张表 + 序列 + 索引 + 触发器
-│   │   ├── migrations/             # 增量迁移（启动时幂等执行）
+│   │   ├── migrations/             # 增量迁移 001–045（启动时幂等执行）
 │   │   └── seed.sql                # 电商示例数据（拼多多 / 天猫 / 抖音）
 │   ├── tests/                      # pytest（83 用例）
 │   ├── requirements.txt
