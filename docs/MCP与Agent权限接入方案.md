@@ -20,7 +20,7 @@
 | L1 IAM 身份 | 统一身份、用户/部门唯一来源 | JWT + `users` / `departments` + 注册审批 + `token_version` | 增加 MCP OAuth 客户端与用户授权 |
 | L2 RBAC 功能权限 | 角色管功能/菜单/资源 | `roles` + `role_permission` + `data_scope`；7 个后台分区 + 5 个业务入口 | 新增 AI / MCP / 导出类权限码 |
 | L3 ABAC 数据范围 | 部门/人员/敏感级 | `roles.data_scope`（后台列表）+ `bi_dataset_row_rule` / `bi_column_masks` / `bi_dataset_column_mask`（按 user/role 静态条件） | **缺部门维度**：数据集没有「按当前用户部门过滤」的规则类型 |
-| L4 AI 能力权限 | 是否允许用 AI、能用到哪一步 | `/ai/*` 接口已存在（nl_to_sql、gen_chart、agent-pipeline…）**没有权限码，且多数端点连 `get_current_user` 都没有**（`bi_engine.py` 路由无全局鉴权依赖，`/api/bi/engine/ai/*` 不登录即可调用） | 新增 `bi:ai:*`；先补登录鉴权，再挂权限码。**这一项独立于 MCP，先行修复** |
+| L4 AI 能力权限 | 是否允许用 AI、能用到哪一步 | `/ai/*` 接口已存在（nl_to_sql、gen_chart、agent-pipeline…）**没有权限码，且多数端点连 `get_current_user` 都没有**（`bi_engine.py` 路由无全局鉴权依赖，`/api/bi/engine/ai/*` 不登录即可调用） | **已在 S0 修复（2026-11-14）**：36 个端点挂 `bi:ai:use` / `bi:ai:sql`，权限码进白名单，迁移 `046_ai_permissions.sql` 回填 |
 | L5 MCP 工具网关 | 工具级独立授权、高危默认关闭 | 无 MCP Server / 工具目录 / 客户端策略 | 本方案核心（见 §4-§6） |
 | L6 Agent 执行 | Agent 继承用户、禁止越权 | 无 MCP 调用链；内部 `run_agent_pipeline` 是服务端流水线 | MCP token（用户代持）+ 每次调用重新鉴权 |
 | L7 DB RLS 兜底 | 部门/个人/敏感表强制过滤 | `app/security/rls/*` 表级 RLS + 数据集行级规则；fail-closed | 物理表部门策略；与 ABAC 同时 AND |
@@ -226,17 +226,112 @@ bi_dataset_scope_rule (
 
 ---
 
-## 9. 分阶段落地
+## 9. 开发阶段与进度（完成一个勾一个）
 
-| 阶段 | 内容 | 验收 |
-| --- | --- | --- |
-| P0（1-2 天） | 权限码 + 工具目录 + 客户端/授权/令牌表 + 网关骨架 + 4 个只读工具 + 审计 + 高危默认拒绝 | 越权工具 403；无授权 401；高危默认 403；审计有记录 |
-| P1（2-3 天） | 数据集查询 + 看板渲染 + 汇总导出 + 部门隔离规则 | MCP 与 UI 同一用户结果一致；跨部门 403 |
-| P2 | AI 分析工具 + 指标口径 + PDF 导出 | AI 输出复用用户 ABAC；`bi:ai:use` 未授权 403 |
-| P3 | 高危工具（SQL/明细/编辑/删除）+ 二次确认 | 三重 AND 生效；默认全关 |
-| P4 | 物理表 RLS 部门策略 + 告警 | 直连数据库也无法跨部门 |
-| P1.5 | **编辑器 AI 助手**（§12：一键整理版面 / 一句话排版），只依赖 `bi:ai:use`，与 MCP 解耦，可与 P1 并行 | AI 操作一次撤销可回退；版面符合 §4 算式 |
-| P3.5 | **Agent 编排看板**（§13：草稿态新建 + 版面写入 + 预览 + 发布确认） | 草稿不出现在团队页；不能改用户手工看板；渲染有错拒绝保存 |
+> **状态口径**：`- [ ]` 未开始 · `- [~]` 进行中 · `- [x]` 已完成。
+> **打勾规则**：某一阶段的「完成标准」必须**逐条可复现**才允许打勾，并补上日期与验证命令；
+> 只是界面做出来、假数据跑通、或只改前端不动后端的，一律不算完成（见 `AGENTS.md` §0.1）。
+> **当前进度：1 / 7 阶段完成**（最后更新 2026-11-14）
+>
+> 阶段与下文编号的对应关系：S0 = §14，S1 = §2/§3/§6，S2 = §4/§5，S3 = §7，S4 = §12，S5 = §13，S6 = P4 兜底。
+
+### 9.1 阶段总览
+
+| 阶段 | 主题 | 依赖 | 风险 | 状态 |
+| --- | --- | --- | --- | --- |
+| S0 | AI 接口鉴权修复 | 无（最优先） | 低 | `- [x]` 2026-11-14 |
+| S1 | 权限码 + 迁移 047 + 第 8 分区 + 高层角色 | S0 可并行 | 低 | `- [ ]` |
+| S2 | MCP 网关骨架 + 只读工具 + 审计 | S1 | 中 | `- [ ]` |
+| S3 | 部门级数据隔离（数据集规则） | S1 | 中高 | `- [ ]` |
+| S4 | 编辑器 AI 助手（对齐 / 排版） | S0 | 低 | `- [ ]` |
+| S5 | Agent 编排看板（写工具） | S1 + S2 | 高 | `- [ ]` |
+| S6 | 物理表 RLS 兜底 + 告警 | S3 + S5 | 高 | `- [ ]` |
+
+---
+
+### S0 · AI 接口鉴权修复（§14）— ✅ 2026-11-14
+
+- [x] `/api/bi/engine/ai/*` 全部端点补 `get_current_user`（实际做法：36 个端点统一挂 `require()`，它内部即含登录校验）
+- [x] 按能力挂 `bi:ai:use` / `bi:ai:sql`（nl_to_sql、optimize_sql、auto_model 归 SQL 类）
+- [x] 权限码写进 `admin/permissions.py` 的 `VISIBLE_PERMISSION_CODES` + `rbac_seed.PERMISSIONS`
+- [x] `scripts/admin_permission_matrix.py` 增加用例（匿名 / 无权限 / 有权限 / 缺 SQL 权限 / 回填结果，共 8 项）
+
+**完成标准（已验证）**：匿名打 `/api/bi/engine/ai/audit` → **403**（全站约定：无凭据 403、凭据无效/过期 401）；
+有登录、无 `bi:ai:use` → 403；管理员与有权限账号 → 200；`nl_to_sql` 缺 `bi:ai:sql` → 403。
+矩阵脚本 `197/197 通过`、`pytest` 278 项全绿；`/auth/me.effective_permissions` 含三个 `bi:ai:*`。
+
+---
+
+### S1 · 权限码与基础设施
+
+- [ ] 迁移 `047_mcp_permission.sql`（046 已被 S0 的 `046_ai_permissions.sql` 占用）：`bi_mcp_tool / bi_mcp_client / bi_mcp_client_tool / bi_mcp_grant / bi_mcp_token_revoke / bi_mcp_dashboard / bi_mcp_audit / bi_dataset_scope_rule`
+- [ ] 新增权限码：`bi:ai:*`（S0 已带）、`bi:mcp:use / bi:mcp:manage / bi:mcp:write`、`bi:data:export:summary / detail`、`bi:resource:delete`
+- [ ] 新增第 8 后台分区 `bi:mcp:manage`（`BI_PERMISSIONS` + 白名单 + 前端分区路由 + 侧栏）
+- [ ] 新建「高层」角色（`data_scope=all`、只读 + 汇总导出、`sort_order` 按 §3）
+- [ ] 工具目录种子（低/中/高 + `required_permissions` + `default_enabled`）
+
+**完成标准**：管理后台「角色权限」能看到新权限码并保存生效（重启不丢）；`bi:mcp:manage` 只有管理员可见；高层角色登录后只有只读与汇总导出，SQL / 明细 / 删除均 403。
+
+---
+
+### S2 · MCP 网关 + 只读工具
+
+- [ ] 网关：token 校验（`aud=mcp`、jti 吊销、`token_version`、用户状态）→ 客户端启用 → 用户 grant → 工具策略 → 权限 → 数据范围
+- [ ] `tools/list` 按交集过滤；`tools/call` 全部拒绝路径落 `bi_mcp_audit`
+- [ ] 只读工具：`bi_list_dashboards / bi_get_dashboard / bi_render_dashboard / bi_list_datasets / bi_get_dataset_schema / bi_query_dataset / bi_list_metrics / bi_get_metric / bi_query_metric`
+- [ ] `bi_ai_analyze`（依赖 S0）
+- [ ] 管理后台「MCP」页：客户端增停、工具开关（高危二次确认）、授权记录、调用审计
+
+**完成标准**：无 token 401；未启用客户端 403；未签 grant 403；高危工具默认 403；同一用户 MCP 查询结果 = UI 结果；审计每次调用（含拒绝）可查且参数脱敏；关闭客户端后 token 立刻失效。
+
+---
+
+### S3 · 部门级数据隔离
+
+- [ ] 数据集配置「部门列 + 模式（department / self / all）」
+- [ ] `query/executor.run` 与 `query/live.run_live` 在现有 `row_conditions` 旁注入 `col = :dept_id`（或 `IN (本部门及下级)`），与数据集规则 AND
+- [ ] 规则缺失 / 列不存在 / 编译失败 → fail-closed 403
+- [ ] `data_scope=all` 角色不注入，但列脱敏照旧
+- [ ] MCP 查询 / 渲染走同一执行器，自动继承
+
+**完成标准**：部门员工查本部门 200、跨部门数据 0 行或被拒；配置错误直接 403 而不是返回全量；MCP 与 UI 对同一用户返回一致；无部门列的数据集有明确提示（不假装隔离）。
+
+---
+
+### S4 · 编辑器 AI 助手（§12）
+
+- [ ] A1 一键整理版面（后端 `app/ai/layout.py::plan_layout` 纯函数 + `POST /api/bi/ai/layout`）
+- [ ] A2 选区对齐 / 等分（复用 `alignSelection` / `distributeSelection`）
+- [ ] 前端 `AiLayoutBar`：结果确认条（应用 / 撤销 / 重试），一次应用 = 一个撤销步
+- [ ] A3 一句话排版（LLM 只出结构意图，坐标仍由算法算）
+- [ ] A4 组件推荐补齐（依赖 S0 的 `bi:ai:use`）
+- [ ] 空态 / 单元素置灰；LLM 超时可回退手动
+
+**完成标准**：6 张指标卡整理为 224×104、x=0/240/480/720/960/1200、间距 16；一次 `⌘Z` 完整回退；选中 3 个元素时其余坐标不变；分套页只动当前平台那套且筛选栏不变形；无权限 403。
+
+---
+
+### S5 · Agent 编排看板（§13）
+
+- [ ] 写工具：`bi_create_dashboard / bi_add_item / bi_set_layout / bi_preview_dashboard / bi_save_dashboard / bi_publish_dashboard`
+- [ ] `bi_mcp_dashboard` 归属登记 + 只准改自己建的草稿
+- [ ] `bi_set_layout` 用 `plan_layout` 归一，越界/间距错 400
+- [ ] 保存前强制 `render_dashboard` 自检，任一卡 error → 拒绝保存
+- [ ] `updated_at` 乐观锁，冲突 409
+- [ ] 每用户每日新建额度
+- [ ] 前端：草稿标 + 顶部提示条 + 一键「用 AI 整理版面」+ 发布二次确认
+
+**完成标准**：Agent 建的草稿只出现在 owner「我的看板」并带草稿标，团队页/模板库不可见；Agent 改用户手工看板 403；并发编辑 409 不覆盖；含错误卡片的草稿无法保存；发布必须用户点；审计完整。
+
+---
+
+### S6 · 物理表 RLS 兜底
+
+- [ ] 带 `dept_id` 的物理表加 policy，连接设置 `app.user_id / app.dept_id`
+- [ ] 与 ABAC 条件同时 AND，fail-closed
+- [ ] 跨部门直连验证 + 告警
+
+**完成标准**：绕过接口直连数据库查跨部门数据仍被拦；策略缺失时拒绝而不是放行；与 S3 结果一致（不出现两套口径互相矛盾）。
 
 ---
 
@@ -408,11 +503,12 @@ bi_list_datasets → bi_get_dataset_schema
 
 ---
 
-## 14. 补充：AI 鉴权修复（§12/§13 的共同前置）
+## 14. 补充：AI 鉴权修复（§12/§13 的共同前置）— ✅ 已完成（2026-11-14）
 
-`/api/bi/engine/ai/*` 目前多数端点无 `get_current_user`（见 §1 L4）。在 A3/A4 与 `bi_ai_analyze` 上线前必须先修：
+`/api/bi/engine/ai/*` 原先多数端点无 `get_current_user`（见 §1 L4），已在 S0 修复：
 
 1. 逐个端点补 `current_user = Depends(get_current_user)`；
 2. 按能力挂 `bi:ai:use`（解读/推荐/排版）与 `bi:ai:sql`（nl_to_sql / optimize_sql / auto_model）；
 3. 权限码加进 `VISIBLE_PERMISSION_CODES`；
-4. 回归：匿名调用 → 401，无权限 → 403，`scripts/admin_permission_matrix.py` 增加对应用例。
+4. 回归：匿名调用 → **403**（全站约定：无凭据 403，凭据无效/过期 401），无权限 → 403，
+   `scripts/admin_permission_matrix.py` 已加 8 项用例（197/197 通过）。

@@ -53,6 +53,10 @@ ROLES = [
     ("qa_nav_src", "QA 数据源入口", ["bi:nav:datasources"]),
     ("qa_nav_comp", "QA 组件库入口", ["bi:nav:components"]),
     ("qa_nav_edit", "QA 编辑设计入口", ["bi:nav:editor"]),
+    # AI 能力（S0：登录 + 权限码，此前 AI 端点匿名可调用）
+    ("qa_ai_none", "QA 无 AI 权限", []),
+    ("qa_ai_use", "QA AI 分析", ["bi:ai:use"]),
+    ("qa_ai_sql", "QA AI 生成 SQL", ["bi:ai:use", "bi:ai:sql"]),
 ]
 
 GET_MATRIX = {
@@ -685,6 +689,36 @@ def main() -> int:
         # 管理员不受业务入口影响
         check.check("全局管理员执行 SQL（放行，非 403）",
                     nav_status("admin", "POST", "/bi/engine/query", {}) not in (401, 403), True)
+
+        # ── 6.7 AI 能力权限（S0：登录 + 权限码；此前 AI 端点匿名可调用）──
+        check.check("匿名调用 AI 接口（拒绝 403）",
+                    api.call(None, "GET", "/bi/engine/ai/audit").status_code, 403)
+        check.check("无 AI 权限账号调用 AI（拒绝 403）",
+                    nav_status("qa_ai_none", "GET", "/bi/engine/ai/audit"), 403)
+        check.check("有 bi:ai:use 账号调用 AI（放行）",
+                    nav_status("qa_ai_use", "GET", "/bi/engine/ai/audit"), 200)
+        check.check("只有 bi:ai:use 却调 AI 生成 SQL（拒绝 403）",
+                    nav_status("qa_ai_use", "POST", "/bi/engine/ai/nl_to_sql",
+                               {"question": "销售额", "table": "bi_demo_sku"}), 403)
+        check.check("有 bi:ai:sql 调 AI 生成 SQL（放行，非 403）",
+                    nav_status("qa_ai_sql", "POST", "/bi/engine/ai/nl_to_sql",
+                               {"question": "销售额", "table": "bi_demo_sku"}) not in (401, 403), True)
+        check.check("管理员调用 AI（放行）",
+                    nav_status("admin", "GET", "/bi/engine/ai/audit"), 200)
+        # 一次性回填（迁移 046）：现有内置角色保留 AI 分析，SQL 入口角色保留 AI 生成 SQL
+        missing_ai_use = db.execute(text(
+            "SELECT count(*) FROM roles r WHERE r.code IN ('member', 'manager') "
+            "AND NOT EXISTS (SELECT 1 FROM role_permission rp WHERE rp.role_id = r.id "
+            "                AND rp.permission_code = 'bi:ai:use')"
+        )).scalar()
+        check.check("内置角色已回填 bi:ai:use", int(missing_ai_use or 0), 0)
+        missing_ai_sql = db.execute(text(
+            "SELECT count(*) FROM role_permission rp JOIN roles r ON r.id = rp.role_id "
+            "WHERE rp.permission_code = 'bi:nav:sql' AND r.code NOT LIKE 'qa_%' "
+            "AND NOT EXISTS (SELECT 1 FROM role_permission x WHERE x.role_id = rp.role_id "
+            "                AND x.permission_code = 'bi:ai:sql')"
+        )).scalar()
+        check.check("SQL 入口角色已回填 bi:ai:sql", int(missing_ai_sql or 0), 0)
 
         # ── 7. 普通用户没有后台/审批能力 ──
         r = api.call(ids["qa_plain2"], "POST", "/admin/registrations/1/reject", {"reason": "x"})

@@ -443,9 +443,14 @@ DATABASE_URL="postgresql://cavan-m4max@127.0.0.1:5432/mingzebi_dev" DEBUG=true \
 - **角色排序**（2026-11-14 起）：`roles.sort_order` 越大职级越高（管理员 100 / 总监 90 / 经理 80 / 主管 70 / 员工 60 / 访客 50），
   角色列表统一 `ORDER BY sort_order DESC, id ASC`；新增内置角色时要同时给 sort_order，别依赖创建顺序。
 - **权限码白名单**（2026-11-14 起）：角色权限只认 `admin/permissions.py` 的 `VISIBLE_PERMISSION_CODES`
-  （7 个管理后台分区 + 5 个业务入口）。旧脚手架留下的 `kb:* / teamspace:* / user:* / system:*` 没有任何功能承载，
+  （7 个管理后台分区 + 5 个业务入口 + 3 个 AI 能力）。旧脚手架留下的 `kb:* / teamspace:* / user:* / system:*` 没有任何功能承载，
   `/admin/permissions`、角色权限列表、角色保存都必须按白名单过滤 —— 不要把这些「勾了也没用」的权限重新放出来。
   内置角色种子（`rbac_seed.DEFAULT_ROLES`）也只写白名单内的权限。
+- **AI 能力权限（2026-11-14 起）**：`bi:ai:use / bi:ai:sql / bi:ai:export` 定义在 `admin/permissions.py` 的 `AI_PERMISSIONS`，
+  与后台分区分开（有 AI 权限不会因此进管理后台），但**必须同时在 `VISIBLE_PERMISSION_CODES` 和 `rbac_seed.PERMISSIONS` 里**，
+  漏一处就是「角色权限页勾了不生效」。`/api/bi/engine/ai/*` 每个端点都必须挂
+  `dependencies=[Depends(require("bi:ai:use"|"bi:ai:sql"))]` —— **漏挂 = 匿名可调用**（曾经整组端点都这样），新增 AI 端点照办。
+  口径：无凭据 403（`HTTPBearer` 默认）、凭据无效/过期 401；回填在迁移 `046_ai_permissions.sql`（访客除外）。
 - **业务入口权限**（2026-11-14 起）：`bi:nav:datasets / datasources / sql / components / editor` 控制主页菜单；
   角色权限里按「业务入口」分组勾选。**部门不绑定角色**（IT运维是部门，不是角色）；需要 SQL 入口的人，由管理员在角色权限里给对应角色勾「SQL 查询入口」。
   前端按 `/auth/me` 的权限码过滤菜单 + 守卫路由 + 深链回落；后端在 `app/security/nav_guard.py` 里拦**写操作与 SQL 执行**，

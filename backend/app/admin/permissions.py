@@ -46,8 +46,16 @@ BI_PERMISSIONS: list[tuple[str, str, str]] = [
 
 BI_PERMISSION_CODES = [code for code, _name, _group in BI_PERMISSIONS]
 
-# 界面上真正存在的权限码：管理后台 + 业务入口。
-VISIBLE_PERMISSION_CODES = set(BI_PERMISSION_CODES) | set(NAV_PERMISSION_CODES)
+# AI 能力权限（不是后台分区：有了它也不进管理后台，只决定能不能用 AI 功能）
+AI_PERMISSIONS: list[tuple[str, str, str]] = [
+    ("bi:ai:use", "AI 分析", "AI 能力"),
+    ("bi:ai:sql", "AI 生成 SQL", "AI 能力"),
+    ("bi:ai:export", "AI 导出", "AI 能力"),
+]
+AI_PERMISSION_CODES = [code for code, _name, _group in AI_PERMISSIONS]
+
+# 界面上真正存在的权限码：管理后台 + 业务入口 + AI 能力。
+VISIBLE_PERMISSION_CODES = set(BI_PERMISSION_CODES) | set(NAV_PERMISSION_CODES) | set(AI_PERMISSION_CODES)
 
 DATA_SCOPE_VALUES = {"all", "dept_and_children", "dept", "self"}
 DATA_SCOPE_LABELS = {
@@ -206,15 +214,15 @@ def approval_scope(db: Session, user: User | None) -> str:
     return "" if scope == "self" else "department"
 
 
-def require(code: str):
-    """FastAPI 依赖：要求某个管理权限码（超级管理员直通）."""
+def require(code: str, message: str = "没有该管理后台权限，请联系管理员开通"):
+    """FastAPI 依赖：要求某个权限码（超级管理员直通）."""
 
     def dependency(
         current_user: User = Depends(get_current_user),
         db: Session = Depends(get_db),
     ) -> User:
         if not has_permission(db, current_user, code):
-            raise HTTPException(403, "没有该管理后台权限，请联系管理员开通")
+            raise HTTPException(403, message)
         return current_user
 
     return dependency
@@ -232,6 +240,8 @@ def require_all_scope(
 
 __all__ = [
     "ADMIN_ROLES",
+    "AI_PERMISSION_CODES",
+    "AI_PERMISSIONS",
     "BI_PERMISSIONS",
     "BI_PERMISSION_CODES",
     "DATA_SCOPE_LABELS",

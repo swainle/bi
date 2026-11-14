@@ -35,6 +35,10 @@ PERMISSIONS = [
     ("bi:nav:sql", "SQL 查询入口", "业务入口"),
     ("bi:nav:components", "组件库入口", "业务入口"),
     ("bi:nav:editor", "编辑设计入口", "业务入口"),
+    # AI 能力（不是后台分区）
+    ("bi:ai:use", "AI 分析", "AI 能力"),
+    ("bi:ai:sql", "AI 生成 SQL", "AI 能力"),
+    ("bi:ai:export", "AI 导出", "AI 能力"),
 ]
 
 DEFAULT_ROLES = {
@@ -48,14 +52,14 @@ DEFAULT_ROLES = {
     "manager": {
         "name": "主管",
         "description": "可查看概览、审批本部门注册",
-        "permissions": ["bi:overview", "bi:user:manage", "bi:user:approve", "bi:role:manage"],
+        "permissions": ["bi:overview", "bi:user:manage", "bi:user:approve", "bi:role:manage", "bi:ai:use"],
         "data_scope": "dept_and_children",
         "sort_order": 70,
     },
     "member": {
         "name": "员工",
         "description": "基础成员：默认只读看板",
-        "permissions": [],
+        "permissions": ["bi:ai:use"],
         "data_scope": "self",
         "sort_order": 60,
     },
