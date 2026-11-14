@@ -15,7 +15,8 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s [DORIS-SYNC] %(messa
 logger = logging.getLogger(__name__)
 
 # ── 配置 ──
-PG_URL = os.getenv("DATABASE_URL", "postgresql://mingzebi:mingzebi@127.0.0.1:5432/mingzebi")
+from ..config import settings as _settings
+PG_URL = _settings.database_url
 DORIS_HOST = os.getenv("DORIS_HOST", "127.0.0.1")
 DORIS_PORT = int(os.getenv("DORIS_PORT", "9030"))
 DORIS_DB = os.getenv("DORIS_DB", "mingzebi")

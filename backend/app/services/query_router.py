@@ -40,8 +40,8 @@ class QueryRouter:
         self._build_pg_engine()
 
     def _build_pg_engine(self):
-        db_url = os.getenv("DATABASE_URL", "postgresql://mingzebi:mingzebi@127.0.0.1:5432/mingzebi")
-        self.pg = create_engine(db_url, pool_size=5, pool_pre_ping=True)
+        from ..config import settings
+        self.pg = create_engine(settings.database_url, pool_size=5, pool_pre_ping=True)
 
     def estimate_rows(self, table: str) -> int:
         """估算表行数"""

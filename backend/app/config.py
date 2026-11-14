@@ -4,6 +4,7 @@ import os
 import secrets
 from pathlib import Path
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings
 
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -45,10 +46,8 @@ class Settings(BaseSettings):
     project_root: str = _PROJECT_ROOT
 
     # 数据库：PostgreSQL（BI 依赖 jsonb / 窗口函数，不推荐 SQLite）
-    database_url: str = os.getenv(
-        "DATABASE_URL",
-        "postgresql://mingzebi:mingzebi@127.0.0.1:5432/mingzebi",
-    )
+    # 不内置默认口令：未配置时由 _require_database_url 给出明确报错
+    database_url: str = os.getenv("DATABASE_URL", "")
 
     # JWT
     jwt_secret: str = _get_jwt_secret()
@@ -96,6 +95,18 @@ class Settings(BaseSettings):
         env_file = ".env"
         env_file_encoding = "utf-8"
         extra = "ignore"
+
+    @model_validator(mode="after")
+    def _require_database_url(self):
+        """数据库连接串必须显式配置，不允许静默使用内置弱口令。"""
+        if not (self.database_url or "").strip():
+            raise ValueError(
+                "未配置 DATABASE_URL。\n"
+                "  请在 backend/.env 中填写（参考 backend/.env.example）：\n"
+                "    DATABASE_URL=postgresql://<用户>:<口令>@<主机>:5432/<库名>\n"
+                "  出于安全考虑，代码不再内置默认数据库口令。"
+            )
+        return self
 
     @property
     def max_upload_size_bytes(self) -> int:

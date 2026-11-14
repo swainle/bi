@@ -27,6 +27,7 @@ jobs:
       - name: Run pytest
         env:
           JWT_SECRET: ci-only-secret-ci-only-secret-ci-only
+          DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/mingzebi_ci
           DEBUG: "true"
         run: pytest
 

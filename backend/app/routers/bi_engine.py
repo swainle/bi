@@ -24,6 +24,11 @@ from app.models.user import User
 from app.security.errors import RlsBlockedError, SecurityError
 from app.security.rls import apply_to_sql, decide as rls_decide, where_sql as rls_where
 from app.security.rls.injector import inject_conditions
+from app.admin.permissions import require
+
+# AI 端点统一鉴权（S0）：登录 + 权限码；此前多数端点匿名可调用
+_AI_USE = [Depends(require("bi:ai:use", "没有 AI 使用权限，请联系管理员开通"))]
+_AI_SQL = [Depends(require("bi:ai:sql", "没有 AI 生成 SQL 的权限，请联系管理员开通"))]
 from app.security.rls.models import RlsDecision
 from app.security.sql_guard import guard_readonly, referenced_tables
 
@@ -1446,7 +1451,7 @@ def cluster_guide():
             "4. PostgreSQL 配置 streaming replication 只读副本：",
             "   - 主库: wal_level=replica, max_wal_senders=5",
             "   - 副本: pg_basebackup → recovery.conf → 启动 standby",
-            "5. 环境变量 BI_READ_REPLICA=postgresql://mingzebi:mingzebi@pg-replica:5432/mingzebi",
+            "5. 环境变量 BI_READ_REPLICA=postgresql://<用户>:<口令>@pg-replica:5432/<库名>",
         ],
         "bi_scale_out": {
             "query_routing": "读查询 → 副本 / 写操作 → 主库",
@@ -1500,7 +1505,7 @@ def compat_guide():
 
 # ═══════ AI 引擎（NL→SQL / 数据诊断 / 智能推荐）═══════
 
-@router.post("/ai/nl_to_sql")
+@router.post("/ai/nl_to_sql", dependencies=_AI_SQL)
 def nl_to_sql(payload: dict = Body(...), db: Session = Depends(get_db)):
     """自然语言 → SQL。输入 {question, table}，返回 {sql, explanation, chart_type}。
     基于关键词匹配 + 表结构感知，后续可替换为 LLM 调用。"""
@@ -1571,7 +1576,7 @@ def nl_to_sql(payload: dict = Body(...), db: Session = Depends(get_db)):
             "columns": columns, "rows": [dict(r._mapping) for r in rows], "count": len(rows)}
 
 
-@router.get("/ai/diagnose/{table}")
+@router.get("/ai/diagnose/{table}", dependencies=_AI_USE)
 def ai_diagnose(table: str, db: Session = Depends(get_db)):
     """AI 数据诊断：检测空值/异常/重复"""
     if table not in ALLOWED_TABLES: raise HTTPException(404)
@@ -1598,7 +1603,7 @@ def ai_diagnose(table: str, db: Session = Depends(get_db)):
     return {"table": table, "total_rows": total, "issues": issues, "health": "good" if len(issues) == 0 else "warning" if len([i for i in issues if i["severity"]=="high"]) == 0 else "critical"}
 
 
-@router.get("/ai/recommend/{table}")
+@router.get("/ai/recommend/{table}", dependencies=_AI_USE)
 def ai_recommend(table: str, db: Session = Depends(get_db)):
     """智能推荐：根据表结构推荐维度×指标组合 + 图表类型"""
     if table not in ALLOWED_TABLES: raise HTTPException(404)
@@ -1620,7 +1625,7 @@ def ai_recommend(table: str, db: Session = Depends(get_db)):
 # 慢查询内存缓存（最近100条）
 _slow_queries: list = []  # [{sql, time_ms, table}]
 
-@router.post("/ai/optimize_sql")
+@router.post("/ai/optimize_sql", dependencies=_AI_SQL)
 def optimize_sql(payload: dict = Body(...), db: Session = Depends(get_db)):
     """SQL 智能优化器：改写低效 SQL + 索引建议"""
     sql = payload.get("sql", "").strip()
@@ -1658,7 +1663,7 @@ def optimize_sql(payload: dict = Body(...), db: Session = Depends(get_db)):
     return {"original": sql, "optimized": optimized, "suggestions": suggestions}
 
 
-@router.post("/ai/auto_model")
+@router.post("/ai/auto_model", dependencies=_AI_SQL)
 def auto_model(payload: dict = Body(...), db: Session = Depends(get_db)):
     """AI 自动建模：多表关联自动识别"""
     tables = payload.get("tables", [])
@@ -1686,7 +1691,7 @@ def auto_model(payload: dict = Body(...), db: Session = Depends(get_db)):
     return {"tables": tables, "relations": relations, "suggested_joins": [f"{r['from_table']} {r['type']} JOIN {r['to_table']} ON {r['from_table']}.{r['from_col']}={r['to_table']}.{r['to_col']}" for r in relations]}
 
 
-@router.post("/ai/gen_chart")
+@router.post("/ai/gen_chart", dependencies=_AI_USE)
 def gen_chart(payload: dict = Body(...)):
     """一句话生成 ECharts 复杂图表配置"""
     desc = payload.get("description", "")
@@ -1720,7 +1725,7 @@ def gen_chart(payload: dict = Body(...)):
     return {"description": desc, "echarts_option": option, "note": "将此 JSON 传给 ECharts setOption() 即可渲染，data 需从 API 填充"}
 
 
-@router.post("/ai/smart_alert")
+@router.post("/ai/smart_alert", dependencies=_AI_USE)
 def smart_alert(payload: dict = Body(...), db: Session = Depends(get_db)):
     """时序智能预警：移动平均检测环比异常"""
     table = payload.get("table", "")
@@ -1744,7 +1749,7 @@ def smart_alert(payload: dict = Body(...), db: Session = Depends(get_db)):
             "change_pct": change_pct, "severity": severity, "message": msg}
 
 
-@router.post("/ai/knowledge")
+@router.post("/ai/knowledge", dependencies=_AI_USE)
 def add_knowledge(payload: dict = Body(...), db: Session = Depends(get_db)):
     """添加知识条目到 pgvector 知识库"""
     query = payload.get("query", "")
@@ -1753,7 +1758,7 @@ def add_knowledge(payload: dict = Body(...), db: Session = Depends(get_db)):
     db.commit()
     return {"added": True}
 
-@router.get("/ai/knowledge")
+@router.get("/ai/knowledge", dependencies=_AI_USE)
 def search_knowledge(q: str = Query(default=""), db: Session = Depends(get_db)):
     """搜索知识库"""
     if not q: rows = db.execute(text("SELECT query, sql_template, usage_count FROM bi_ai_knowledge ORDER BY usage_count DESC LIMIT 20")).fetchall()
@@ -1765,7 +1770,7 @@ def search_knowledge(q: str = Query(default=""), db: Session = Depends(get_db)):
 
 # ═══════ G3: 高阶AI ═══════
 
-@router.post("/ai/pre_aggregate")
+@router.post("/ai/pre_aggregate", dependencies=_AI_USE)
 def ai_pre_aggregate(payload: dict = Body(...), db: Session = Depends(get_db)):
     """AI 预聚合调度：分析慢查询模式，自动创建物化视图"""
     table = payload.get("table", "")
@@ -1791,7 +1796,7 @@ def ai_pre_aggregate(payload: dict = Body(...), db: Session = Depends(get_db)):
     return {"suggestions": suggestions[:5], "analyzed_queries": len(patterns)}
 
 
-@router.post("/ai/root_cause")
+@router.post("/ai/root_cause", dependencies=_AI_USE)
 def ai_root_cause(payload: dict = Body(...), db: Session = Depends(get_db)):
     """AI 根因下钻：逐层分析异常指标的来源"""
     table = payload.get("table", "")
@@ -1826,7 +1831,7 @@ def ai_root_cause(payload: dict = Body(...), db: Session = Depends(get_db)):
     return {"table": table, "metric": metric, "drill_results": drill_results, "conclusion": conclusion}
 
 
-@router.post("/ai/generate_screen")
+@router.post("/ai/generate_screen", dependencies=_AI_USE)
 def ai_generate_screen(payload: dict = Body(...)):
     """AI 大屏一键生成：输入场景描述→返回 BigScreen 配置"""
     scene = payload.get("scene", "经营大屏")
@@ -1849,7 +1854,7 @@ def ai_generate_screen(payload: dict = Body(...)):
     }
 
 
-@router.post("/ai/interpret")
+@router.post("/ai/interpret", dependencies=_AI_USE)
 def ai_interpret(payload: dict = Body(...), db: Session = Depends(get_db)):
     """AI 报表解读：输入看板数据→输出经营分析报告"""
     table = payload.get("table", "")
@@ -1879,7 +1884,7 @@ def ai_interpret(payload: dict = Body(...), db: Session = Depends(get_db)):
             "\n".join(f"| {i['metric']} | {i['total']} | {i['average']} | {i['peak']} |" for i in insights)}
 
 
-@router.post("/ai/security_scan")
+@router.post("/ai/security_scan", dependencies=_AI_USE)
 def ai_security_scan(db: Session = Depends(get_db)):
     """AI 数据安全扫描：检测异常访问模式"""
     alerts = []
@@ -3076,7 +3081,7 @@ def ai_analyze_current_data(
     }
 
 
-@router.post("/ai/analyze")
+@router.post("/ai/analyze", dependencies=_AI_USE)
 def ai_generic_analyze(
     payload: dict = Body(...),
     current_user: User = Depends(get_current_user),
@@ -3515,7 +3520,7 @@ def _fallback_generate(df, numeric_cols, text_cols):
     return {"dashboard_name": "数据看板", "panels": panels[:8]}
 
 
-@router.post("/ai-generate")
+@router.post("/ai-generate", dependencies=_AI_USE)
 async def ai_generate_dashboard(
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
@@ -3717,7 +3722,7 @@ from app.services.bi_ai_engine import (
 )
 
 
-@router.post("/ai/metadata/collect")
+@router.post("/ai/metadata/collect", dependencies=_AI_USE)
 def ai_collect_metadata(
     table_names: Optional[list[str]] = Body(None),
     current_user: User = Depends(get_current_user),
@@ -3727,7 +3732,7 @@ def ai_collect_metadata(
     return collect_metadata(db, table_names)
 
 
-@router.post("/ai/knowledge/search")
+@router.post("/ai/knowledge/search", dependencies=_AI_USE)
 def ai_search_knowledge(
     payload: dict = Body(...),
     current_user: User = Depends(get_current_user),
@@ -3737,7 +3742,7 @@ def ai_search_knowledge(
     return search_knowledge(db, payload.get("query", ""), payload.get("top_k", 10))
 
 
-@router.post("/ai/sql/validate")
+@router.post("/ai/sql/validate", dependencies=_AI_USE)
 def ai_validate_sql(
     payload: dict = Body(...),
     current_user: User = Depends(get_current_user),
@@ -3748,7 +3753,7 @@ def ai_validate_sql(
     return {"valid": valid, "message": msg, "sql": sql}
 
 
-@router.post("/ai/pipeline")
+@router.post("/ai/pipeline", dependencies=_AI_USE)
 async def ai_pipeline_generate(
     file: Optional[UploadFile] = File(None),
     query: str = Body("请基于数据生成一份综合分析看板"),
@@ -3779,7 +3784,7 @@ async def ai_pipeline_generate(
     )
 
 
-@router.get("/ai/audit")
+@router.get("/ai/audit", dependencies=_AI_USE)
 def ai_audit_log(
     limit: int = Query(20, ge=1, le=100),
     current_user: User = Depends(get_current_user),
@@ -3875,7 +3880,7 @@ def _auto_generate_from_columns(df) -> dict:
     return {"dashboard_name": name, "panels": panels[:8]}
 
 
-@router.post("/ai/pipeline/async")
+@router.post("/ai/pipeline/async", dependencies=_AI_USE)
 async def ai_pipeline_async(
     file: Optional[UploadFile] = File(None),
     query: str = Body("请基于数据生成综合分析看板"),
@@ -3947,7 +3952,7 @@ async def ai_pipeline_async(
     return task.to_dict()
 
 
-@router.get("/ai/pipeline/status/{task_id}")
+@router.get("/ai/pipeline/status/{task_id}", dependencies=_AI_USE)
 def ai_pipeline_status(task_id: str):
     """查询异步任务进度"""
     task = get_task(task_id)
@@ -3956,7 +3961,7 @@ def ai_pipeline_status(task_id: str):
     return task.to_dict()
 
 
-@router.post("/ai/model/build")
+@router.post("/ai/model/build", dependencies=_AI_USE)
 def ai_build_model(
     payload: dict = Body(...),
     db: Session = Depends(get_db),
@@ -3968,7 +3973,7 @@ def ai_build_model(
     return auto_build_model(db, table_names)
 
 
-@router.post("/ai/quality/analyze")
+@router.post("/ai/quality/analyze", dependencies=_AI_USE)
 def ai_analyze_quality(
     payload: dict = Body(...),
 ):
@@ -3979,7 +3984,7 @@ def ai_analyze_quality(
     return analyze_data_quality(df)
 
 
-@router.post("/ai/layout/compute")
+@router.post("/ai/layout/compute", dependencies=_AI_USE)
 def ai_compute_layout(
     payload: dict = Body(...),
 ):
@@ -3989,7 +3994,7 @@ def ai_compute_layout(
     return compute_layout(panels, preset)
 
 
-@router.post("/ai/chat/iterate")
+@router.post("/ai/chat/iterate", dependencies=_AI_USE)
 def ai_chat_iterate(
     payload: dict = Body(...),
     current_user: User = Depends(get_current_user),
@@ -4002,7 +4007,7 @@ def ai_chat_iterate(
 
 
 # Knowledge Base
-@router.get("/ai/kb/metrics")
+@router.get("/ai/kb/metrics", dependencies=_AI_USE)
 def ai_kb_metrics(
     category: str = "",
     db: Session = Depends(get_db),
@@ -4010,7 +4015,7 @@ def ai_kb_metrics(
     return {"metrics": kb_list_metrics(db, category)}
 
 
-@router.post("/ai/kb/metrics")
+@router.post("/ai/kb/metrics", dependencies=_AI_USE)
 def ai_kb_add_metric(
     payload: dict = Body(...),
     db: Session = Depends(get_db),
@@ -4023,12 +4028,12 @@ def ai_kb_del_metric(name: str, db: Session = Depends(get_db)):
     return kb_delete_metric(db, name)
 
 
-@router.get("/ai/kb/templates")
+@router.get("/ai/kb/templates", dependencies=_AI_USE)
 def ai_kb_templates(db: Session = Depends(get_db)):
     return {"templates": kb_list_templates(db)}
 
 
-@router.post("/ai/kb/templates")
+@router.post("/ai/kb/templates", dependencies=_AI_USE)
 def ai_kb_add_template(
     payload: dict = Body(...),
     db: Session = Depends(get_db),
@@ -4043,7 +4048,7 @@ from app.services.bi_ai_phase3 import (
 )
 
 
-@router.post("/ai/anomaly/analyze")
+@router.post("/ai/anomaly/analyze", dependencies=_AI_USE)
 def ai_anomaly_analyze(
     payload: dict = Body(...),
     db: Session = Depends(get_db),
@@ -4059,7 +4064,7 @@ def ai_anomaly_analyze(
     )
 
 
-@router.post("/ai/screen/layout")
+@router.post("/ai/screen/layout", dependencies=_AI_USE)
 def ai_screen_layout(
     payload: dict = Body(...),
 ):
@@ -4074,7 +4079,7 @@ def ai_screen_layout(
     )
 
 
-@router.post("/ai/batch/generate")
+@router.post("/ai/batch/generate", dependencies=_AI_USE)
 def ai_batch_generate(
     payload: dict = Body(...),
     current_user: User = Depends(get_current_user),
@@ -4090,7 +4095,7 @@ def ai_batch_generate(
     return {"domain": domain, "dashboards": results, "count": len(results)}
 
 
-@router.post("/ai/alert/generate")
+@router.post("/ai/alert/generate", dependencies=_AI_USE)
 def ai_alert_generate(
     payload: dict = Body(...),
     db: Session = Depends(get_db),
@@ -4105,7 +4110,7 @@ def ai_alert_generate(
 # ═══════ Agent 管线（OpenClaw 多Agent 清洗→校验→生成）═══════
 from app.services.bi_ai_agent import run_agent_pipeline
 
-@router.post("/ai/agent-pipeline")
+@router.post("/ai/agent-pipeline", dependencies=_AI_USE)
 async def ai_agent_pipeline(
     file: UploadFile = File(...),
     query: str = Body(""),
