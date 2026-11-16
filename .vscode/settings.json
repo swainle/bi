@@ -1,0 +1,11 @@
+{
+  "remote.autoForwardPorts": true,
+  "remote.autoForwardPortsSource": "process",
+  "remote.restoreForwardedPorts": true,
+  "remote.portsAttributes": {
+    "5300-5399": {
+      "label": "MingzeBI 前端",
+      "onAutoForward": "openBrowser"
+    }
+  }
+}
