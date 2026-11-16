@@ -52,7 +52,7 @@
 ### 方式一：Docker（推荐）
 
 ```bash
-cd ~/MingzeBI
+cd ~/MingceBI
 export JWT_SECRET="$(openssl rand -base64 48)"
 docker compose up -d --build
 ```
@@ -456,7 +456,7 @@ cd backend && ./.venv/bin/python -m pytest     # 83 用例：SQL 网关 / 行级
 ### 目录结构
 
 ```
-MingzeBI/
+MingceBI/
 ├── backend/
 │   ├── app/
 │   │   ├── main.py                 # 应用入口（中间件 / 路由 / 健康检查）

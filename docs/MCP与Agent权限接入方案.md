@@ -370,10 +370,10 @@ bi_dataset_scope_rule (
 
 | 能力 | 位置 |
 | --- | --- |
-| 元素位置模型 `layout {x,y,w,h}` | 后端 [models.py#L67](file:///Users/cavan-m4max/MingzeBI/backend/app/dashboards/models.py#L67)；前端 [types.ts#L463-L482](file:///Users/cavan-m4max/MingzeBI/frontend/src/features/components/types.ts#L463-L482) |
-| 磁吸：8 栅格 + 元素边/中线 + 画布中线，拖动/缩放/拖参考线三种 | [snapping.ts](file:///Users/cavan-m4max/MingzeBI/frontend/src/features/components/board/snapping.ts)（`snapMove / snapResize / snapGuide`） |
-| 多选对齐 6 向 + 等间距（两端固定、无累积误差） | [CanvasBoardPage.tsx#L1451-L1505](file:///Users/cavan-m4max/MingzeBI/frontend/src/pages/CanvasBoardPage.tsx#L1451-L1505) |
-| 撤销栈（整份 items+guides 快照） | [CanvasBoardPage.tsx#L1131-L1219](file:///Users/cavan-m4max/MingzeBI/frontend/src/pages/CanvasBoardPage.tsx#L1131-L1219) |
+| 元素位置模型 `layout {x,y,w,h}` | 后端 [models.py#L67](file:///Users/cavan-m4max/MingceBI/backend/app/dashboards/models.py#L67)；前端 [types.ts#L463-L482](file:///Users/cavan-m4max/MingceBI/frontend/src/features/components/types.ts#L463-L482) |
+| 磁吸：8 栅格 + 元素边/中线 + 画布中线，拖动/缩放/拖参考线三种 | [snapping.ts](file:///Users/cavan-m4max/MingceBI/frontend/src/features/components/board/snapping.ts)（`snapMove / snapResize / snapGuide`） |
+| 多选对齐 6 向 + 等间距（两端固定、无累积误差） | [CanvasBoardPage.tsx#L1451-L1505](file:///Users/cavan-m4max/MingceBI/frontend/src/pages/CanvasBoardPage.tsx#L1451-L1505) |
+| 撤销栈（整份 items+guides 快照） | [CanvasBoardPage.tsx#L1131-L1219](file:///Users/cavan-m4max/MingceBI/frontend/src/pages/CanvasBoardPage.tsx#L1131-L1219) |
 | 版面算式（1440 宽 / 间距 16 / 一排 N 张 / 整宽元素） | `AGENTS.md` §4 + 前端 `FULL_WIDTH_KINDS` |
 
 ### 12.2 硬原则：AI 只出「布局操作」，不直接改文档
@@ -439,12 +439,12 @@ POST /api/bi/ai/layout
 
 | 步骤 | 复用函数 / 接口 |
 | --- | --- |
-| 新建项目 | `repo.create(db, name, doc, owner_id)`（与 [router.py#L216-L233](file:///Users/cavan-m4max/MingzeBI/backend/app/dashboards/router.py#L216-L233) 同一条） |
-| 组件库 / 类型目录 | `repo.list_components`（[components/router.py#L56-L70](file:///Users/cavan-m4max/MingzeBI/backend/app/components/router.py#L56-L70)）、`chart_catalog.catalog()`（`/catalog`） |
-| 文档校验 | `validate_doc(raw, heal=True)`（[models.py#L308](file:///Users/cavan-m4max/MingzeBI/backend/app/dashboards/models.py#L308)） |
-| 保存 | `repo.save` + `render_cache.invalidate` + `sources.rebuild`（[router.py#L380-L401](file:///Users/cavan-m4max/MingzeBI/backend/app/dashboards/router.py#L380-L401)） |
-| 渲染自检 | `render_dashboard`（[render.py#L382](file:///Users/cavan-m4max/MingzeBI/backend/app/dashboards/render.py#L382)） |
-| 草稿态 | `_blank_doc()` 本来就把 `published=false` 写进 doc（[router.py#L207-L213](file:///Users/cavan-m4max/MingzeBI/backend/app/dashboards/router.py#L207-L213)）；**注意「我的看板」默认 `published_only=false`，草稿照样会列出**——隔离靠「不分享 + 前端打标」，不能假设它不显示（[router.py#L102-L134](file:///Users/cavan-m4max/MingzeBI/backend/app/dashboards/router.py#L102-L134)） |
+| 新建项目 | `repo.create(db, name, doc, owner_id)`（与 [router.py#L216-L233](file:///Users/cavan-m4max/MingceBI/backend/app/dashboards/router.py#L216-L233) 同一条） |
+| 组件库 / 类型目录 | `repo.list_components`（[components/router.py#L56-L70](file:///Users/cavan-m4max/MingceBI/backend/app/components/router.py#L56-L70)）、`chart_catalog.catalog()`（`/catalog`） |
+| 文档校验 | `validate_doc(raw, heal=True)`（[models.py#L308](file:///Users/cavan-m4max/MingceBI/backend/app/dashboards/models.py#L308)） |
+| 保存 | `repo.save` + `render_cache.invalidate` + `sources.rebuild`（[router.py#L380-L401](file:///Users/cavan-m4max/MingceBI/backend/app/dashboards/router.py#L380-L401)） |
+| 渲染自检 | `render_dashboard`（[render.py#L382](file:///Users/cavan-m4max/MingceBI/backend/app/dashboards/render.py#L382)） |
+| 草稿态 | `_blank_doc()` 本来就把 `published=false` 写进 doc（[router.py#L207-L213](file:///Users/cavan-m4max/MingceBI/backend/app/dashboards/router.py#L207-L213)）；**注意「我的看板」默认 `published_only=false`，草稿照样会列出**——隔离靠「不分享 + 前端打标」，不能假设它不显示（[router.py#L102-L134](file:///Users/cavan-m4max/MingceBI/backend/app/dashboards/router.py#L102-L134)） |
 
 ### 13.2 工具设计（P3，默认全关，需 `bi:mcp:write`）
 
