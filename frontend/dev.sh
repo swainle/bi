@@ -19,4 +19,7 @@ esac
 
 echo "MingzeBI 前端：http://localhost:${port}"
 echo "如果 AI 工具未自动打开浏览器，请在「端口」面板转发 ${port} 后访问。"
-exec npm run dev -- --port "$port" --host 0.0.0.0
+if [ "$#" -gt 0 ]; then
+  exec npx vite "$@"
+fi
+exec npx vite --port "$port" --host 0.0.0.0
