@@ -45,7 +45,8 @@ backend/var/
 # ── 系统 / 编辑器 ──
 .DS_Store
 .idea/
-.vscode/
+.vscode/*
+!.vscode/settings.json
 *.swp
 
 # ── 业务数据：模板市场素材（本地运行时数据，不入库）──
