@@ -1,0 +1,59 @@
+# ── Python ──
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# ── 环境与密钥 ──
+.env
+.env.local
+.env.*.local
+.jwt_secret
+# GlitchTip 只读 API Token（agent 读异常用，本机生成，不入库）
+deploy/glitchtip/.api-token
+# 每日异常日报（运行时生成，含堆栈与请求信息，不入库）
+docs/异常日报/
+
+# ── 运行时数据 ──
+backend/uploads/
+backend/data/
+*.log
+
+# ── 前端 ──
+node_modules/
+
+# 本地包 @mylayout/core 的 dist 随仓库分发（file: 依赖直接指向 dist）
+frontend/dist/
+frontend/node_modules/
+.vite/
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts
+
+# ── 视觉回归（Playwright）产物 ──
+frontend/test-results/
+frontend/playwright-report/
+
+# ── Storybook 静态产物（本地预览 / CI 构建校验，不入库）──
+frontend/storybook-static/
+
+# ── 运行时生成（定时报表文件等）──
+backend/var/
+
+# ── 系统 / 编辑器 ──
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# ── 业务数据：模板市场素材（本地运行时数据，不入库）──
+市场部BI看板模板/
+
+# ── 设计参考与自检截图（只留文档正文 md）──
+组件样式/
+docs/_selfcheck/
+docs/看板截图/
+# ── 脱敏后的交付模板包（本地交付物，不入库）──
+市场部BI看板模板-已脱敏/

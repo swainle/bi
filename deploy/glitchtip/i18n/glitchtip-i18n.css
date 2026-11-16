@@ -1,0 +1,20 @@
+/* GlitchTip 中文化的语言切换按钮（外部样式表：CSP 只允许同源样式，不能写 inline style） */
+.gt-i18n-toggle {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 2147483000;
+  padding: 6px 12px;
+  font: 500 12px/18px -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  color: #fff;
+  background: #7b1220;
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+  opacity: 0.82;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+}
+
+.gt-i18n-toggle:hover {
+  opacity: 1;
+}

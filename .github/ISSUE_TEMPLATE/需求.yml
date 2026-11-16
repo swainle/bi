@@ -1,0 +1,54 @@
+name: 需求
+description: 新增功能、能力改进或体验优化
+title: "[需求] "
+labels: ["需求"]
+body:
+  - type: textarea
+    id: background
+    attributes:
+      label: 背景
+      description: 为什么需要它？现在的做法是什么、哪里别扭？
+      placeholder: 现在做 X 要手动 Y，希望点一下就能完成。
+    validations:
+      required: true
+
+  - type: textarea
+    id: expect
+    attributes:
+      label: 期望结果
+      description: 描述完成后用户看到/能做什么，不要写实现方案。
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: 影响范围
+      options:
+        - 数据接入 / 数据集
+        - 分析画布 / 组件库
+        - 看板 / 预览
+        - AI 能力
+        - 权限 / 审计
+        - 部署 / 性能
+        - 其他
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 验收标准
+      description: 一条一行，可勾选、可截图核对的写到最细。
+      placeholder: |
+        - 拖入组件后 320ms 内出预览
+        - 空数据时显示空态而不是白屏
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: 补充（截图 / 链接 / 参考）
+    validations:
+      required: false

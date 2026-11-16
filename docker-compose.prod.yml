@@ -1,0 +1,47 @@
+# ─────────────────────────────────────────────────────────────
+# 明策BI · 生产/高并发叠加配置（可选，不启用时完全不影响默认部署）
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# 和默认 compose 的区别：
+#   1. 后端起 2 个 worker，连接池按 worker 数收窄（2 × 18 = 36，远低于 PG 默认 100）；
+#   2. 新增独立 worker 容器：异步查询从 API 进程搬到 worker 执行，
+#      提交只入队（bi:jobq），API 重启/被大查询拖慢都不影响异步任务。
+#
+# 回滚：BI_JOB_EXECUTOR=inline（默认值）并停掉 worker 容器即可，数据与接口不变；
+#       多 worker 想回单进程，去掉 -f docker-compose.prod.yml 重新 up。
+# ─────────────────────────────────────────────────────────────
+services:
+  backend:
+    environment:
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-12}
+      DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-6}
+      # 多 worker 时每张卡的并行线程也相应收一点，避免线程数 × worker 数过高
+      BI_RENDER_MAX_THREADS: ${BI_RENDER_MAX_THREADS:-10}
+      # 提交只入队，执行交给下面的 worker 容器
+      BI_JOB_EXECUTOR: ${BI_JOB_EXECUTOR:-worker}
+
+  worker:
+    build:
+      context: ./backend
+    container_name: mingzebi-worker
+    restart: unless-stopped
+    command: ["python", "-m", "app.query.async_jobs.worker"]
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://mingzebi:${POSTGRES_PASSWORD:-mingzebi}@db:5432/mingzebi
+      JWT_SECRET: ${JWT_SECRET:?请先设置 JWT_SECRET（openssl rand -base64 48）}
+      DEBUG: "false"
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      BI_JOB_STORE: ${BI_JOB_STORE:-auto}
+      BI_JOB_EXECUTOR: worker
+      # worker 只需要 4 条连接就够（同一时刻只跑一个查询）
+      DB_POOL_SIZE: ${WORKER_DB_POOL_SIZE:-2}
+      DB_MAX_OVERFLOW: ${WORKER_DB_MAX_OVERFLOW:-2}
+      BI_ASYNC_MAX_ATTEMPTS: ${BI_ASYNC_MAX_ATTEMPTS:-2}
+      BI_SLOW_SAMPLE_MS: ${BI_SLOW_SAMPLE_MS:-1000}

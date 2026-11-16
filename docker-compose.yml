@@ -1,0 +1,88 @@
+# ─────────────────────────────────────────────────────────────
+# 明策BI · 一键启动（PostgreSQL + Redis + FastAPI + Nginx/React）
+#   docker compose up -d --build
+#   前端 http://localhost:5300   后端 http://localhost:8300/api/health
+#   数据库宿主机端口 5433（避开本机 5432）
+# ─────────────────────────────────────────────────────────────
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: mingzebi-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: mingzebi
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mingzebi}
+      POSTGRES_DB: mingzebi
+    ports:
+      - "5433:5432"
+    volumes:
+      - mingzebi_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mingzebi -d mingzebi"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: mingzebi-redis
+    restart: unless-stopped
+    # 只给后端用，不映射到宿主机；掉电只丢缓存，不影响数据
+    command: ["redis-server", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru", "--save", ""]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+    container_name: mingzebi-backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://mingzebi:${POSTGRES_PASSWORD:-mingzebi}@db:5432/mingzebi
+      JWT_SECRET: ${JWT_SECRET:?请先设置 JWT_SECRET（openssl rand -base64 48）}
+      LLM_API_BASE: ${LLM_API_BASE:-https://api.deepseek.com}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-deepseek-chat}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Admin@123456}
+      DEBUG: "false"
+      # Redis 不可用时后端自动回退进程内缓存，不阻塞启动
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      # 整页渲染结果短时缓存（秒，0 = 关闭）
+      BI_RENDER_CACHE_TTL: ${BI_RENDER_CACHE_TTL:-15}
+      # 异步任务表：auto = 能用 Redis 就多 worker 共享，否则进程内
+      BI_JOB_STORE: ${BI_JOB_STORE:-auto}
+      BI_ASYNC_WORKERS: ${BI_ASYNC_WORKERS:-2}
+      # 异步任务执行方式：inline（默认，API 进程内）/ worker（独立 worker 容器，见 prod compose）
+      BI_JOB_EXECUTOR: ${BI_JOB_EXECUTOR:-inline}
+      # 错误上报（可选）：留空 = 不启用；填了 DSN 后接口异常自动上报
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
+      # 连接池（单 worker 默认 20 + 10；多 worker 部署见 docker-compose.prod.yml）
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-20}
+      DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-10}
+    ports:
+      - "8300:8000"
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # 构建期注入（Vite 内联）：留空 = 产物不带错误上报 SDK
+        VITE_SENTRY_DSN: ${VITE_SENTRY_DSN:-}
+    container_name: mingzebi-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "5300:80"
+
+volumes:
+  mingzebi_pgdata:

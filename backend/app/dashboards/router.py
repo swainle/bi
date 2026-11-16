@@ -1,0 +1,653 @@
+"""看板 v2 API —— 文档读取 / 参数渲染 / 浮层渲染 / 保存."""
+
+from __future__ import annotations
+
+from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi.encoders import jsonable_encoder
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+
+from app.components.resolver import apply_dataset_switch, resolve as resolve_component
+from app.security.nav_guard import require_nav
+from app.components.spec import ComponentSpecError, validate_spec
+from app.dashboards import drill as drill_mod
+from app.dashboards import render_cache
+from app.dashboards import repository as repo
+from app.dashboards import sources
+from app.dashboards import render as renderer
+from app.dashboards.models import validate_doc
+from app.database import get_db
+from app.middleware.auth import get_current_user
+from app.models.user import User
+from app.security.errors import SecurityError
+from app.semantic.compiler import compile_query
+from app.semantic.repository import get_dataset
+
+router = APIRouter(prefix="/bi/dashboards", tags=["BI看板"])
+
+
+def _guard(exc: Exception) -> HTTPException:
+    if isinstance(exc, SecurityError):
+        return HTTPException(exc.http_status, exc.message)
+    if isinstance(exc, ComponentSpecError):
+        return HTTPException(400, exc.message)
+    return HTTPException(400, f"看板操作失败：{str(exc)[:200]}")
+
+
+def _can_manage(row: repo.DashboardRow, user: User) -> bool:
+    """改名 / 删除 / 分享设置的权限：自己的看板，或管理员；系统种子（owner 为空）只有管理员能动."""
+    if user.role in ("admin", "super_admin"):
+        return True
+    return row.owner_id is not None and row.owner_id == user.id
+
+
+def _canvas_permission(db: Session, dashboard_id: int, user_id: int) -> str | None:
+    row = db.execute(
+        text(
+            "SELECT permission FROM bi_resource_permissions "
+            "WHERE resource_type = 'canvas' AND resource_id = :rid AND user_id = :uid "
+            "ORDER BY CASE permission WHEN 'manage' THEN 2 WHEN 'edit' THEN 1 ELSE 0 END DESC LIMIT 1"
+        ),
+        {"rid": dashboard_id, "uid": user_id},
+    ).fetchone()
+    return row[0] if row else None
+
+
+def _can_read(row: repo.DashboardRow, user: User, db: Session) -> bool:
+    """协同看板：全团队可看；私有看板：所有者 / 管理员 / 公共种子."""
+    if user.role in ("admin", "super_admin"):
+        return True
+    if row.owner_id is None or row.owner_id == user.id:
+        return True
+    return bool(row.team_shared) or _canvas_permission(db, row.id, user.id) is not None
+
+
+def _can_edit(row: repo.DashboardRow, user: User, db: Session) -> bool:
+    """协同看板：被设为「可编辑」的成员能改；查看权限不能改."""
+    if user.role in ("admin", "super_admin"):
+        return True
+    if row.owner_id is not None and row.owner_id == user.id:
+        return True
+    if not row.team_shared:
+        return False
+    return _canvas_permission(db, row.id, user.id) in ("edit", "manage")
+
+
+def _my_permission(row: repo.DashboardRow, user: User, db: Session) -> str:
+    """当前用户对这个看板的权限：owner / edit / view（给前端决定显不显示「编辑」）."""
+    if user.role in ("admin", "super_admin") or (row.owner_id is not None and row.owner_id == user.id):
+        return "owner"
+    permission = _canvas_permission(db, row.id, user.id)
+    if permission in ("edit", "manage"):
+        return "edit"
+    return "view"
+
+
+def _require_read(row: repo.DashboardRow | None, user: User, db: Session) -> repo.DashboardRow:
+    if row is None:
+        raise HTTPException(404, "看板不存在")
+    if not _can_read(row, user, db):
+        raise HTTPException(403, "没有查看这个看板的权限")
+    return row
+
+
+def _require_edit(row: repo.DashboardRow | None, user: User, db: Session) -> repo.DashboardRow:
+    if row is None:
+        raise HTTPException(404, "看板不存在")
+    if not _can_edit(row, user, db):
+        raise HTTPException(403, "没有编辑这个看板的权限")
+    return row
+
+
+@router.get("")
+def list_dashboards(
+    published_only: bool = False,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """我的看板：只列自己的 + 公共种子看板（管理员也不列别人的，别人的看板只在「我的团队」按权限出现）."""
+    rows = repo.list_dashboards(
+        db,
+        owner_id=current_user.id,
+        published_only=published_only,
+    )
+    ids = [r.id for r in rows]
+    editor_counts: dict[int, int] = {}
+    if ids:
+        for row in db.execute(
+            text(
+                "SELECT resource_id, count(*) FROM bi_resource_permissions "
+                "WHERE resource_type = 'canvas' AND permission IN ('edit', 'manage') "
+                "AND resource_id = ANY(:ids) GROUP BY resource_id"
+            ),
+            {"ids": ids},
+        ).fetchall():
+            editor_counts[int(row[0])] = int(row[1])
+    return {"dashboards": [
+        {"id": r.id, "name": r.name, "code": r.code,
+         "views": r.view_count, "items": r.item_count, "charts": r.chart_count,
+         "published": (r.doc or {}).get("published") is not False,
+         "updated_at": str(r.updated_at or ""),
+         "team_shared": bool(r.team_shared), "team_editors": editor_counts.get(r.id, 0),
+         "owner_id": r.owner_id, "can_manage": _can_manage(r, current_user)}
+        for r in rows
+    ]}
+
+
+@router.get("/team")
+def list_team_dashboards(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """「我的团队」：我分享出去的协同看板 + 团队共享给我的看板（同一份看板，不复制）."""
+    rows = db.execute(
+        text(
+            "SELECT * FROM bi_canvas WHERE doc IS NOT NULL AND deleted_at IS NULL "
+            "AND team_shared IS TRUE ORDER BY updated_at DESC"
+        )
+    ).fetchall()
+    names = {int(r[0]): r[1] for r in db.execute(text("SELECT id, username FROM users")).fetchall()}
+    permissions = {
+        int(r[0]): r[1]
+        for r in db.execute(
+            text(
+                "SELECT resource_id, permission FROM bi_resource_permissions "
+                "WHERE resource_type = 'canvas' AND user_id = :uid"
+            ),
+            {"uid": current_user.id},
+        ).fetchall()
+    }
+    editor_counts = {
+        int(r[0]): int(r[1])
+        for r in db.execute(
+            text(
+                "SELECT resource_id, count(*) FROM bi_resource_permissions "
+                "WHERE resource_type = 'canvas' AND permission IN ('edit', 'manage') GROUP BY resource_id"
+            )
+        ).fetchall()
+    }
+
+    my_shared: list[dict] = []
+    shared_with_me: list[dict] = []
+    for raw in rows:
+        row = repo._row(raw)
+        if row is None:
+            continue
+        item = {
+            "id": row.id, "name": row.name, "owner_id": row.owner_id,
+            "owner_name": names.get(row.owner_id or 0, ""),
+            "charts": row.chart_count, "views": row.view_count,
+            "updated_at": str(row.updated_at or ""),
+            "team_editors": editor_counts.get(row.id, 0),
+        }
+        if row.owner_id == current_user.id:
+            my_shared.append({**item, "my_permission": "owner"})
+        else:
+            item["my_permission"] = permissions.get(row.id, "view")
+            shared_with_me.append(item)
+    return {"my_shared": my_shared, "shared_with_me": shared_with_me}
+
+
+def _with_live_items(doc, view_key: str | None, raw_items: list) -> "DashboardDoc":
+    """把「还没保存的当前版面」套进文档再渲染 —— 用户拖完卡、选完字段就能立刻看到数据.
+
+    只替换目标视图的 items，其它视图 / 头部 / 参数定义照旧；不改数据库。
+    """
+    data = doc.model_dump()
+    views = data.get("views") or []
+    if not views:
+        return doc
+    target = next((v for v in views if v.get("key") == view_key), None) or views[0]
+    target["items"] = raw_items
+    # 现场版面已经是「当前平台那一套」了，清掉存的分平台卡片，免得两者叠在一起
+    target["items_map"] = {}
+    return validate_doc(data)
+
+
+def _blank_doc() -> dict:
+    """新项目的空文档 —— 一个主视图，进去就能直接拖卡."""
+    return {
+        "version": 2.1, "mode": "flow", "published": False,
+        "header": {}, "params": [],
+        "views": [{"key": "main", "title": "主视图", "items": [], "guides": []}],
+    }
+
+
+@router.post("", dependencies=[Depends(require_nav("bi:nav:editor"))])
+def create_dashboard(
+    payload: dict = Body(default={}),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """新建项目（= 一块可编辑画布）；没起名就自动编号「未命名项目01 / 02 / 03…」."""
+    given = str(payload.get("name") or "").strip()
+    name = given if given and given != repo.UNTITLED else repo.next_untitled_name(db)
+    try:
+        row = repo.create(db, name=name, code=None,
+                          doc=payload.get("doc") or _blank_doc(),
+                          owner_id=current_user.id)
+    except Exception as exc:
+        raise _guard(exc) from exc
+    if row is None:
+        raise HTTPException(400, "创建项目失败")
+    return row.to_dict()
+
+
+@router.get("/by-code/{code}")
+def get_by_code(
+    code: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    row = repo.get_by_code(db, code)
+    if row is None:
+        raise HTTPException(404, "看板不存在")
+    return row.to_dict()
+
+
+@router.get("/{dashboard_id}")
+def get_dashboard(
+    dashboard_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    row = _require_read(repo.get(db, dashboard_id), current_user, db)
+    data = row.to_dict()
+    data["my_permission"] = _my_permission(row, current_user, db)
+    return data
+
+
+# ── 分享到我的团队（协同看板：看板本体不变、数据集不复制）────────
+@router.post("/{dashboard_id}/team-share")
+def share_dashboard_to_team(
+    dashboard_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """把看板设为协同看板：全团队可在「我的团队」看到（默认只能查看）."""
+    row = repo.get(db, dashboard_id)
+    if row is None:
+        raise HTTPException(404, "看板不存在")
+    if not _can_manage(row, current_user):
+        raise HTTPException(403, "只有看板所有者可以分享")
+    repo.set_team_shared(db, dashboard_id, True)
+    return {"id": dashboard_id, "team_shared": True}
+
+
+@router.delete("/{dashboard_id}/team-share")
+def unshare_dashboard_from_team(
+    dashboard_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """取消协同：看板回到私有，同时清掉成员权限."""
+    row = repo.get(db, dashboard_id)
+    if row is None:
+        raise HTTPException(404, "看板不存在")
+    if not _can_manage(row, current_user):
+        raise HTTPException(403, "只有看板所有者可以取消分享")
+    repo.set_team_shared(db, dashboard_id, False)
+    db.execute(
+        text("DELETE FROM bi_resource_permissions WHERE resource_type = 'canvas' AND resource_id = :id"),
+        {"id": dashboard_id},
+    )
+    db.commit()
+    return {"id": dashboard_id, "team_shared": False}
+
+
+@router.get("/{dashboard_id}/team-permissions")
+def get_team_permissions(
+    dashboard_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """协同看板的成员权限（查看 / 编辑）."""
+    row = repo.get(db, dashboard_id)
+    if row is None:
+        raise HTTPException(404, "看板不存在")
+    if not _can_manage(row, current_user):
+        raise HTTPException(403, "只有看板所有者可以设置权限")
+    permissions = {
+        int(r[0]): r[1]
+        for r in db.execute(
+            text(
+                "SELECT user_id, permission FROM bi_resource_permissions "
+                "WHERE resource_type = 'canvas' AND resource_id = :id"
+            ),
+            {"id": dashboard_id},
+        ).fetchall()
+    }
+    members = [
+        {"id": int(r[0]), "username": r[1], "permission": permissions.get(int(r[0]), "view")}
+        for r in db.execute(
+            text("SELECT id, username FROM users WHERE is_active IS TRUE ORDER BY id")
+        ).fetchall()
+        if int(r[0]) != row.owner_id
+    ]
+    return {
+        "id": dashboard_id,
+        "name": row.name,
+        "team_shared": bool(row.team_shared),
+        "owner_id": row.owner_id,
+        "members": members,
+    }
+
+
+@router.put("/{dashboard_id}/team-permissions")
+def set_team_permissions(
+    dashboard_id: int,
+    payload: dict = Body(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """保存协同权限：view = 只能看，edit = 能改内容（保存看板）."""
+    row = repo.get(db, dashboard_id)
+    if row is None:
+        raise HTTPException(404, "看板不存在")
+    if not _can_manage(row, current_user):
+        raise HTTPException(403, "只有看板所有者可以设置权限")
+
+    cleaned: list[dict] = []
+    for item in payload.get("permissions") or []:
+        try:
+            user_id = int((item or {}).get("user_id"))
+        except (TypeError, ValueError):
+            continue
+        permission = str((item or {}).get("permission") or "view")
+        if permission not in ("view", "edit"):
+            continue
+        cleaned.append({"user_id": user_id, "permission": permission})
+
+    db.execute(
+        text("DELETE FROM bi_resource_permissions WHERE resource_type = 'canvas' AND resource_id = :id"),
+        {"id": dashboard_id},
+    )
+    if cleaned:
+        db.execute(
+            text(
+                "INSERT INTO bi_resource_permissions "
+                "(resource_type, resource_id, user_id, permission) "
+                "VALUES ('canvas', :id, :uid, :permission)"
+            ),
+            [{"id": dashboard_id, "uid": item["user_id"], "permission": item["permission"]}
+             for item in cleaned],
+        )
+    db.commit()
+    return {"id": dashboard_id, "permissions": cleaned}
+
+
+@router.put("/{dashboard_id}")
+def save_dashboard(
+    dashboard_id: int,
+    payload: dict = Body(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _require_edit(repo.get(db, dashboard_id), current_user, db)
+    try:
+        # 保存/发布时才做结构自愈（编辑过程中的渲染不参与，避免把用户删掉的筛选栏补回来）
+        doc = validate_doc(payload.get("doc") or {}, heal=True)
+        saved = repo.save(db, dashboard_id, doc, name=payload.get("name"),
+                          publish=bool(payload.get("publish")))
+    except Exception as exc:
+        raise _guard(exc) from exc
+    if saved is not None:
+        render_cache.invalidate(dashboard_id)  # 文档变了 → 这个看板的整页缓存全部作废
+        # 组件 → 数据源账本：按这次保存的文档整体重建（页面 ID / 元素 ID / 数据集都可查）
+        try:
+            sources.rebuild(db, dashboard_id, saved.doc)
+        except Exception as exc:  # 账本写失败不影响保存本身
+            print(f"[dashboards] 数据源账本重建失败：{exc}")
+    return saved.to_dict() if saved else {"id": dashboard_id}
+
+
+@router.get("/{dashboard_id}/sources")
+def list_dashboard_sources(
+    dashboard_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """这个看板每个元素用了哪个数据集（页面 ID / 元素 ID / 指标 / 维度都带）."""
+    _require_read(repo.get(db, dashboard_id), current_user, db)
+    return {"dashboard_id": dashboard_id, "sources": sources.list_for(db, dashboard_id)}
+
+
+@router.patch("/{dashboard_id}", dependencies=[Depends(require_nav("bi:nav:editor"))])
+def rename_dashboard(
+    dashboard_id: int,
+    payload: dict = Body(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """只改看板名称，不动页面内容."""
+    row = repo.get(db, dashboard_id)
+    if row is None:
+        raise HTTPException(404, "看板不存在")
+    if not _can_manage(row, current_user):
+        raise HTTPException(403, "无权修改此看板")
+    name = str(payload.get("name") or "").strip()
+    if not name:
+        raise HTTPException(400, "看板名称不能为空")
+    saved = repo.rename(db, dashboard_id, name)
+    if saved is None:
+        raise HTTPException(404, "看板不存在")
+    return {"id": saved.id, "name": saved.name, "updated_at": str(saved.updated_at or "")}
+
+
+@router.delete("/{dashboard_id}", dependencies=[Depends(require_nav("bi:nav:editor"))])
+def delete_dashboard(
+    dashboard_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    row = repo.get(db, dashboard_id)
+    if row is None:
+        raise HTTPException(404, "看板不存在")
+    if not _can_manage(row, current_user):
+        raise HTTPException(403, "无权删除此看板")
+    deleted = repo.soft_delete(db, dashboard_id)
+    if deleted:
+        render_cache.invalidate(dashboard_id)
+        sources.drop_for(db, dashboard_id)  # 软删的看板不再算「在用」
+        db.execute(
+            text("DELETE FROM bi_resource_permissions WHERE resource_type = 'canvas' AND resource_id = :id"),
+            {"id": dashboard_id},
+        )
+        db.commit()
+    return {"deleted": deleted, "id": dashboard_id}
+
+
+@router.post("/{dashboard_id}/render")
+def render_dashboard(
+    dashboard_id: int,
+    payload: dict = Body(default={}),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    row = _require_read(repo.get(db, dashboard_id), current_user, db)
+    live_items = payload.get("items")
+    cross_filters = payload.get("cross_filters") or []
+    # 权限校验永远先做（缓存里只有数据，不含权限判断）；命中的是「同一用户、同一份文档、同一组参数」
+    cache_key = render_cache.key_for(
+        dashboard_id,
+        updated_at=row.updated_at,
+        user=current_user,
+        view=payload.get("view"),
+        params=payload.get("params") or {},
+        live_items=live_items if isinstance(live_items, list) else None,
+        cross_filters=cross_filters,
+    )
+    cached = render_cache.load(cache_key)
+    if cached is not None:
+        return cached
+    # 权限查完就把连接还回池子：下面回源可能排队，别让排队的请求各占一条连接
+    db.commit()
+
+    def _compute() -> dict:
+        doc = validate_doc(row.doc)
+        if isinstance(live_items, list):
+            try:
+                doc = _with_live_items(doc, payload.get("view"), live_items)
+            except Exception:
+                doc = validate_doc(row.doc)  # 版面里有半成品就先按已保存的渲染，别整页报错
+        result = renderer.render_dashboard(
+            db, doc, current_user,
+            view_key=payload.get("view"),
+            params=payload.get("params") or {},
+            cross_filters=cross_filters,
+        )
+        # 单卡报错的结果不缓存：可能只是一次数据库抖动，别把错误冻住整个 TTL
+        if not render_cache.has_card_error(result):
+            render_cache.store(cache_key, result)
+        return result
+
+    try:
+        if render_cache.ttl() <= 0:
+            return _compute()
+        # 单飞：缓存过期那一刻只让一个请求回源，其余等它写进缓存后直接读（防雪崩）
+        with render_cache.lock_for(cache_key):
+            cached = render_cache.load(cache_key)
+            if cached is not None:
+                return cached
+            return _compute()
+    except Exception as exc:
+        raise _guard(exc) from exc
+
+
+@router.post("/{dashboard_id}/rows")
+def dashboard_rows(
+    dashboard_id: int,
+    payload: dict = Body(default={}),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """单个表格元素的全量行（弹窗「查看更多」用）—— 行限制放到最大，口径与卡片一致."""
+    row = _require_read(repo.get(db, dashboard_id), current_user, db)
+    try:
+        doc = validate_doc(row.doc)
+        raw_items = payload.get("items")
+        if isinstance(raw_items, list):
+            try:
+                doc = _with_live_items(doc, payload.get("view"), raw_items)
+            except Exception:
+                doc = validate_doc(row.doc)
+        item_key = str(payload.get("item_key") or "")
+        found = renderer.find_item(doc, item_key, payload.get("view"))
+        item = found[1] if found else None
+        if item is None:
+            raise HTTPException(404, "元素不存在")
+
+        spec = validate_spec("table", item.spec or {})
+        spec = spec.model_copy(deep=True)
+        spec.binding.top_n = max(int(payload.get("limit") or 2000), 2000)
+
+        # 页面筛选照旧注入，弹窗里看到的就是卡片同一口径的全量
+        defs = renderer.collect_param_defs(db, doc, payload.get("view"), payload.get("params") or {})
+        effective = renderer.effective_params(defs, payload.get("params") or {})
+        page_filters, keywords = renderer._page_filters(defs, effective)
+        cross = renderer.normalize_cross_filters(payload.get("cross_filters"))
+        if cross:
+            existing = {field.get("name") for field in page_filters}
+            page_filters = page_filters + [field for field in cross if field["name"] not in existing]
+        switches = renderer.dataset_switches(defs)
+        # 「查看更多」也要按当前平台切表，弹窗里的行才是这张卡的口径
+        spec, _switched = apply_dataset_switch(db, spec, effective, switches)
+        if page_filters and spec.binding.dataset_id:
+            columns = renderer._dataset_fields(db, spec.binding.dataset_id)
+            extra = [f for f in page_filters if f["name"] in columns]
+            if extra:
+                spec.binding.filters = list(spec.binding.filters or []) + extra
+
+        # 搜索框同样作用于「查看更多」/ 导出的全量行（与卡片同一口径）
+        data = resolve_component(db, spec, "table", current_user,
+                                 params=payload.get("params") or {}, keywords=keywords,
+                                 switches=switches)
+        rows = data.get("rows") or []
+        return {"rows": rows, "columns": data.get("columns") or [], "count": len(rows)}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise _guard(exc) from exc
+
+
+@router.post("/{dashboard_id}/drill")
+def drill_rows(
+    dashboard_id: int,
+    payload: dict = Body(default={}),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """下钻明细：按某个维度值取这张卡的数据集原始行（最多 200 行，口径与看板一致）."""
+    row = _require_read(repo.get(db, dashboard_id), current_user, db)
+    try:
+        doc = validate_doc(row.doc)
+        item_key = str(payload.get("item_key") or "")
+        found = renderer.find_item(doc, item_key, payload.get("view"))
+        item = found[1] if found else None
+        if item is None:
+            raise HTTPException(404, "元素不存在")
+
+        _kind, spec = renderer._item_spec(db, item)
+        defs = renderer.collect_param_defs(db, doc, payload.get("view"), payload.get("params") or {})
+        effective = renderer.effective_params(defs, payload.get("params") or {})
+        switches = renderer.dataset_switches(defs)
+        spec, _switched = apply_dataset_switch(db, spec, effective, switches)
+        if not spec.binding.dataset_id:
+            raise HTTPException(400, "这张卡没有绑定数据集")
+        dataset = get_dataset(db, spec.binding.dataset_id)
+        if dataset is None:
+            raise HTTPException(400, "数据集不存在")
+
+        column = str(payload.get("column") or spec.binding.dimension or "").strip()
+        value = payload.get("value")
+        if not column or value in (None, "", [], {}):
+            raise HTTPException(400, "缺少下钻列或值")
+        field_names = {field.name for field in (getattr(dataset, "fields", None) or [])}
+        if column not in field_names:
+            raise HTTPException(400, f"数据集里没有字段：{column}")
+
+        columns = drill_mod.drill_columns(getattr(dataset, "fields", None) or [])
+        if column not in columns:
+            columns = [column] + columns
+        columns = columns[: drill_mod.MAX_COLUMNS]
+        request = drill_mod.build_request(columns, column, value)
+
+        from app.components.resolver import _execute_dataset
+
+        result = _execute_dataset(db, dataset, compile_query(dataset, request), current_user)
+        rows = [dict(entry) for entry in result.rows]
+        return jsonable_encoder({
+            "columns": columns,
+            "rows": rows,
+            "count": len(rows),
+            "sql": result.sql,
+        })
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise _guard(exc) from exc
+
+
+@router.post("/{dashboard_id}/overlay")
+def render_overlay(
+    dashboard_id: int,
+    payload: dict = Body(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    row = _require_read(repo.get(db, dashboard_id), current_user, db)
+    item_key = str(payload.get("item_key") or "")
+    if not item_key:
+        raise HTTPException(400, "缺少 item_key")
+    try:
+        doc = validate_doc(row.doc)
+        return renderer.render_overlay(
+            db, doc, current_user,
+            item_key=item_key,
+            params=payload.get("params") or {},
+            action_params=payload.get("action_params") or {},
+            view_key=payload.get("view"),
+            trigger=str(payload.get("trigger") or "primary"),
+        )
+    except Exception as exc:
+        raise _guard(exc) from exc

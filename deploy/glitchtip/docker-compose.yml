@@ -1,0 +1,74 @@
+# 自建 GlitchTip（Sentry 兼容的错误收集），给明策BI 的 SENTRY_DSN 用。
+#
+#   cd deploy/glitchtip && docker compose up -d
+#   浏览器打开 http://127.0.0.1:8070 → 注册 → 建 Organization / Project
+#   Project → Settings → Client Keys (DSN) 复制那串地址
+#   然后给后端配 SENTRY_DSN（compose 里是 backend.environment，本地开发是启动命令前的环境变量）
+#
+# 说明：
+#   · 这里自带的 Postgres / Redis 专供 GlitchTip，不碰业务库（业务库是 mingzebi_dev）；
+#   · 端口用 8070，避开后端 8300 / 前端 5300；
+#   · 数据卷 glitchtip-pg-data / glitchtip-uploads 删掉就等于清空错误历史。
+
+x-environment: &default-environment
+  DATABASE_URL: postgres://postgres:${GLITCHTIP_DB_PASSWORD:-glitchtip}@postgres:5432/postgres
+  # 生产务必换掉：openssl rand -hex 32
+  SECRET_KEY: ${GLITCHTIP_SECRET_KEY:-dev-only-change-me}
+  # 域名要和浏览器实际访问地址一致，否则事件里的链接会指错
+  GLITCHTIP_DOMAIN: ${GLITCHTIP_DOMAIN:-http://127.0.0.1:8070}
+  DEFAULT_FROM_EMAIL: glitchtip@example.com
+  EMAIL_URL: consolemail://
+  CELERY_WORKER_AUTOSCALE: "1,3"
+  CELERY_WORKER_MAX_TASKS_PER_CHILD: "1000"
+  ENABLE_OBSERVABILITY: "False"
+  # Agent 通道：开启 GlitchTip 自带 MCP 服务（POST /mcp）。
+  # 鉴权直接用 API Token（Authorization: Bearer <token>），不必走浏览器 OAuth；
+  # 建议只发 org:read / project:read / event:read（只读：能看异常与堆栈，改不了状态）。
+  GLITCHTIP_ENABLE_MCP: "true"
+
+x-depends_on: &default-depends_on
+  postgres:
+    condition: service_healthy
+  redis:
+    condition: service_started
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${GLITCHTIP_DB_PASSWORD:-glitchtip}
+    volumes:
+      - glitchtip-pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", ""]
+
+  web:
+    # 官方镜像同时发布在 Docker Hub 与 GitLab Registry；国内拉不动 Docker Hub 时用下面这个
+    image: ${GLITCHTIP_IMAGE:-registry.gitlab.com/glitchtip/glitchtip:latest}
+    restart: unless-stopped
+    depends_on: *default-depends_on
+    ports:
+      - "${GLITCHTIP_PORT:-8070}:8000"
+    environment: *default-environment
+    volumes:
+      - glitchtip-uploads:/code/uploads
+      # 界面中文化：替换 SPA 的 index 模板 + 注入同源脚本/样式（不改镜像，升级后重新拷贝一次 index.html 即可）
+      - ./i18n/index.html:/code/dist/index.html:ro
+      - ./i18n/glitchtip-i18n.js:/code/static/glitchtip-i18n.js:ro
+      - ./i18n/glitchtip-i18n.css:/code/static/glitchtip-i18n.css:ro
+
+  # 新版 GlitchTip 是单进程（HTTP + 任务队列 + 调度都在 web 里），
+  # 不再有独立的 celery worker；老版本的 worker 服务在这里故意不保留。
+
+volumes:
+  glitchtip-pg-data:
+  glitchtip-uploads:
