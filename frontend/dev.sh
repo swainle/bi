@@ -17,7 +17,7 @@ case "$user" in
   *)           port="${MINGZEBI_DEV_PORT:-5390}" ;;
 esac
 
-echo "MingzeBI 前端：http://localhost:${port}"
+echo "MingceBI 前端：http://localhost:${port}"
 echo "如果 AI 工具未自动打开浏览器，请在「端口」面板转发 ${port} 后访问。"
 if [ "$#" -gt 0 ]; then
   exec npx vite "$@"
