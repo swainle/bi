@@ -87,7 +87,7 @@ BASE = [
       "binding": {"dataset_id": None, "dimension": "痛点", "metric": "热销指数", "agg": "SUM",
                   "split": "/", "top_n": 30, "sort": "desc", "metrics": [], "limit": 500},
       # 主题色：6 套里选一套（前端 CLOUD_PALETTES），默认「潮彩」
-      "chart": {**_spec("词云")["chart"], "cloud_palette": "潮彩"}}),
+      "chart": {"cloud_palette": "潮彩"}}),
     ("base.combo", "柱线组合", "combo", "组合", "柱看体量 + 线看质量（双轴）",
      {**_spec("组合", dim="价格带", metric="日销量", agg="AVG",
               metrics=[{"name": "热销指数", "agg": "AVG"}]),
