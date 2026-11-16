@@ -22,7 +22,11 @@ interface ModelItem {
   last_test_at: string; last_test_ok: boolean | null; last_test_ms: number | null; last_test_error: string;
 }
 
-interface ProviderItem { code: string; name: string; base_url: string; model: string }
+interface ProviderItem {
+  code: string; name: string; base_url: string; model: string;
+  /** 官方参考值：选中供应商时自动带出，用户可再改 */
+  temperature?: number | null; max_tokens?: number | null; context_window?: number | null;
+}
 
 interface FormState {
   name: string; provider: string; base_url: string; model: string;
@@ -32,7 +36,7 @@ interface FormState {
 
 const emptyForm: FormState = {
   name: "", provider: "deepseek", base_url: "https://api.deepseek.com/v1", model: "deepseek-chat",
-  api_key: "", temperature: "0.3", max_tokens: "4096", enabled: true, is_default: false,
+  api_key: "", temperature: "1", max_tokens: "8192", enabled: true, is_default: false,
 };
 
 const SOURCE_TEXT: Record<string, string> = {
@@ -89,6 +93,7 @@ export default function ModelsPanel() {
     setDialog({ mode: "edit", id: item.id });
   };
 
+  /** 选中供应商时把温度 / 最大 Token 也带成官方默认值；用户改过的值只在「自定义」时保留 */
   const applyProvider = (code: string) => {
     const preset = providers.find((p) => p.code === code);
     setForm((prev) => ({
@@ -97,8 +102,15 @@ export default function ModelsPanel() {
       name: prev.name || (preset ? preset.name : ""),
       base_url: preset?.base_url || prev.base_url,
       model: preset?.model || prev.model,
+      temperature: preset?.temperature == null ? prev.temperature : String(preset.temperature),
+      max_tokens: preset?.max_tokens == null ? prev.max_tokens : String(preset.max_tokens),
     }));
   };
+
+  const providerPreset = useMemo(
+    () => providers.find((p) => p.code === form.provider) || null,
+    [providers, form.provider],
+  );
 
   const save = async () => {
     if (!dialog || saving) return;
@@ -355,6 +367,13 @@ export default function ModelsPanel() {
                 onChange={(e) => setForm((p) => ({ ...p, is_default: e.target.checked }))} />
             </Box>
           </Box>
+          <Typography sx={{ fontSize: 11, color: MUTED, mt: -1, lineHeight: 1.6 }}>
+            {providerPreset?.temperature != null
+              ? `供应商参考值：温度 ${providerPreset.temperature} · 最大输出 ${providerPreset.max_tokens}`
+                + `${providerPreset.context_window ? ` · 上下文 ${Math.round(providerPreset.context_window / 1024)}K` : ""}`
+                + "（可自行修改）"
+              : "自定义供应商：温度 / 最大 Token 按服务商文档填写"}
+          </Typography>
           {dialogTest && (
             <Box sx={{
               fontSize: 12, px: 1.25, py: 0.75, borderRadius: 1.5,

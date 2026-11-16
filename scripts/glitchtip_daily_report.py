@@ -39,7 +39,7 @@ ROOT = Path(__file__).resolve().parents[1]
 TOKEN_FILE = ROOT / "deploy" / "glitchtip" / ".api-token"
 DEFAULT_URL = "http://127.0.0.1:8070"
 DEFAULT_ORG = "org"
-BASE_URL = os.environ.get("MZBI_BASE_URL", "http://127.0.0.1:8300")
+BASE_URL = os.environ.get("MCBI_BASE_URL", "http://127.0.0.1:8300")
 
 PRIORITY_ORDER = {"P0": 0, "P1": 1, "P2": 2, "P3": 3}
 
@@ -53,7 +53,7 @@ RULES = [
         "连接被泄漏或慢查询长期占用：常见于后台线程异常未回滚（事务停在 idle in transaction）、"
         "看板并发渲染、或长事务占用。",
         "1) 看 /api/metrics 的 database.pool_timeouts 与 checked_out；"
-        "2) 在 PG 执行 select state,count(*) from pg_stat_activity where datname='mingzebi_dev' group by state，"
+        "2) 在 PG 执行 select state,count(*) from pg_stat_activity where datname='mingcebi_dev' group by state，"
         "重点看 idle in transaction；3) 检查 5 分钟后台刷新/同步任务是否 rollback；"
         "4) 必要时调 BI_RENDER_WORKERS 或临时提高 DB_MAX_OVERFLOW。",
         "修复后 pool_timeouts 不再增长、pg_stat_activity 无 idle in transaction、"

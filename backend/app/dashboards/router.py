@@ -7,6 +7,7 @@ from fastapi.encoders import jsonable_encoder
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.components import repository as component_repo
 from app.components.resolver import apply_dataset_switch, resolve as resolve_component
 from app.security.nav_guard import require_nav
 from app.components.spec import ComponentSpecError, validate_spec
@@ -17,6 +18,7 @@ from app.dashboards import sources
 from app.dashboards import render as renderer
 from app.dashboards.models import validate_doc
 from app.database import get_db
+from app.middleware.audit import log_audit
 from app.middleware.auth import get_current_user
 from app.models.user import User
 from app.security.errors import SecurityError
@@ -113,6 +115,7 @@ def list_dashboards(
     )
     ids = [r.id for r in rows]
     editor_counts: dict[int, int] = {}
+    agent_ids: set[int] = set()
     if ids:
         for row in db.execute(
             text(
@@ -123,10 +126,18 @@ def list_dashboards(
             {"ids": ids},
         ).fetchall():
             editor_counts[int(row[0])] = int(row[1])
+        # Agent 建的草稿：前端据此打「草稿 · Agent 生成」标（不靠 doc.meta，保存会被重建）
+        agent_ids = {
+            int(row[0]) for row in db.execute(
+                text("SELECT dashboard_id FROM bi_mcp_dashboard WHERE dashboard_id = ANY(:ids)"),
+                {"ids": ids},
+            ).fetchall()
+        }
     return {"dashboards": [
         {"id": r.id, "name": r.name, "code": r.code,
          "views": r.view_count, "items": r.item_count, "charts": r.chart_count,
          "published": (r.doc or {}).get("published") is not False,
+         "agent_generated": r.id in agent_ids,
          "updated_at": str(r.updated_at or ""),
          "team_shared": bool(r.team_shared), "team_editors": editor_counts.get(r.id, 0),
          "owner_id": r.owner_id, "can_manage": _can_manage(r, current_user)}
@@ -230,6 +241,7 @@ def create_dashboard(
         raise _guard(exc) from exc
     if row is None:
         raise HTTPException(400, "创建项目失败")
+    log_audit(current_user.id, "dashboard.create", "canvas", row.id, {"name": name})
     return row.to_dict()
 
 
@@ -254,6 +266,9 @@ def get_dashboard(
     row = _require_read(repo.get(db, dashboard_id), current_user, db)
     data = row.to_dict()
     data["my_permission"] = _my_permission(row, current_user, db)
+    data["agent_generated"] = bool(db.execute(
+        text("SELECT 1 FROM bi_mcp_dashboard WHERE dashboard_id = :id"), {"id": dashboard_id}
+    ).fetchone())
     return data
 
 
@@ -271,6 +286,7 @@ def share_dashboard_to_team(
     if not _can_manage(row, current_user):
         raise HTTPException(403, "只有看板所有者可以分享")
     repo.set_team_shared(db, dashboard_id, True)
+    log_audit(current_user.id, "dashboard.share", "canvas", dashboard_id, {"name": row.name})
     return {"id": dashboard_id, "team_shared": True}
 
 
@@ -292,6 +308,7 @@ def unshare_dashboard_from_team(
         {"id": dashboard_id},
     )
     db.commit()
+    log_audit(current_user.id, "dashboard.unshare", "canvas", dashboard_id, {"name": row.name})
     return {"id": dashboard_id, "team_shared": False}
 
 
@@ -373,6 +390,8 @@ def set_team_permissions(
              for item in cleaned],
         )
     db.commit()
+    log_audit(current_user.id, "dashboard.permission", "canvas", dashboard_id,
+              {"name": row.name, "members": cleaned})
     return {"id": dashboard_id, "permissions": cleaned}
 
 
@@ -398,6 +417,12 @@ def save_dashboard(
             sources.rebuild(db, dashboard_id, saved.doc)
         except Exception as exc:  # 账本写失败不影响保存本身
             print(f"[dashboards] 数据源账本重建失败：{exc}")
+        log_audit(
+            current_user.id,
+            "dashboard.publish" if payload.get("publish") else "dashboard.save",
+            "canvas", dashboard_id,
+            {"name": saved.name, "charts": saved.chart_count, "items": saved.item_count},
+        )
     return saved.to_dict() if saved else {"id": dashboard_id}
 
 
@@ -454,6 +479,8 @@ def delete_dashboard(
             {"id": dashboard_id},
         )
         db.commit()
+        log_audit(current_user.id, "dashboard.delete", "canvas", dashboard_id,
+                  {"name": row.name})
     return {"deleted": deleted, "id": dashboard_id}
 
 
@@ -564,6 +591,207 @@ def dashboard_rows(
                                  switches=switches)
         rows = data.get("rows") or []
         return {"rows": rows, "columns": data.get("columns") or [], "count": len(rows)}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise _guard(exc) from exc
+
+
+@router.post("/{dashboard_id}/top-list")
+def dashboard_top_list(
+    dashboard_id: int,
+    payload: dict = Body(default={}),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """指标卡右上角徽标的弹窗：按卡片里配的「维度 + 指标」独立算一个 TOP N 榜单.
+
+    与卡片上的数字是两套口径（卡片可能是 COUNT，这里按指标 SUM 排行）；
+    只读、不改文档、不动页面参数 —— 页面筛选照旧生效，弹窗自己关闭不影响其它卡片。
+    """
+    row = _require_read(repo.get(db, dashboard_id), current_user, db)
+    try:
+        doc = validate_doc(row.doc)
+        raw_items = payload.get("items")
+        if isinstance(raw_items, list):
+            try:
+                doc = _with_live_items(doc, payload.get("view"), raw_items)
+            except Exception:
+                doc = validate_doc(row.doc)
+        item_key = str(payload.get("item_key") or "")
+        found = renderer.find_item(doc, item_key, payload.get("view"))
+        item = found[1] if found else None
+        if item is None:
+            raise HTTPException(404, "元素不存在")
+
+        code = str(item.component or "")
+        component = component_repo.get_by_code(db, code) if code else None
+        kind = component.kind if component is not None else "kpi"
+        spec = validate_spec(kind, item.spec or {})
+        top = spec.top
+        if not top.enabled:
+            raise HTTPException(400, "这个指标卡没有配置右上角弹窗")
+
+        view_key = payload.get("view")
+        defs = renderer.collect_param_defs(db, doc, view_key, payload.get("params") or {})
+        effective = renderer.effective_params(defs, payload.get("params") or {})
+        page_filters, keywords = renderer._page_filters(defs, effective)
+        switches = renderer.dataset_switches(defs)
+        spec, _switched = apply_dataset_switch(db, spec, effective, switches)
+
+        metric = top.metric or spec.binding.metric
+        if not metric:
+            raise HTTPException(400, "弹窗没有配置指标：面板里选一个")
+        dim = str(top.dim or "").strip()
+        if not dim and str(spec.binding.dimension or "").strip():
+            dim = str(spec.binding.dimension).strip()
+        # 优先沿用这一页的「明细表」：列顺序 / 列定义 / 缩略图 / 列宽都照它来，
+        # 弹窗看起来就是那张表的排行版；页面上没有明细表时再用弹窗自己的配置。
+        page_table = None
+        view_key = payload.get("view")
+        for v, item in doc.all_items():
+            if view_key and v.key != view_key:
+                continue
+            # 画布上的明细表存的是 type=chart + component=base.table（按 kind 认，别只看 type）
+            code = str(item.component or "")
+            component = component_repo.get_by_code(db, code) if code else None
+            is_table = (component.kind == "table") if component is not None else (item.type == "table")
+            if not is_table:
+                continue
+            try:
+                candidate = validate_spec("table", item.spec or {})
+            except Exception:
+                continue
+            if spec.binding.dataset_id and candidate.binding.dataset_id not in (None, spec.binding.dataset_id):
+                continue
+            page_table = candidate
+            break
+
+        # 弹窗没配排名维度（早期的卡只开了开关、维度留空）时，借本页明细表的第一列当维度，
+        # 否则表格一个字段都没有，直接报「明细表至少需要一个字段」。
+        if not dim and page_table is not None:
+            candidates = [str(n or "").strip() for n in (page_table.binding.dimensions or [])]
+            candidates = [n for n in candidates if n]
+            # 优先「…标题 / …名称」这类文本列（排行通常按商品走），否则用明细表第一列
+            dim = next((n for n in candidates if "标题" in n or "名称" in n), candidates[0] if candidates else "")
+        if not dim:
+            raise HTTPException(400, "弹窗没有配置排名维度：面板里选一个")
+
+        # 附加列不能当原始列塞进 GROUP BY（一个产品在多条榜单里会被拆成多行）：
+        # 统一按 MAX 取值 —— 一行一个维度，属性取其中任意一条，和主流 BI 的「排行明细」一致。
+        metrics = [{"name": metric, "agg": top.agg or "SUM"}]
+        seen = {metric, dim}
+        extra: list[str] = []
+        thumb_key = ""
+        if page_table is not None:
+            extra.extend(page_table.binding.dimensions or [])
+            if page_table.table_view.thumb and page_table.table_view.thumb_key:
+                thumb_key = page_table.table_view.thumb_key
+                extra.append(thumb_key)
+        extra.extend(top.columns or [])
+        for name in extra:
+            text = str(name or "").strip()
+            if not text or text in seen:
+                continue
+            seen.add(text)
+            metrics.append({"name": text, "agg": "MAX"})
+
+        title = top.title or f"{spec.title} TOP{top.top_n}"
+        # 先多取一些（并列很多时也有序），再在下面自己排一次：
+        # 只按指标排序时同分那一批顺序是数据库给的，每次打开可能换人 —— 补一个维度升序当稳定并列规则。
+        table_view = {"page_size": top.page_size, "more": False,
+                      "index_column": True, "thumb": False, "thumb_key": ""}
+        if page_table is not None:
+            table_view = {
+                **page_table.table_view.model_dump(),
+                "more": False,                      # 弹窗里不再套「查看更多」
+                "page_size": len(metrics) and top.page_size or page_table.table_view.page_size,
+                "columns": [],                      # 列由下面按真实取到的行重建（避免多出空列）
+                # 缩略图列已经并按 MAX 取了：这里不挂 thumb，否则 resolver 会把它当原始列再拼一次（GROUP BY 冲突）
+                "thumb": False, "thumb_key": "",
+            }
+        table = validate_spec("table", {
+            "title": title,
+            "binding": {
+                "dataset_id": spec.binding.dataset_id, "dimension": dim or None, "dimensions": [],
+                "metrics": metrics, "sort": "desc",
+                "top_n": 2000, "limit": 2000,
+            },
+            "table_view": table_view,
+        })
+        if page_filters and table.binding.dataset_id:
+            names = renderer._dataset_fields(db, table.binding.dataset_id)
+            table.binding.filters = [f for f in page_filters if f["name"] in names]
+        data = resolve_component(db, table, "table", current_user,
+                                 params=effective, keywords=keywords, switches=None)
+        rows = list(data.get("rows") or [])
+
+        def value_of(row: dict) -> float:
+            try:
+                return float(row.get(metric))
+            except (TypeError, ValueError):
+                return float("-inf")
+
+        def sort_key(row: dict):
+            return (-value_of(row), str(row.get(dim) if dim else ""))
+
+        rows.sort(key=sort_key)
+        shown = rows[: top.top_n]
+        # 和第 N 名同分的**全部**一起给：16 条并列 2000 时，只给 10 条的话漏哪 6 条完全取决于排序规则，
+        # 用户没法核对（2026-11-15 用户实测质疑）。上限 200 条防极端。
+        tied = 0
+        expanded = False
+        if shown:
+            edge = value_of(shown[-1])
+            tied = sum(1 for row in rows if value_of(row) == edge)
+            if top.ties == "all" and tied > len(shown):
+                shown = [row for row in rows if value_of(row) >= edge][:200]
+                expanded = True
+        requested = top.top_n
+        base_columns = data.get("columns") or []
+        columns = base_columns
+        if page_table is not None and shown:
+            # 列顺序 / 列定义都照这一页的明细表来
+            keys = list(shown[0].keys())
+            wanted = {c["key"]: c for c in page_table.table_view.columns or []}
+            derived = {c["key"]: c for c in base_columns}
+            order: list[str] = []
+            for key in page_table.binding.dimensions or []:
+                if key in keys and key not in order:
+                    order.append(key)
+            if metric in keys and metric not in order:
+                order.append(metric)
+            for key in keys:
+                if key not in order:
+                    order.append(key)
+            if thumb_key:
+                order = [key for key in order if key != thumb_key]     # 缩略图列单独画
+            columns = []
+            for key in order:
+                if key in wanted:
+                    columns.append(wanted[key])
+                elif key in derived:
+                    columns.append(derived[key])
+                else:
+                    columns.append({"key": key, "label": key, "type": "text", "align": "left", "width": 0})
+        return {
+            "title": title,
+            "rows": shown,
+            "columns": columns,
+            "count": len(shown),
+            "requested": requested,
+            "tied": tied,
+            "ties": top.ties,
+            "expanded": expanded,
+            "metric": metric,
+            "agg": top.agg or "SUM",
+            # 缩略图 / 序号列跟着明细表走（弹窗与那张表的观感一致）
+            "thumb": bool(thumb_key) and page_table is not None and bool(page_table.table_view.thumb),
+            "thumb_key": thumb_key,
+            "index_column": bool(page_table.table_view.index_column) if page_table is not None else True,
+            "source": "table" if page_table is not None else "default",
+            "top": top.model_dump(),
+        }
     except HTTPException:
         raise
     except Exception as exc:

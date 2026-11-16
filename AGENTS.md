@@ -29,7 +29,7 @@
 | --- | --- | --- |
 | 前端 | `frontend/`（React + MUI v5 + Vite + TS） | 开发服 `:5300` |
 | 后端 | `backend/`（FastAPI + SQLAlchemy） | `:8300`，`DEBUG=true` 时热重载不生效，改代码要重启 |
-| 数据库 | Postgres `mingzebi_dev` | `postgresql://cavan-m4max@127.0.0.1:5432/mingzebi_dev` |
+| 数据库 | Postgres `mingcebi_dev` | `postgresql://cavan-m4max@127.0.0.1:5432/mingcebi_dev` |
 | 更新日志 | `docs/更新日志.md` | 只追加，最新在顶部 |
 | 自检截图 | `docs/_selfcheck/` | 每次交付的截图放这里 |
 
@@ -38,8 +38,8 @@
 ```bash
 cd backend
 kill $(lsof -nP -iTCP:8300 -sTCP:LISTEN -t)
-DATABASE_URL="postgresql://cavan-m4max@127.0.0.1:5432/mingzebi_dev" DEBUG=true \
-  nohup ./.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8300 > /tmp/mzbi_api.log 2>&1 &
+DATABASE_URL="postgresql://cavan-m4max@127.0.0.1:5432/mingcebi_dev" DEBUG=true \
+  nohup ./.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8300 > /tmp/mcbi_api.log 2>&1 &
 ```
 
 **看板数据存在 `bi_canvas.doc`**（`bi_dashboards` 是遗留空表，别查错）。
@@ -206,12 +206,12 @@ DATABASE_URL="postgresql://cavan-m4max@127.0.0.1:5432/mingzebi_dev" DEBUG=true \
 - **K8s 探针（2026-11-13 起）**：`GET /api/livez` 只证明进程能响应、**不碰数据库**（DB 抖动不能触发重启）；
   `GET /api/readyz` 要求数据库可用，不可用直接 **503**（被摘出 Service），Redis 连不上只报 `redis: down`、
   不影响就绪（缓存是可选依赖）。`/api/health` 保持原样（compose / 前端在用，别改语义）。
-  部署清单在 `deploy/helm/mingzebi`：探针已按上面口径配好，开 `worker.enabled` 时 API 自动切 `BI_JOB_EXECUTOR=worker`；
-  改 chart 必须跑 `helm lint deploy/helm/mingzebi` + `helm template`（默认 / worker+ingress+hpa 两个变体）再交付。
+  部署清单在 `deploy/helm/mingcebi`：探针已按上面口径配好，开 `worker.enabled` 时 API 自动切 `BI_JOB_EXECUTOR=worker`；
+  改 chart 必须跑 `helm lint deploy/helm/mingcebi` + `helm template`（默认 / worker+ingress+hpa 两个变体）再交付。
 - 前端单测：`cd frontend && npm test`（Vitest 2.1.9，和 Vite 5 匹配，别升到 vitest 3+）。
   纯函数（格式化、分套判定等）改动要补 `src/**/__tests__/*.test.ts`。
 - 主链路 E2E（本地门禁）：`cd frontend && npm run e2e`（Playwright + 本机 Chrome，7 条：登录跳转 / 我的看板 / 看板渲染 + 导出 / 筛选切换 / 组件库地图 / 模板分享弹窗 / 团队协同）；
-  需要前后端都在跑 + token 文件；看板 id 可用 `MZBI_DASHBOARD_ID` / `MZBI_FILTER_DASHBOARD_ID` / `MZBI_SHARE_DASHBOARD_ID` 覆盖；
+  需要前后端都在跑 + token 文件；看板 id 可用 `MCBI_DASHBOARD_ID` / `MCBI_FILTER_DASHBOARD_ID` / `MCBI_SHARE_DASHBOARD_ID` 覆盖；
   团队协同用例会「先分享再取消」恢复原状（本来就已分享时只断言不取消）；改主链路交互时同步改 `frontend/e2e/main-flow.spec.ts`。
 - Storybook（本地调组件）：`cd frontend && npm run storybook`（:6006）；用例在
   `src/features/components/renderers/Renderers.stories.tsx`（8 条 mock 渲染，不连后端）；
@@ -222,6 +222,67 @@ DATABASE_URL="postgresql://cavan-m4max@127.0.0.1:5432/mingzebi_dev" DEBUG=true \
   `GET /api/bi/errors` 管理员直通，其余账号需要 `bi:error:view`（管理后台「角色权限」可分配，2026-11-14 起）；
   管理后台「错误日志」有独立页面（筛选 + 详情抽屉 + 清理），「操作审计」页仍保留错误列表；
   保留 `BI_ERROR_RETAIN_DAYS`（默认 30 天，每小时最多清理一次）。
+- **操作监控（2026-11-14 起，S7）**：`bi_audit_logs` 是操作流水唯一入口（`log_audit`）；
+  MCP 调用在 `bi_mcp_audit`、AI 生成在 `bi_ai_audit_log`。管理后台第 9 分区「操作监控」
+  （`bi:audit:view`，迁移 `050_audit_monitor.sql`），接口 `GET /api/admin/monitor/{summary,activity}`
+  合并三张表，支持来源 / 状态 / 用户 / 关键词 / 时间范围，并对删除、权限、模型、角色、用户、
+  部门隔离、登录失败、RLS 异常、MCP 高危工具打「敏感」标。
+  **新增敏感写接口必须补 `log_audit`**（detail 里绝不写密码 / Key / 完整连接串）；
+  AI 调用统一由 `bi_ai_engine._call_llm` 落 `ai.call`（含回退与失败），不要在端点里另记一套。
+  审计归属由 `AuditUserMiddleware` 从 JWT `sub` 写入 ContextVar，深层 service 用 `get_audit_user()` 取
+  （sync 端点的线程池同样生效）。
+  **不是登录用户的动作也要留痕**：`bi_security_event`（迁移 `051`）+ `SecurityWatchMiddleware` 记录
+  匿名 / 令牌无效 / 越权 403 / 限流 / 扫描路径，字段含 IP、UA、设备号、指纹；
+  **指纹 v2（2026-11-15）**：有设备号时 = `sha256(设备号+UA+语言)` 前 16 位，**不混 IP**
+  （否则换 IP 会同时绕过 IP 与指纹两个维度）；没有设备号（curl / 脚本）时才混 IP，
+  避免所有同类客户端撞成同一指纹造成误杀。改这块不要重新把 IP 无条件加回指纹。
+  `log_audit` 自动带 IP/UA/指纹；外部直连数据库由 `pg_stat_activity` 采样记 `db_external_session`
+  （应用连接固定 `application_name=mingcebi-api`，不要改）。**直连数据库的权威审计是 pgaudit**，
+  配置步骤（安装 / postgresql.conf / 按角色降噪 / 验证 / 留存）见 `docs/pgaudit配置指南.md`；
+  采样只是轻量补充，不要把采样当成完整审计。回归：`scripts/activity_monitor_check.py`（32 项，自带清场）。
+- **安全卫士 v1（2026-11-14 起，自动封禁）**：`bi_guard_hit`（命中流水）+ `bi_security_block`（封禁，迁移 `052_security_guard.sql`），
+  代码 `backend/app/security/guard.py`，接入点是 `SecurityWatchMiddleware`。
+  只统计攻击型事件：`denied_anonymous / denied_invalid_token / denied_forbidden / rate_limited / suspicious_path / auth_failed`；
+  默认 300s 窗口内命中 10 次 → 同时封 **IP / 指纹 / 账号** 三个维度 1800s，到期自动解封。
+  命中后由中间件直接返回 403「访问已被安全卫士拦截」，不进入业务鉴权（`/api/health` 等 skip 路径仍放行）。
+  旋钮：`BI_GUARD_ENABLED`（0 关闭）、`BI_GUARD_WINDOW_SECONDS`、`BI_GUARD_MAX_HITS`、`BI_GUARD_BAN_SECONDS`、
+  `BI_GUARD_WHITELIST_IPS`（默认 `127.0.0.1,::1`；白名单 IP 完全豁免 —— 不计数也不封禁，
+  否则运维 / 回归脚本会因为共用指纹互相锁死）。
+  **客户端 IP 解析**：只有直连对端在 `BI_TRUSTED_PROXIES`（默认 `127.0.0.1,::1`）内才采信
+  `X-Forwarded-For`，并从右往左跳过可信代理取第一个不可信地址；非可信来源直接忽略该头。
+  nginx 必须**覆盖** XFF（`$remote_addr`），不要 `$proxy_add_x_forwarded_for`；
+  compose 已固定子网 `172.28.0.0/16` 并加入默认可信代理。不要改回「取 XFF 第一个地址」。
+  **管理员开关**：`bi_app_setting.security.guard.enabled`（迁移 `053`），后台「操作监控 → 安全卫士」右上角切换，
+  优先级 **数据库 > `BI_GUARD_ENABLED` > 默认开启**，5s 缓存；关闭只停计数与拦截，事件/审计照常记，
+  已有封禁保留（重开后仍在有效期内的恢复）。切换接口 `PUT /api/admin/monitor/guard/config`，写审计
+  `security.guard.toggle`；回归 `scripts/security_guard_switch_check.py`（9 项，自带清场与状态恢复）。
+  管理端 `GET /api/admin/monitor/guard`、`DELETE /api/admin/monitor/guard/blocks/{id}`（`bi:audit:view`，写审计
+  `security.guard.release_manual`）；前端在「操作监控 → 安全卫士」卡片里展示与解封。
+  **人工解封会同时清掉该维度窗口内的命中计数**，否则解封后的第一次请求会立刻重新封禁。
+  封禁记录不自动删除（保留追溯），命中流水由后台 60s 线程清理 2 天前数据。
+  回归：`scripts/security_guard_check.py`（10 项：阈值前普通 403 → 阈值后拦截 → IP/指纹/账号封禁 → guard_block 进监控 →
+  人工解封恢复 → 列表清空，自带清场）。
+- **查询契约不接受用户 SQL 片段（2026-11-14 修，模拟实测发现）**：
+  `/api/bi/query/{run,async}` 的 `_parse` 明确拒绝 `subquery` 与 `metrics[].expression`；
+  自定义 SQL 只允许语义层在服务端按数据集配置生成（`semantic/compiler.py` 直接构造 QueryObject）。
+  `query_builder` 的 `agg / order_by / limit / joins.on` 全部结构化校验，不再拼接用户字符串；
+  指标公式落库与执行都走 `semantic.validator.validate_metric_expression`（禁子查询/写操作/危险函数）。
+  改这块时**不要为了“灵活”把原始 SQL 片段重新开放给 HTTP 入口**；回归
+  `scripts/security_attack_simulation.py`（C1–C4h 注入用例，43 项）。
+- **导出鉴权（2026-11-14 修）**：`GET /api/bi/engine/export/{table}` 需 `bi:data:export:detail`；
+  `POST /api/bi/reports/export/{id}` 按格式分权（`xlsx` → detail，`html/pdf/png` → summary），
+  两处都写审计 `data.export.detail / data.export.summary`。新增任何导出入口必须同样「挂权限码 + 写审计」，
+  不能只校验登录或看板可读。表格导出按实际列排序（有 `id` 才 `ORDER BY id`，没有就不排序），
+  不要写死 `ORDER BY id`（`bi_demo_sku` 这类表会直接 500）。
+  客户端 CSV 导出（导航卡 / 明细表卡）目前走普通查询接口，
+  尚未受导出权限约束，属于 R2 待处理项。
+- **外发通道（2026-11-15 起，R2）**：报表订阅与告警的邮件/Webhook 统一走
+  `app/security/outbound.py`，不要在各路由里自己校验。普通用户邮件只能发自己域名或
+  `BI_OUTBOUND_EMAIL_DOMAINS`，Webhook 只能发 `BI_OUTBOUND_WEBHOOK_HOSTS`；外部地址仅管理员可配。
+  所有 Webhook 发送前解析域名，禁止回环/内网/元数据地址（内网目标需显式
+  `BI_OUTBOUND_ALLOW_PRIVATE_HOSTS`），且 `notifications.send` 不跟随重定向。
+  外发配置写审计（`report.subscription.outbound` / `alert.rule.outbound`，目标脱敏）；
+  回归 `scripts/outbound_channel_check.py`（7 项，自带清场）。
 - **Sentry / GlitchTip（2026-11-13 起）**：`app/observability.init_sentry()` 由 `SENTRY_DSN` 驱动 ——
   为空不导入 SDK、不发请求；DSN 写错只打印一行原因，**不能让应用起不来**（回归 `backend/tests/test_observability.py`）。
   后端取值顺序是「`init_sentry()` 参数（来自 `Settings`，可读 `backend/.env`）> 环境变量」，
@@ -368,8 +429,13 @@ DATABASE_URL="postgresql://cavan-m4max@127.0.0.1:5432/mingzebi_dev" DEBUG=true \
   种子侧 `seed_base.build_filter_spec` 按演示数据集现建筛选栏，`_prune_missing` 清掉数据集里不存在的引用；
   画布侧 `CanvasBoardPage.pruneSpecFields` 在拖入时按目标数据集再自检一次。
   新增模板 / 改模板绑定时别手抄 天猫·拼多多·乌鸫食品 这类「某张表才有的值」，否则换数据就对不上。
+- **辅助列缺了要静默降级，不能把整张卡打成报错**（2026-11-15 实测返工）：缩略图字段（`table_view.thumb_key`）、
+  图表轴（`chart.x_key / y_key / size_key / hbar_threshold_key`）、排行取值列（`rank.*`）、表格列配置都是
+  「挂载 / 画法」参数，平台分套切表或换绑数据集后旧名残留很常见。取数前统一由 `resolver._prune_aux_refs()`
+  按当前数据集摘掉；**不要再把这类列直接塞进查询**（旧实现把 `thumb_key` 无脑拼进 `columns`，
+  结果整张明细表只剩一条「未知字段：主图ID」）。用户显式绑定的维度 / 指标仍照旧报错 —— 那是有意的提示。
 - **启动不会覆盖库**：`upsert_builtin` 默认只插入缺失组件，已存在的一律保留（用户调过的字段/选项/默认值不能被种子冲掉）。
-  要让 `seed_base.BASE` 的改动生效：`MINGZEBI_RESEED=1` 启动一次；平时不要开。
+  要让 `seed_base.BASE` 的改动生效：`MINGCEBI_RESEED=1` 启动一次；平时不要开。
 
 **模板库（看板分享）**
 
@@ -408,9 +474,12 @@ DATABASE_URL="postgresql://cavan-m4max@127.0.0.1:5432/mingzebi_dev" DEBUG=true \
   每个 `/api/admin/*` 用 `require(code)` 鉴权，**每次请求从库里现算**（不信 JWT 旧快照）；前端只负责按同一批码显隐，不能把前端隐藏当鉴权。
 - 🚨 **`seed_roles` 只在角色首次创建时写默认权限**。旧实现每次启动都覆盖 `role.permissions`，界面上配好的权限一重启就没了 ——
   这与「只交付真实生效的功能」冲突，别改回无条件覆盖。
-- 模型配置唯一解析入口 `backend/app/services/ai_models.py`（顺序：`bi_ai_model` 表 → `data/ai_models.json` → 环境变量），
-  `bi_engine._load_default_llm()` 与 `bi_ai_engine._call_llm()` 都从这里取；新增 AI 调用点时也接这里，不要再各自读 env。
-  Key 加密存（`services/crypto`）、接口只回掩码，「测试连接」必须是真实请求，不许写死成功。
+- 模型配置唯一解析入口 `backend/app/services/ai_models.py::candidate_configs()`，顺序：
+  **库默认 → 库其它启用（按 id）→ `data/ai_models.json` → 环境变量**（按 `chat_url + model + key` 去重）。
+  调用方必须**逐个真实请求**：超时 / HTTP 非 2xx / 空回复就换下一个（`bi_ai_engine._call_llm` 已实现；
+  `routers/bi_engine._call_llm` 只是委托，不要恢复成第二套）。新增 AI 调用点时直接调 `bi_ai_engine._call_llm`，
+  不要各自读 env / 只取默认模型。Key 加密存（`services/crypto`）、接口只回掩码，
+  「测试连接」必须是真实请求，不许写死成功。
 - **管理边界（基本逻辑，2026-11-14）**：**管理员管系统级**（模型配置 / 错误日志 / 运维 / 部门树 / 全部部门数据）；
   **部门领导管本部门**（用户 / 角色权限 / 注册审批 / 概览，数据范围 `dept_and_children`）。
   `manager / dept_manager / director` 默认拥有 `bi:overview / bi:user:manage / bi:user:approve / bi:role:manage`，
@@ -443,7 +512,7 @@ DATABASE_URL="postgresql://cavan-m4max@127.0.0.1:5432/mingzebi_dev" DEBUG=true \
 - **角色排序**（2026-11-14 起）：`roles.sort_order` 越大职级越高（管理员 100 / 总监 90 / 经理 80 / 主管 70 / 员工 60 / 访客 50），
   角色列表统一 `ORDER BY sort_order DESC, id ASC`；新增内置角色时要同时给 sort_order，别依赖创建顺序。
 - **权限码白名单**（2026-11-14 起）：角色权限只认 `admin/permissions.py` 的 `VISIBLE_PERMISSION_CODES`
-  （7 个管理后台分区 + 5 个业务入口 + 3 个 AI 能力）。旧脚手架留下的 `kb:* / teamspace:* / user:* / system:*` 没有任何功能承载，
+  （8 个管理后台分区 + 5 个业务入口 + 3 个 AI 能力 + 2 个 MCP 能力 + 3 个数据能力）。旧脚手架留下的 `kb:* / teamspace:* / user:* / system:*` 没有任何功能承载，
   `/admin/permissions`、角色权限列表、角色保存都必须按白名单过滤 —— 不要把这些「勾了也没用」的权限重新放出来。
   内置角色种子（`rbac_seed.DEFAULT_ROLES`）也只写白名单内的权限。
 - **AI 能力权限（2026-11-14 起）**：`bi:ai:use / bi:ai:sql / bi:ai:export` 定义在 `admin/permissions.py` 的 `AI_PERMISSIONS`，
@@ -451,6 +520,57 @@ DATABASE_URL="postgresql://cavan-m4max@127.0.0.1:5432/mingzebi_dev" DEBUG=true \
   漏一处就是「角色权限页勾了不生效」。`/api/bi/engine/ai/*` 每个端点都必须挂
   `dependencies=[Depends(require("bi:ai:use"|"bi:ai:sql"))]` —— **漏挂 = 匿名可调用**（曾经整组端点都这样），新增 AI 端点照办。
   口径：无凭据 403（`HTTPBearer` 默认）、凭据无效/过期 401；回填在迁移 `046_ai_permissions.sql`（访客除外）。
+- **MCP / Agent 权限（2026-11-14 起，S1）**：`bi:mcp:manage` 是**第 8 个后台分区**（`BI_PERMISSIONS`，
+  管理页 `/bi/admin?tab=mcp`，接口在 `app/mcp/router.py`）；`bi:mcp:use / bi:mcp:write` 属 MCP 能力，
+  `bi:data:export:summary / detail`、`bi:resource:delete` 属数据能力 —— 后两类都**不进管理后台**，
+  只决定「能不能让 Agent 代调用 / 代写 / 导出 / 删除」。工具目录 23 条在 `bi_mcp_tool`（迁移 `047_mcp_permission.sql`），
+  **高危工具 `default_enabled=false`**，不要凭 UI 默认值放开。MCP 相关表只在这份迁移里建，S2 起网关复用，不要另起一套。
+- **高层角色**（2026-11-14 起）：内置角色 `executive`（排序 95、`data_scope=all`），权限恰为
+  `bi:ai:use` + `bi:data:export:summary`；**不要给它 SQL 入口 / 编辑设计 / 明细导出 / 删除**，
+  `scripts/admin_permission_matrix.py` 有 6 条断言守着它。
+- **MCP 网关（2026-11-14 起，S2）**：入口 `POST /api/mcp/rpc`（JSON-RPC：`initialize / ping / tools/list / tools/call`），
+  授权 `POST /api/mcp/grants` → `POST /api/mcp/token`（`client_id + secret + refresh_token` → 1h JWT，`aud=mcp`）。
+  **每次调用都重新校验**（jti 吊销 / `token_version` / 用户状态 / 客户端启用 / 授权未撤），不要缓存鉴权结果 ——
+  停用客户端与撤销授权必须立刻生效。工具实现在 `app/mcp/tools.py`，**只走服务层、不绕 HTTP**，
+  取数必须把 `dataset_id` 传给执行器；新增工具要同时进 `TOOLS` 注册表和 `bi_mcp_tool` 目录（默认关）。
+  `/api/mcp/` 已在 CSRF 豁免名单（Bearer 令牌无浏览器会话）。回归：`scripts/mcp_gateway_check.py`（15 项，自带清场）。
+- **部门级数据隔离（2026-11-14 起，S3）**：规则表 `bi_dataset_scope_rule`（一个数据集一条），
+  配置入口 `PUT /api/bi/semantic/datasets/{id}/security/dept-scope`，数据集「权限」页签有控件。
+  注入点在 `security/dataset_rules.row_conditions` —— **新增取数入口必须继续传 `dataset_id`，否则部门隔离和数据集规则一起失效**。
+  口径：`department` = 本部门（`dept_and_children` 含下级）、`self` = 列等于用户 id、`all` = 不注入；
+  配置存**字段名**、注入时解析成 `source_column`（中文别名数据集踩过坑）；配置失效一律 403，不放全量。
+  回归：`scripts/dept_scope_check.py`（12 项，真实物理表 + 自带清场）。
+- **物理表 RLS 兜底（2026-11-14 起，S6）**：`app/security/rls_backstop.py` 按 `bi_dataset_scope_rule`
+  给物理表建 `mcbi_dept_scope` 策略（ENABLE + FORCE RLS；缺 `app.rls_enforced / dept_ids / user_id`
+  一律拒绝，fail-closed）。**规则变更 / 删除必须同步策略**（`dept_scope.set_rule/delete_rule` 已接），
+  查询入口继续走 `executor.run`（它负责 `preflight` + 写会话变量）。只读角色 `mcbi_rls` 由启动
+  `bootstrap.ensure_rls_backstop()` 创建；要让应用连接本身也受 RLS 约束，设 `BI_RLS_APP_ROLE=mcbi_rls`
+  （默认关闭，超级用户连接会绕过 RLS）。**只覆盖本地抽取表**：直连数据集（`conn_mode=live`）在源库执行，
+  源库要不要 RLS 由对方负责，应用侧仍由 ABAC 兜住。回归：`scripts/rls_backstop_check.py`（17 项，自带清场）。
+- **数据归属部门（2026-11-14 起）**：`bi_dataset.dept_id` / `bi_source.dept_id`（NULL = 不归属部门），
+  新建数据源 / 数据集时可选。**可见性口径见 `app/semantic/access.py`**：公共（owner 为空）/ 自己的 /
+  归属本部门（含下级）可见；列表看不到的按 id 查详情或取数一律 403 —— 不要再写「列表过滤了就当权限做了」。
+  **AI / MCP 必须复用 `can_access_dataset`**（`bi_query_*` 已接），新工具照办；权限类拒绝抛
+  `McpPermissionError`（HTTP 403 + denied 审计），参数错误才是 200 + error body。
+  与 S3 的「部门隔离规则」是两件事：**归属部门管准入，隔离规则管行级过滤**，互不替代。
+  回归：`scripts/data_dept_owner_check.py`（15 项，自带清场）。
+- **编辑器 AI 整理（2026-11-14 起，S4）**：算法在 `app/ai/layout.py::plan_layout`（纯函数、可单测），
+  接口 `POST /api/bi/ai/layout` 只返回 `ops`，**不改文档、不写库**；前端 `AiLayoutBar` 应用时
+  「先 `pushHistory(旧快照)` + 同步 `prevSnap=新快照`」，保证**一次应用 = 一个撤销步**（否则 useEffect 会再补一条）。
+  版面算式：`floor((1440−(N−1)×16)/N/8)×8`（6 张 = 224，x 步进 240），筛选栏永远整宽。
+  **LLM 只出「每行几张」的结构意图，不要让它算坐标**；新增排版能力继续走纯函数 + 单测。
+  A4（按字段推荐组件）与 `bi_add_item` 共用 `app/dashboards/items.py`，不要在前端另写一套插元素逻辑。
+- **Agent 写看板（2026-11-14 起，S5）**：写工具在 `app/mcp/tools.py`（`bi_create_dashboard / bi_add_item /
+  bi_set_layout / bi_preview_dashboard / bi_save_dashboard / bi_publish_dashboard`），
+  **默认全关**，需 `bi:mcp:write` ∩ 客户端策略 ∩ 用户 grant 三重 AND。四条硬边界：
+  1. **只改自己建的草稿**：必须命中 `bi_mcp_dashboard(client_id, dashboard_id, user_id)` 且 `owner_id=当前用户`，
+     用户手工看板一律 403 —— 标记只能写这张表，**不要塞进 `doc.meta`**（`DashboardDoc` 没有该字段，保存会被重建）；
+  2. **保存前渲染自检**：`_render_guard` 跑 `render_dashboard`，任一卡 error 直接 400 拒绝保存；
+  3. **不做 last-write-wins**：`repo.save(expected_updated_at=…)` 乐观锁，冲突 409；`bi_set_layout` 越界/间距错 400；
+  4. **发布只能用户点**：`bi_publish_dashboard` 对 Agent 恒 403，前端发布走二次确认弹窗。
+  错误映射：权限 403 / 额度 429 / 冲突 409 / 参数与版面 400 / 其它业务错误 200（网关统一转 JSON-RPC）。
+  额度 `BI_MCP_DAILY_DASHBOARD_LIMIT`（默认 20，按 `bi_mcp_dashboard.created_at` 当天计数）。
+  回归：`scripts/mcp_write_check.py`（34 项，自带清场），改这块必须跑。
 - **业务入口权限**（2026-11-14 起）：`bi:nav:datasets / datasources / sql / components / editor` 控制主页菜单；
   角色权限里按「业务入口」分组勾选。**部门不绑定角色**（IT运维是部门，不是角色）；需要 SQL 入口的人，由管理员在角色权限里给对应角色勾「SQL 查询入口」。
   前端按 `/auth/me` 的权限码过滤菜单 + 守卫路由 + 深链回落；后端在 `app/security/nav_guard.py` 里拦**写操作与 SQL 执行**，
@@ -555,6 +675,70 @@ DATABASE_URL="postgresql://cavan-m4max@127.0.0.1:5432/mingzebi_dev" DEBUG=true \
     只能用 `type === "chart"` 的 `binding.dataset_id` 决定；筛选栏 / 标题 / 文字 / 画板上的
     `binding.dataset_id` 是历史残留，拿它说话会让左栏被钉死、点下拉没反应（下拉 `onChange` 也只回写 chart）。
     加新元素类型时想清楚它算不算「数据类」，别把残留绑定当真相。
+
+---
+
+## 7.5 安全与 MCP 生产化（2026-11-15 起）
+
+**水印身份化（R3）**
+
+- 水印文本 = 用户名 · 部门 · 时间 · 请求号，统一由 `app/security/watermark.py` 生成；
+  页面用 `WatermarkOverlay` + `hooks/useWatermarkText.ts`，导出 HTML / PDF / PNG 用同一份平铺 SVG，
+  Excel 写概览 + 打印页眉，明细导出首行写身份说明。
+- 请求号来自后端 `X-Request-Id`（`request.state.request_id`），前端 `api/client.ts` 记录最近一次；
+  新增导出入口必须走 `watermark.identity`，不要再自己拼文本。
+
+**Prompt 注入 / Agent 死循环（R5 / R6）**
+
+- `app/security/prompt_guard.py`：attack 拒绝（AI / MCP 400）、suspicious 只告警；
+  MCP 工具返回会二次清洗（`[疑似注入内容已移除]`）。开关 `BI_PROMPT_GUARD_ENABLED=0`。
+- `app/mcp/loop_guard.py`：`BI_MCP_SESSION_MAX_CALLS`（60）、`BI_MCP_REPEAT_LIMIT`（5）、
+  `BI_MCP_REPEAT_WINDOW`（120s）、`BI_MCP_NO_PROGRESS_LIMIT`（6）；`task_id` 批量任务豁免；
+  客户端可带 `Mcp-Session-Id` 头区分会话，不带头按「客户端 + 用户 + jti」算。
+
+**安全卫士 v2（R4）**
+
+- 组合规则默认只告警：`security.guard.combo.block=1` 才阻断（后台 `bi_app_setting`）。
+- 白名单分级：`BI_GUARD_WHITELIST_IPS` / `BI_GUARD_WHITELIST_CIDRS`（默认内网三段）/
+  `BI_GUARD_WHITELIST_ROLES`，后台可配 `security.guard.whitelist_*`；
+  **只豁免频率风控**，脱敏 / 导出上限 / RLS 照常。
+- 正常高频查询 / 导出只写 `business_high_frequency`，绝不封禁；管理员账号组合规则只告警不封禁。
+- 非工作时段默认 `BI_GUARD_WORK_HOURS=8-20`；组合规则 2 用 `bi_guard_hit` 计数（不能用安全事件表，
+  同事件 60 秒会去重）。
+
+**MCP 生产化（R7–R12）**
+
+- 入参按 `inputSchema` 校验（`app/mcp/validate.py`）；写工具支持 `idempotency_key`（7 天）；
+  终止型失败回收本会话未发布草稿；QPS `BI_MCP_QPS=20`、每日 `BI_MCP_DAILY_CALLS=2000`、
+  熔断 `BI_MCP_BREAKER_SECONDS=300`。
+- 令牌：`BI_MCP_ACCESS_TTL_SECONDS=1800`（夹在 900–3600）、`BI_MCP_MAX_GRANTS=5`；
+  `scopes` 支持工具名 / 风险级 / `*`；服务账号客户端 `is_service=true` 只能配 `grant_kind=service`。
+- 工具目录只留已实现项（迁移 055 删了 6 个假工具）；`limit` 统一上限 5000。
+- 错误码：denied/permission `-32003`、scope/param `-32004`、upstream `-32002`、
+  quota `-32029`、loop `-32010`。
+
+**敏感字段与 AI 配额（R13 / R14）**
+
+- 新数据集命中 `app/security/sensitive_fields.py` 的标签（薪资 / 成本 / 手机 / 身份证 / 邮箱 / 地址 / 密码）
+  自动写 `bi_dataset_column_mask`；手工关闭走 `DELETE .../security/masks/{column}` 并写 `dataset.mask.delete` 审计。
+- AI 用量落 `bi_ai_usage`：`BI_AI_DAILY_CALLS=300`、`BI_AI_DAILY_TOKENS=1000000`，超限 429。
+
+**导出开关（R16）**
+
+- 导出不是全局开关，而是**角色权限**：管理后台「角色与权限 → 数据导出」里的
+  「明细导出 `bi:data:export:detail`」「汇总导出 `bi:data:export:summary`」；
+  取消勾选保存后，该角色前端隐藏导出入口、接口 403。管理员角色始终可用。
+- 新增导出入口必须挂这两个权限码之一，并在前端用 `hasPerm` 控制可见性；
+  回归 `scripts/export_permission_check.py`（15/15）。
+
+**回归命令（后端 :8300 在跑）**
+
+```bash
+DATABASE_URL="postgresql://cavan-m4max@127.0.0.1:5432/mingcebi_dev" backend/.venv/bin/python \
+  scripts/{watermark,prompt_injection,agent_loop,mcp_token,mcp_production,sensitive_field,ai_quota,export_permission}_check.py
+# 卫士 v2 需要非工作时段：启动后端时加 BI_GUARD_WORK_HOURS=25-24
+DATABASE_URL="..." backend/.venv/bin/python scripts/security_guard_v2_check.py
+```
 
 ---
 

@@ -48,14 +48,14 @@ def test_build_email_without_recipient_is_none() -> None:
 
 
 def test_build_email_contains_links(monkeypatch) -> None:
-    monkeypatch.setenv("SMTP_FROM", "bi@mingzebi.com")
+    monkeypatch.setenv("SMTP_FROM", "bi@mingcebi.com")
     message = notifications.build_email(
-        "boss@mingzebi.com", "定时报表", "报表已生成",
+        "boss@mingcebi.com", "定时报表", "报表已生成",
         links={"查看报表": "https://x/r/1", "下载 Excel": "https://x/r/1.xlsx"},
     )
     assert message is not None
-    assert message["To"] == "boss@mingzebi.com"
-    assert message["From"] == "bi@mingzebi.com"
+    assert message["To"] == "boss@mingcebi.com"
+    assert message["From"] == "bi@mingcebi.com"
     body = message.get_content()
     assert "查看报表：https://x/r/1" in body
     assert "下载 Excel：https://x/r/1.xlsx" in body
@@ -63,7 +63,7 @@ def test_build_email_contains_links(monkeypatch) -> None:
 
 def test_email_without_smtp_host_fails(monkeypatch) -> None:
     monkeypatch.delenv("SMTP_HOST", raising=False)
-    channel, error = notifications.send("email", "boss@mingzebi.com", "t", "x")
+    channel, error = notifications.send("email", "boss@mingcebi.com", "t", "x")
     assert channel == "failed"
     assert error == "未配置 SMTP_HOST"
 

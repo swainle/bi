@@ -13,19 +13,25 @@ def log_audit(
     detail: dict = None,
     ip: str = "",
 ):
-    """异步写入审计日志（不阻塞请求）"""
+    """异步写入审计日志（不阻塞请求）；自动带上请求 IP / UA / 指纹."""
     try:
+        from app.middleware.audit_context import get_request_meta
+
+        meta = get_request_meta()
         db = SessionLocal()
         db.execute(text("""
-            INSERT INTO bi_audit_logs (user_id, action, resource_type, resource_id, detail, ip)
-            VALUES (:uid, :action, :rtype, :rid, CAST(:detail AS jsonb), :ip)
+            INSERT INTO bi_audit_logs
+              (user_id, action, resource_type, resource_id, detail, ip, user_agent, fingerprint)
+            VALUES (:uid, :action, :rtype, :rid, CAST(:detail AS jsonb), :ip, :ua, :fp)
         """), {
-            "uid": user_id,
+            "uid": user_id or None,  # 0 会撞 users 外键，系统级审计用 NULL
             "action": action,
             "rtype": resource_type,
             "rid": resource_id,
             "detail": json.dumps(detail or {}),
-            "ip": ip,
+            "ip": ip or meta["ip"],
+            "ua": meta["user_agent"],
+            "fp": meta["fingerprint"],
         })
         db.commit()
     except Exception:

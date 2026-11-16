@@ -19,7 +19,7 @@
 | --- | --- | --- | --- |
 | L1 IAM 身份 | 统一身份、用户/部门唯一来源 | JWT + `users` / `departments` + 注册审批 + `token_version` | 增加 MCP OAuth 客户端与用户授权 |
 | L2 RBAC 功能权限 | 角色管功能/菜单/资源 | `roles` + `role_permission` + `data_scope`；7 个后台分区 + 5 个业务入口 | 新增 AI / MCP / 导出类权限码 |
-| L3 ABAC 数据范围 | 部门/人员/敏感级 | `roles.data_scope`（后台列表）+ `bi_dataset_row_rule` / `bi_column_masks` / `bi_dataset_column_mask`（按 user/role 静态条件） | **缺部门维度**：数据集没有「按当前用户部门过滤」的规则类型 |
+| L3 ABAC 数据范围 | 部门/人员/敏感级 | `roles.data_scope`（后台列表）+ `bi_dataset_row_rule` / `bi_column_masks` / `bi_dataset_column_mask`（按 user/role 静态条件） | **缺部门维度** → **S3 已补**：`bi_dataset_scope_rule` + 执行器注入，fail-closed |
 | L4 AI 能力权限 | 是否允许用 AI、能用到哪一步 | `/ai/*` 接口已存在（nl_to_sql、gen_chart、agent-pipeline…）**没有权限码，且多数端点连 `get_current_user` 都没有**（`bi_engine.py` 路由无全局鉴权依赖，`/api/bi/engine/ai/*` 不登录即可调用） | **已在 S0 修复（2026-11-14）**：36 个端点挂 `bi:ai:use` / `bi:ai:sql`，权限码进白名单，迁移 `046_ai_permissions.sql` 回填 |
 | L5 MCP 工具网关 | 工具级独立授权、高危默认关闭 | 无 MCP Server / 工具目录 / 客户端策略 | 本方案核心（见 §4-§6） |
 | L6 Agent 执行 | Agent 继承用户、禁止越权 | 无 MCP 调用链；内部 `run_agent_pipeline` 是服务端流水线 | MCP token（用户代持）+ 每次调用重新鉴权 |
@@ -103,19 +103,24 @@
 3. 工具可见列表 = 用户有效权限 ∩ 客户端已启用工具 ∩ 用户已授权范围；
 4. 高危工具额外要求：角色权限 + 客户端策略 + 用户授权（三重 AND），默认全关。
 
-### 5.2 流程
+### 5.2 流程（S2 已按此实现）
+
 ```
-管理员创建 MCP 客户端（名称/回调/启用工具，默认只读）
+管理员创建 MCP 客户端（名称 / 说明，默认只读；工具默认按目录 risk 定）
         ↓
-用户在「授权页」同意 → bi_mcp_grant（user_id, client_id, scopes, expires）
+用户授权  POST /api/mcp/grants {client_id}    → bi_mcp_grant + 一次性 refresh_token（7 天）
         ↓
-Agent 获得 access_token（aud=mcp, sub=user, scopes=用户权限∩工具权限, 1h）
+Agent 换令牌 POST /api/mcp/token {client_id, client_secret, refresh_token}
+        → access_token（aud=mcp, sub=user, cid, ver, jti, 1h）
         ↓
-tools/list：按权限过滤
-tools/call：验 token → 客户端启用 → 用户状态/审批 → 工具策略 → 权限 → 数据范围
+tools/list：按「客户端策略 ∩ 角色权限 ∩ 已实现」过滤
+tools/call：验 token → 客户端启用 → 授权未撤 → 工具策略 → 权限 → 数据范围 → 执行
         ↓
-执行（复用内部 service，不绕 HTTP）→ 写 bi_mcp_audit
+执行（复用内部 service，不绕 HTTP）→ 写 bi_mcp_audit（含 denied / error）
 ```
+
+- 撤销授权 `DELETE /api/mcp/grants/{id}`、停用客户端 → **已签发 token 立即失效**（每次调用重查，不信签发快照）；
+- `/api/mcp/*` 已加入 CSRF 豁免：Agent 走 Bearer 令牌，没有浏览器会话，CSRF 不适用。
 
 ### 5.3 失效
 - 用户停用 / 改密 / 审批状态变化 → `token_version` 已推进，MCP 每次调用校验用户状态，立即失效；
@@ -194,11 +199,36 @@ bi_dataset_scope_rule (
 
 ---
 
-## 7. 部门数据隔离（当前最大缺口）
+## 7. 部门数据隔离（S3 已落地：数据集级规则）
 
-现状：`roles.data_scope` 只作用于**管理后台列表**；BI 数据（看板/数据集查询）没有部门强制过滤，只能靠人工配 `bi_dataset_row_rule`（按用户/角色静态条件），**MCP 一旦开放查询，必须补上**。
+现状（S3 之后）：数据集可配「部门列 + 模式」，查询执行器统一注入，UI 与 MCP 同一口径；
+物理表 RLS 仍是 S6 的兜底。实现见 `app/security/dept_scope.py`，生效点在
+`dataset_rules.row_conditions`（被 `query/executor.run` 与 `query/live.run_live` 共同调用）。
 
-推荐落地顺序：
+模式语义（`bi_dataset_scope_rule.mode`）：
+
+| 模式 | 注入条件 | 适用 |
+| --- | --- | --- |
+| `department` | `部门列 IN (当前用户部门，dept_and_children 时含下级)` | 绝大多数业务表（列存部门 id） |
+| `self` | `列 = 当前用户 id` | 列存 user_id 的「我的数据」表 |
+| `all` | 不注入 | 公共字典 / 全员可见维表 |
+
+- 配置存**字段名**，注入时解析成 `source_column`；列不存在 / 账号无部门 / 列名非法 → **403**，不放全量；
+- `data_scope=all`（管理员 / 高层）不注入，但列脱敏照旧；
+- 有规则才生效，没有规则 = 行为不变（要不要隔离由数据集负责人显式决定）。
+
+### 7.1 「归属部门」与「部门隔离」的区别（2026-11-14 增补）
+
+| | 归属部门 `dept_id` | 部门隔离规则 `bi_dataset_scope_rule` |
+| --- | --- | --- |
+| 配置位置 | 新建数据源 / 数据集时选 | 数据集「权限」页 → 部门隔离 |
+| 决定什么 | **准入**：谁能看到这份数据、谁能取数 | **行级过滤**：同一份数据里只能看到哪些行 |
+| 生效方式 | 列表过滤 + 详情/取数 403（`semantic/access.py`），MCP 复用同一函数 | 查询执行器注入 WHERE 条件 |
+| 典型组合 | 数据集归「市场部」→ 别的部门连列表都看不到 | 市场部内部再按「部门」列过滤到组 |
+
+两者独立配置，互不替代：**先归属部门控制「能不能用」，再用隔离规则控制「用到哪些行」**。
+
+推荐落地顺序（原计划，保留备查）：
 
 1. **数据集级部门规则（推荐，改动小、与现有查询链路一致）**
    - 数据集配置「部门列 + 模式」；
@@ -231,7 +261,7 @@ bi_dataset_scope_rule (
 > **状态口径**：`- [ ]` 未开始 · `- [~]` 进行中 · `- [x]` 已完成。
 > **打勾规则**：某一阶段的「完成标准」必须**逐条可复现**才允许打勾，并补上日期与验证命令；
 > 只是界面做出来、假数据跑通、或只改前端不动后端的，一律不算完成（见 `AGENTS.md` §0.1）。
-> **当前进度：1 / 7 阶段完成**（最后更新 2026-11-14）
+> **当前进度：7 / 7 阶段完成**（最后更新 2026-11-14）
 >
 > 阶段与下文编号的对应关系：S0 = §14，S1 = §2/§3/§6，S2 = §4/§5，S3 = §7，S4 = §12，S5 = §13，S6 = P4 兜底。
 
@@ -240,12 +270,12 @@ bi_dataset_scope_rule (
 | 阶段 | 主题 | 依赖 | 风险 | 状态 |
 | --- | --- | --- | --- | --- |
 | S0 | AI 接口鉴权修复 | 无（最优先） | 低 | `- [x]` 2026-11-14 |
-| S1 | 权限码 + 迁移 047 + 第 8 分区 + 高层角色 | S0 可并行 | 低 | `- [ ]` |
-| S2 | MCP 网关骨架 + 只读工具 + 审计 | S1 | 中 | `- [ ]` |
-| S3 | 部门级数据隔离（数据集规则） | S1 | 中高 | `- [ ]` |
-| S4 | 编辑器 AI 助手（对齐 / 排版） | S0 | 低 | `- [ ]` |
-| S5 | Agent 编排看板（写工具） | S1 + S2 | 高 | `- [ ]` |
-| S6 | 物理表 RLS 兜底 + 告警 | S3 + S5 | 高 | `- [ ]` |
+| S1 | 权限码 + 迁移 047 + 第 8 分区 + 高层角色 | S0 可并行 | 低 | `- [x]` 2026-11-14 |
+| S2 | MCP 网关骨架 + 只读工具 + 审计 | S1 | 中 | `- [x]` 2026-11-14 |
+| S3 | 部门级数据隔离（数据集规则） | S1 | 中高 | `- [x]` 2026-11-14 |
+| S4 | 编辑器 AI 助手（对齐 / 排版） | S0 | 低 | `- [x]` 2026-11-14 |
+| S5 | Agent 编排看板（写工具） | S1 + S2 | 高 | `- [x]` 2026-11-14 |
+| S6 | 物理表 RLS 兜底 + 告警 | S3 + S5 | 高 | `- [x]` 2026-11-14 |
 
 ---
 
@@ -262,76 +292,108 @@ bi_dataset_scope_rule (
 
 ---
 
-### S1 · 权限码与基础设施
+### S1 · 权限码与基础设施 — ✅ 2026-11-14
 
-- [ ] 迁移 `047_mcp_permission.sql`（046 已被 S0 的 `046_ai_permissions.sql` 占用）：`bi_mcp_tool / bi_mcp_client / bi_mcp_client_tool / bi_mcp_grant / bi_mcp_token_revoke / bi_mcp_dashboard / bi_mcp_audit / bi_dataset_scope_rule`
-- [ ] 新增权限码：`bi:ai:*`（S0 已带）、`bi:mcp:use / bi:mcp:manage / bi:mcp:write`、`bi:data:export:summary / detail`、`bi:resource:delete`
-- [ ] 新增第 8 后台分区 `bi:mcp:manage`（`BI_PERMISSIONS` + 白名单 + 前端分区路由 + 侧栏）
-- [ ] 新建「高层」角色（`data_scope=all`、只读 + 汇总导出、`sort_order` 按 §3）
-- [ ] 工具目录种子（低/中/高 + `required_permissions` + `default_enabled`）
+- [x] 迁移 `047_mcp_permission.sql`：`bi_mcp_tool / bi_mcp_client / bi_mcp_client_tool / bi_mcp_grant / bi_mcp_token_revoke / bi_mcp_dashboard / bi_mcp_audit / bi_dataset_scope_rule`（8 张表全部建好）
+- [x] 新增权限码：`bi:mcp:use / bi:mcp:write / bi:mcp:manage`、`bi:data:export:summary / detail`、`bi:resource:delete`
+- [x] 新增第 8 后台分区 `bi:mcp:manage`（`BI_PERMISSIONS` + 白名单 + 前端分区路由 + 侧栏 + 真实管理页）
+- [x] 新建「高层」角色 `executive`（`data_scope=all`、`sort_order=95`、只读 + `bi:data:export:summary`）
+- [x] 工具目录种子（23 条，低/中/高 + `required_permissions` + `default_enabled`，高危全关）
+- [x] 顺带交付：管理后台「MCP 客户端」页（真实列表 / 新建并一次性展示 secret / 启停 / 工具目录），不再等 S2
 
-**完成标准**：管理后台「角色权限」能看到新权限码并保存生效（重启不丢）；`bi:mcp:manage` 只有管理员可见；高层角色登录后只有只读与汇总导出，SQL / 明细 / 删除均 403。
-
----
-
-### S2 · MCP 网关 + 只读工具
-
-- [ ] 网关：token 校验（`aud=mcp`、jti 吊销、`token_version`、用户状态）→ 客户端启用 → 用户 grant → 工具策略 → 权限 → 数据范围
-- [ ] `tools/list` 按交集过滤；`tools/call` 全部拒绝路径落 `bi_mcp_audit`
-- [ ] 只读工具：`bi_list_dashboards / bi_get_dashboard / bi_render_dashboard / bi_list_datasets / bi_get_dataset_schema / bi_query_dataset / bi_list_metrics / bi_get_metric / bi_query_metric`
-- [ ] `bi_ai_analyze`（依赖 S0）
-- [ ] 管理后台「MCP」页：客户端增停、工具开关（高危二次确认）、授权记录、调用审计
-
-**完成标准**：无 token 401；未启用客户端 403；未签 grant 403；高危工具默认 403；同一用户 MCP 查询结果 = UI 结果；审计每次调用（含拒绝）可查且参数脱敏；关闭客户端后 token 立刻失效。
+**完成标准（已验证）**：角色权限页能看到并保存新权限码（`/admin/permissions` 按白名单下发）；
+`bi:mcp:manage` 只有管理员进得去（普通角色 / 高层访问 `/admin/mcp/clients` 均 403）；
+高层角色 SQL 403、看板 200、AI 分析 200、权限集恰为 `{bi:ai:use, bi:data:export:summary}`；
+矩阵脚本 `207/207 通过`，`tsc --noEmit` 干净，管理页截图见 `docs/_selfcheck/s1_mcp_admin.png`。
+说明：`bi:data:export:detail / bi:resource:delete` 的**接口挂载**在 S2/S5，本轮只保证权限码与角色分配可用。
 
 ---
 
-### S3 · 部门级数据隔离
+### S2 · MCP 网关 + 只读工具 — ✅ 2026-11-14
 
-- [ ] 数据集配置「部门列 + 模式（department / self / all）」
-- [ ] `query/executor.run` 与 `query/live.run_live` 在现有 `row_conditions` 旁注入 `col = :dept_id`（或 `IN (本部门及下级)`），与数据集规则 AND
-- [ ] 规则缺失 / 列不存在 / 编译失败 → fail-closed 403
-- [ ] `data_scope=all` 角色不注入，但列脱敏照旧
-- [ ] MCP 查询 / 渲染走同一执行器，自动继承
+- [x] 网关：token 校验（`aud=mcp`、jti 吊销、`token_version`、用户状态）→ 客户端启用 → 用户 grant → 工具策略 → 权限 → 数据范围
+- [x] `tools/list` 按交集过滤；`tools/call` 全部拒绝路径落 `bi_mcp_audit`
+- [x] 只读工具：`bi_list_dashboards / bi_get_dashboard / bi_render_dashboard / bi_list_datasets / bi_get_dataset_schema / bi_query_dataset / bi_list_metrics / bi_get_metric / bi_query_metric`
+- [x] `bi_ai_analyze`
+- [x] 管理后台「MCP」页补齐：客户端工具开关（高危二次确认）、授权记录（撤销）、调用审计（含拒绝）；另加「生成我的连接令牌」
 
-**完成标准**：部门员工查本部门 200、跨部门数据 0 行或被拒；配置错误直接 403 而不是返回全量；MCP 与 UI 对同一用户返回一致；无部门列的数据集有明确提示（不假装隔离）。
-
----
-
-### S4 · 编辑器 AI 助手（§12）
-
-- [ ] A1 一键整理版面（后端 `app/ai/layout.py::plan_layout` 纯函数 + `POST /api/bi/ai/layout`）
-- [ ] A2 选区对齐 / 等分（复用 `alignSelection` / `distributeSelection`）
-- [ ] 前端 `AiLayoutBar`：结果确认条（应用 / 撤销 / 重试），一次应用 = 一个撤销步
-- [ ] A3 一句话排版（LLM 只出结构意图，坐标仍由算法算）
-- [ ] A4 组件推荐补齐（依赖 S0 的 `bi:ai:use`）
-- [ ] 空态 / 单元素置灰；LLM 超时可回退手动
-
-**完成标准**：6 张指标卡整理为 224×104、x=0/240/480/720/960/1200、间距 16；一次 `⌘Z` 完整回退；选中 3 个元素时其余坐标不变；分套页只动当前平台那套且筛选栏不变形；无权限 403。
+**完成标准（已验证）**：无令牌 403；错误 secret 403；客户端停用/工具关闭/授权撤销 → 已签发 token 立即 403；
+高危工具默认不出现在 `tools/list`、调用 403；**同一用户同一查询：MCP 结果 = UI 结果**（逐行相等）；
+审计有记录、含 denied、参数不含 secret；`scripts/mcp_gateway_check.py` **15/15 通过**（自带清场）。
 
 ---
 
-### S5 · Agent 编排看板（§13）
+### S3 · 部门级数据隔离 — ✅ 2026-11-14
 
-- [ ] 写工具：`bi_create_dashboard / bi_add_item / bi_set_layout / bi_preview_dashboard / bi_save_dashboard / bi_publish_dashboard`
-- [ ] `bi_mcp_dashboard` 归属登记 + 只准改自己建的草稿
-- [ ] `bi_set_layout` 用 `plan_layout` 归一，越界/间距错 400
-- [ ] 保存前强制 `render_dashboard` 自检，任一卡 error → 拒绝保存
-- [ ] `updated_at` 乐观锁，冲突 409
-- [ ] 每用户每日新建额度
-- [ ] 前端：草稿标 + 顶部提示条 + 一键「用 AI 整理版面」+ 发布二次确认
+- [x] 数据集配置「部门列 + 模式（department / self / all）」：`PUT/DELETE /api/bi/semantic/datasets/{id}/security/dept-scope`，数据集「权限」页签有对应控件
+- [x] `query/executor.run` 与 `query/live.run_live` 在现有 `row_conditions` 内追加部门条件，与行级规则同时 AND
+- [x] 规则失效 → fail-closed 403（列被删 / 账号无部门 / 列名非法），另配一层标识符正则
+- [x] `data_scope=all` 不注入，但列脱敏照旧（脱敏在结果层，独立于 WHERE）
+- [x] MCP 查询 / 渲染走同一执行器，自动继承
 
-**完成标准**：Agent 建的草稿只出现在 owner「我的看板」并带草稿标，团队页/模板库不可见；Agent 改用户手工看板 403；并发编辑 409 不覆盖；含错误卡片的草稿无法保存；发布必须用户点；审计完整。
+**完成标准（已验证）**：员工只看本部门、主管看本部门+下级、跨部门 0 行、无部门账号 403；
+`self` 模式用部门列时 0 行（证明条件真的注入）；`all` 模式不隔离；部门列被删 → 403 而不是放全量；
+`scripts/dept_scope_check.py` **12/12 通过**（真实物理表 + 真实账号，自带清场）。
+
+**一个实现细节**：配置里存的是**字段名**（如「部门」），注入 SQL 时解析成 `bi_dataset_field.source_column`（如 `dept_id`）——
+直接拿字段名当物理列会在中文别名数据集上报「列不存在」，这是本轮踩到并修掉的坑。
 
 ---
 
-### S6 · 物理表 RLS 兜底
+### S4 · 编辑器 AI 助手（§12）— ✅ 2026-11-14
 
-- [ ] 带 `dept_id` 的物理表加 policy，连接设置 `app.user_id / app.dept_id`
-- [ ] 与 ABAC 条件同时 AND，fail-closed
-- [ ] 跨部门直连验证 + 告警
+- [x] A1 一键整理版面：`app/ai/layout.py::plan_layout` 纯函数 + `POST /api/bi/ai/layout`（`bi:ai:use`）
+- [x] A2 选区整理：选中 ≥2 个时只动选区（`scope=selection` + 选区外接矩形），其它元素坐标不变；工具栏原有 6 向对齐 / 等距继续可用
+- [x] 前端 `AiLayoutBar`：输入（可选一句话）→ 结果确认（应用 / 重试 / 取消）→ 应用后 Snackbar 可撤销；**一次应用 = 一个撤销步**
+- [x] A3 一句话排版：LLM 只产出「每行几张」的结构意图，坐标仍由 `plan_layout` 算；LLM 失败自动退回按位置归行
+- [x] 空态 / 单元素置灰（<2 个元素按钮禁用）；接口失败提示「可手动调整」，不卡死
+- [x] A4 组件推荐补齐 → **S5 已交付**（`app/dashboards/items.py` 共用插元素逻辑，没有第二套实现）
 
-**完成标准**：绕过接口直连数据库查跨部门数据仍被拦；策略缺失时拒绝而不是放行；与 S3 结果一致（不出现两套口径互相矛盾）。
+**完成标准（已验证）**：6 张卡片整理为 **224×104，x = 0/240/480/720/960/1200**，筛选栏强制 `x=0/w=1440`；
+选区整理只返回选中元素的 ops 且不越出选区；`⌘Z` 一次回到整理前（截图对比：应用前 / 应用后 / 撤销后）；无 `bi:ai:use` → 403；
+算法单测 6 项、接口实测通过；UI 截图见 `docs/_selfcheck/s4_ai_*.png`。
+
+---
+
+### S5 · Agent 编排看板（§13）— ✅ 2026-11-14
+
+- [x] 写工具：`bi_create_dashboard / bi_add_item / bi_set_layout / bi_preview_dashboard / bi_save_dashboard / bi_publish_dashboard`（另补 `bi_list_components`）
+- [x] A4 组件推荐（从 S4 移交）：`POST /api/bi/ai/recommend` + `bi_list_components(dataset_id)`，按字段推荐 3~5 个组件；
+      插元素逻辑统一在 `app/dashboards/items.py`，与 `bi_add_item` 同一套
+- [x] `bi_mcp_dashboard` 归属登记 + 只准改自己建的草稿（client + user + owner_id 三重校验，手工看板 403）
+- [x] `bi_set_layout` 用 `plan_layout` 归一；`mode=exact` 按原坐标校验，越界/间距错 400
+- [x] 保存前强制 `render_dashboard` 自检，任一卡 error → 拒绝保存（400）
+- [x] `updated_at` 乐观锁，冲突 409（`repo.save(expected_updated_at=…)`）
+- [x] 每用户每日新建额度（默认 20，`BI_MCP_DAILY_DASHBOARD_LIMIT` 可调），超限 429
+- [x] 前端：草稿标（项目页）+ 顶部提示条 + 一键「用 AI 整理版面」+「AI 推荐组件」+ 发布二次确认
+
+**完成标准（已验证）**：`scripts/mcp_write_check.py` **34/34 通过**（真实客户端 + 真实数据集，自带清场）：
+Agent 草稿只出现在 owner「我的看板」（`agent_generated=true`、`published=false`），团队页不可见；
+编造字段 400、版面越界 400、exact 间距错 400、过期 `updated_at` 409、含错误卡片拒绝保存 400、
+Agent 发布 403、改用户手工看板 403、每日额度第 21 次 429；写操作与拒绝都有 `bi_mcp_audit`，参数不含 secret。
+`pytest` 284 项全绿；网关 15/15、部门隔离 12/12、归属部门 15/15、权限矩阵 207/207；
+截图 `docs/_selfcheck/s5_draft_badge.png`、`s5_draft_banner.png`、`s5_ai_recommend.png`、`s5_publish_confirm.png`。
+
+---
+
+### S6 · 物理表 RLS 兜底 — ✅ 2026-11-14
+
+- [x] 带部门列的物理表自动加 policy（`mcbi_dept_scope` + `ENABLE/FORCE ROW LEVEL SECURITY`），
+      查询连接写入 `app.user_id / app.dept_id / app.dept_ids / app.data_scope / app.scope_mode / app.rls_enforced`
+- [x] 与 ABAC 条件同时 AND，fail-closed：策略表达式缺会话变量 → 0 行；
+      规则配了但策略缺失 → 预检先自愈，仍失败则 403（不放行）
+- [x] 跨部门直连验证 + 告警：`scripts/rls_backstop_check.py`（只读角色直连 + 安全审计 `security.rls.*`）
+
+**实现**：`app/security/rls_backstop.py`（策略同步 / 会话变量 / 预检 / 只读角色），
+规则保存与删除时同步策略（建不出来就回滚规则），`executor.run` 查询前预检并在数据 SELECT 期间
+可选切到只读角色（`BI_RLS_APP_ROLE=mcbi_rls`，默认关闭）；启动时 `bootstrap.ensure_rls_backstop()` 补齐存量规则。
+直连账号用 `mcbi_rls`（NOLOGIN，仅 SELECT），与 S3 读同一份 `bi_dataset_scope_rule`，不出现两套口径。
+
+**完成标准（已验证）**：`scripts/rls_backstop_check.py` **17/17 通过**（带 `BI_RLS_APP_ROLE`；默认关闭时 16/16）：
+直连不设变量 → 0 行；部门 A → 本部门；A+下级 → 含下级；`data_scope=all` → 全量；`self` → 按用户 id；
+删掉策略（RLS 仍开）→ 0 行（数据库默认拒绝），预检可自愈重建；应用查询与直连结果一致；
+视图建不了策略 → 规则回滚 + `security.rls.sync_failed` 审计告警。
+`pytest` **301 全绿**；MCP 网关 15/15、写工具 34/34、部门隔离 12/12、归属部门 15/15。
 
 ---
 
@@ -370,10 +432,10 @@ bi_dataset_scope_rule (
 
 | 能力 | 位置 |
 | --- | --- |
-| 元素位置模型 `layout {x,y,w,h}` | 后端 [models.py#L67](file:///Users/cavan-m4max/MingzeBI/backend/app/dashboards/models.py#L67)；前端 [types.ts#L463-L482](file:///Users/cavan-m4max/MingzeBI/frontend/src/features/components/types.ts#L463-L482) |
-| 磁吸：8 栅格 + 元素边/中线 + 画布中线，拖动/缩放/拖参考线三种 | [snapping.ts](file:///Users/cavan-m4max/MingzeBI/frontend/src/features/components/board/snapping.ts)（`snapMove / snapResize / snapGuide`） |
-| 多选对齐 6 向 + 等间距（两端固定、无累积误差） | [CanvasBoardPage.tsx#L1451-L1505](file:///Users/cavan-m4max/MingzeBI/frontend/src/pages/CanvasBoardPage.tsx#L1451-L1505) |
-| 撤销栈（整份 items+guides 快照） | [CanvasBoardPage.tsx#L1131-L1219](file:///Users/cavan-m4max/MingzeBI/frontend/src/pages/CanvasBoardPage.tsx#L1131-L1219) |
+| 元素位置模型 `layout {x,y,w,h}` | 后端 [models.py#L67](file:///Users/cavan-m4max/MingceBI/backend/app/dashboards/models.py#L67)；前端 [types.ts#L463-L482](file:///Users/cavan-m4max/MingceBI/frontend/src/features/components/types.ts#L463-L482) |
+| 磁吸：8 栅格 + 元素边/中线 + 画布中线，拖动/缩放/拖参考线三种 | [snapping.ts](file:///Users/cavan-m4max/MingceBI/frontend/src/features/components/board/snapping.ts)（`snapMove / snapResize / snapGuide`） |
+| 多选对齐 6 向 + 等间距（两端固定、无累积误差） | [CanvasBoardPage.tsx#L1451-L1505](file:///Users/cavan-m4max/MingceBI/frontend/src/pages/CanvasBoardPage.tsx#L1451-L1505) |
+| 撤销栈（整份 items+guides 快照） | [CanvasBoardPage.tsx#L1131-L1219](file:///Users/cavan-m4max/MingceBI/frontend/src/pages/CanvasBoardPage.tsx#L1131-L1219) |
 | 版面算式（1440 宽 / 间距 16 / 一排 N 张 / 整宽元素） | `AGENTS.md` §4 + 前端 `FULL_WIDTH_KINDS` |
 
 ### 12.2 硬原则：AI 只出「布局操作」，不直接改文档
@@ -439,12 +501,12 @@ POST /api/bi/ai/layout
 
 | 步骤 | 复用函数 / 接口 |
 | --- | --- |
-| 新建项目 | `repo.create(db, name, doc, owner_id)`（与 [router.py#L216-L233](file:///Users/cavan-m4max/MingzeBI/backend/app/dashboards/router.py#L216-L233) 同一条） |
-| 组件库 / 类型目录 | `repo.list_components`（[components/router.py#L56-L70](file:///Users/cavan-m4max/MingzeBI/backend/app/components/router.py#L56-L70)）、`chart_catalog.catalog()`（`/catalog`） |
-| 文档校验 | `validate_doc(raw, heal=True)`（[models.py#L308](file:///Users/cavan-m4max/MingzeBI/backend/app/dashboards/models.py#L308)） |
-| 保存 | `repo.save` + `render_cache.invalidate` + `sources.rebuild`（[router.py#L380-L401](file:///Users/cavan-m4max/MingzeBI/backend/app/dashboards/router.py#L380-L401)） |
-| 渲染自检 | `render_dashboard`（[render.py#L382](file:///Users/cavan-m4max/MingzeBI/backend/app/dashboards/render.py#L382)） |
-| 草稿态 | `_blank_doc()` 本来就把 `published=false` 写进 doc（[router.py#L207-L213](file:///Users/cavan-m4max/MingzeBI/backend/app/dashboards/router.py#L207-L213)）；**注意「我的看板」默认 `published_only=false`，草稿照样会列出**——隔离靠「不分享 + 前端打标」，不能假设它不显示（[router.py#L102-L134](file:///Users/cavan-m4max/MingzeBI/backend/app/dashboards/router.py#L102-L134)） |
+| 新建项目 | `repo.create(db, name, doc, owner_id)`（与 [router.py#L216-L233](file:///Users/cavan-m4max/MingceBI/backend/app/dashboards/router.py#L216-L233) 同一条） |
+| 组件库 / 类型目录 | `repo.list_components`（[components/router.py#L56-L70](file:///Users/cavan-m4max/MingceBI/backend/app/components/router.py#L56-L70)）、`chart_catalog.catalog()`（`/catalog`） |
+| 文档校验 | `validate_doc(raw, heal=True)`（[models.py#L308](file:///Users/cavan-m4max/MingceBI/backend/app/dashboards/models.py#L308)） |
+| 保存 | `repo.save` + `render_cache.invalidate` + `sources.rebuild`（[router.py#L380-L401](file:///Users/cavan-m4max/MingceBI/backend/app/dashboards/router.py#L380-L401)） |
+| 渲染自检 | `render_dashboard`（[render.py#L382](file:///Users/cavan-m4max/MingceBI/backend/app/dashboards/render.py#L382)） |
+| 草稿态 | `_blank_doc()` 本来就把 `published=false` 写进 doc（[router.py#L207-L213](file:///Users/cavan-m4max/MingceBI/backend/app/dashboards/router.py#L207-L213)）；**注意「我的看板」默认 `published_only=false`，草稿照样会列出**——隔离靠「不分享 + 前端打标」，不能假设它不显示（[router.py#L102-L134](file:///Users/cavan-m4max/MingceBI/backend/app/dashboards/router.py#L102-L134)） |
 
 ### 13.2 工具设计（P3，默认全关，需 `bi:mcp:write`）
 

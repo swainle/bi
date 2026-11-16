@@ -1,0 +1,111 @@
+{
+  "kind": "donut",
+  "rows": [
+    {
+      "name": "平台C",
+      "value": 55293
+    },
+    {
+      "name": "平台A",
+      "value": 49392
+    },
+    {
+      "name": "平台B",
+      "value": 47195
+    }
+  ],
+  "series": [
+    {
+      "name": "平台C",
+      "value": 55293
+    },
+    {
+      "name": "平台A",
+      "value": 49392
+    },
+    {
+      "name": "平台B",
+      "value": 47195
+    }
+  ],
+  "total": 151880,
+  "top_share": 0.3640571503818804,
+  "dimension_label": "平台",
+  "metric_label": "日销量",
+  "series_label": null,
+  "component_kind": "donut",
+  "title": "构成",
+  "subtitle": "",
+  "unit": "",
+  "ui": {
+    "accent": "indigo",
+    "radius": 14,
+    "min_height": 260,
+    "show_unit": true,
+    "animate": true,
+    "align": "left",
+    "columns": 1,
+    "badge": "",
+    "edge": true,
+    "edge_px": 1.0,
+    "edge_alpha": 22,
+    "shadow_px": 16
+  },
+  "compute": {
+    "headline": "first",
+    "hint": "none",
+    "format": "int",
+    "bucket_size": null,
+    "bucket_start": null,
+    "bucket_count": 0,
+    "transform": "raw",
+    "scale": 1.0,
+    "offset": 0.0,
+    "decimals": 0,
+    "prefix": "",
+    "suffix": ""
+  },
+  "chart": {
+    "show_labels": true,
+    "show_legend": true,
+    "show_grid": true,
+    "show_title": true,
+    "show_meta": true,
+    "x_title": "",
+    "y_title": "",
+    "label_rotate": 0,
+    "y_min": null,
+    "y_max": null,
+    "bar_width": 26,
+    "hbar_threshold_key": "",
+    "hbar_threshold_gte": null,
+    "hbar_highlight": "violet",
+    "smooth": true,
+    "label_format": "auto",
+    "cloud_palette": "潮彩",
+    "scatter_mode": "point",
+    "trend_line": false,
+    "dot_size": 8,
+    "x_key": "",
+    "y_key": "",
+    "size_key": "",
+    "log_x": false,
+    "log_y": false,
+    "label_layout": "inside",
+    "single_slice": true,
+    "pie_inner": 46,
+    "pie_start": 90,
+    "pie_label": "name_pct",
+    "pie_gap": true,
+    "pie_rose": false
+  },
+  "combo": {
+    "bar_name": "",
+    "line_name": "",
+    "note": "",
+    "right_axis": true,
+    "smooth": true
+  },
+  "rls": false,
+  "top": null
+}

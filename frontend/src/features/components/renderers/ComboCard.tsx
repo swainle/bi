@@ -6,6 +6,8 @@ import { accentOf } from "../palette";
 import CardShell from "../skin/CardShell";
 import { AXIS, SERIES, TEXT, TOOLTIP } from "../skin/tokens";
 import { chartOf, formatAxis, formatValue } from "../skin/format";
+import { fitChart } from "../skin/CardFit";
+import { useBoxSize } from "../skin/useBoxSize";
 import type { RenderPayload, UiSpec } from "../types";
 
 interface Props {
@@ -17,6 +19,7 @@ interface Props {
 export default function ComboCard({ payload, ui, compact }: Props) {
   const token = accentOf(ui.accent);
   const opts = chartOf(payload.chart);
+  const [boxRef, box] = useBoxSize<HTMLDivElement>();
   const series = (payload.series ?? []) as unknown as { name: string; bar: number; line: number }[];
   const barName = payload.bar_label || "柱";
   const lineName = payload.line_label || "线";
@@ -67,10 +70,10 @@ export default function ComboCard({ payload, ui, compact }: Props) {
       },
       {
         type: "value",
-        show: !compact,
+        show: !compact && !(box.w > 0 && box.w < 420),
         axisTick: { show: false },
         axisLine: { show: false },
-        axisLabel: { ...AXIS.label, formatter: (v: number) => formatAxis(v, opts) },
+        axisLabel: { ...AXIS.label, show: !compact && !(box.w > 0 && box.w < 420), formatter: (v: number) => formatAxis(v, opts) },
         splitLine: { show: false },
       },
     ],
@@ -119,8 +122,10 @@ export default function ComboCard({ payload, ui, compact }: Props) {
         ? undefined
         : (payload.subtitle || payload.combo?.note || `柱 ${barName} · 线 ${lineName}`)}
     >
-      <ReactEChartsCore option={option} notMerge
-        style={{ width: "100%", height: "100%" }} opts={{ renderer: "canvas" }} />
+      <Box ref={boxRef} sx={{ width: "100%", height: "100%" }}>
+        <ReactEChartsCore option={fitChart(option, box)} notMerge
+          style={{ width: "100%", height: "100%" }} opts={{ renderer: "canvas" }} />
+      </Box>
     </CardShell>
   );
 }

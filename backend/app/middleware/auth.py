@@ -54,7 +54,11 @@ def get_current_user(
     if cached:
         cached_ver = cached.get("token_version", 0)
         if cached_ver == token_ver:
-            return _dict_to_user(cached, db)
+            user = _dict_to_user(cached, db)
+            from app.middleware.audit_context import set_audit_user
+
+            set_audit_user(user.id)
+            return user
         # 缓存版本过期（其他设备登录了）→ 删除缓存，回退 DB 查询
         cache_delete(cache_key)
 
@@ -72,6 +76,9 @@ def get_current_user(
 
     # 缓存 10 分钟（含 token_version）
     cache_set(cache_key, {"id": user.id, "username": user.username, "role": user.role, "is_active": user.is_active, "token_version": user.token_version or 0}, 600)
+    from app.middleware.audit_context import set_audit_user
+
+    set_audit_user(user.id)
     return user
 
 

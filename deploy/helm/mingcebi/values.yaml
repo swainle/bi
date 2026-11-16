@@ -1,0 +1,113 @@
+# 明策BI Helm values
+#
+# 数据库 / Redis 默认走外部托管实例（云 RDS 等），不在本 chart 里起。
+# 必填：backend.secrets.DATABASE_URL、backend.secrets.JWT_SECRET
+#   或者：backend.existingSecret 指向一个已存在的 Secret（键名见 templates/secret.yaml），
+#   推荐后者 —— 密钥不落 values / git。
+
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  pullPolicy: IfNotPresent
+  backend:
+    repository: mingcebi/backend
+    tag: latest
+  frontend:
+    repository: mingcebi/frontend
+    tag: latest
+
+imagePullSecrets: []
+
+backend:
+  replicas: 2
+  # 指向已有 Secret 时，下面 secrets 全部忽略
+  existingSecret: ""
+  secrets:
+    DATABASE_URL: ""
+    JWT_SECRET: ""
+    LLM_API_KEY: ""
+    ADMIN_PASSWORD: ""
+  # Redis 为空 = 进程内缓存（单实例够用；多副本建议配，否则缓存命中率按副本分摊）
+  redisUrl: ""
+  env:
+    DEBUG: "false"
+    BI_RENDER_CACHE_TTL: "15"
+    BI_JOB_STORE: "auto"
+    BI_ASYNC_WORKERS: "2"
+    DB_POOL_SIZE: "12"
+    DB_MAX_OVERFLOW: "6"
+    RATE_LIMIT_DEFAULT: "300"
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+  service:
+    type: ClusterIP
+    port: 80
+  # 存活看 /api/livez（不碰数据库），就绪看 /api/readyz（数据库不可用 → 503 摘流量）
+  probes:
+    liveness:
+      initialDelaySeconds: 30
+      periodSeconds: 20
+      timeoutSeconds: 3
+      failureThreshold: 3
+    readiness:
+      initialDelaySeconds: 10
+      periodSeconds: 10
+      timeoutSeconds: 3
+      failureThreshold: 3
+
+# 异步查询 worker：backend.env.BI_JOB_EXECUTOR=worker 时才需要
+worker:
+  enabled: false
+  replicas: 1
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+
+frontend:
+  replicas: 1
+  service:
+    type: ClusterIP
+    port: 80
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+ingress:
+  enabled: false
+  className: nginx
+  annotations: {}
+  hosts:
+    - host: bi.example.com
+      paths:
+        - path: /api
+          pathType: Prefix
+          service: backend
+        - path: /
+          pathType: Prefix
+          service: frontend
+  tls: []
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 70
+
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}

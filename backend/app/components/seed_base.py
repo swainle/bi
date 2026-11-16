@@ -30,9 +30,13 @@ def _spec(title: str, *, dim=None, metric=None, agg="SUM", metrics=None, extra=N
 
 
 BASE = [
-    ("base.kpi", "指标卡", "kpi", "指标卡", "单个聚合值 + 徽标；数字格式/取数规则可配",
+    ("base.kpi", "指标卡", "kpi", "指标卡", "单个聚合值 + 徽标；徽标可点开 TOP N 榜单",
      {**_spec("指标卡", dim=None, metric="日销量"),
-      "ui": {"accent": "indigo", "min_height": 112, "badge": "TOP10"}}),
+      "ui": {"accent": "indigo", "min_height": 112, "badge": "TOP10"},
+      # 右上角徽标 = 独立弹窗：按「日销量」自己排一个 TOP10 明细（与卡片的聚合口径分开）
+      "top": {"enabled": True, "title": "", "dim": "产品标题", "metric": "日销量", "agg": "SUM",
+              "top_n": 10, "columns": ["上架时间", "品牌", "榜单", "价格带", "差评数"],
+              "page_size": 10}}),
     ("base.table", "明细表", "table", "明细表", "字段模式 · 缩略图 · 排序 · 分页 · 查看更多（点图看大图）",
      {**_spec("明细表", dim=None, metric=None),
       "binding": {"dataset_id": None, "dimension": None, "metric": None, "agg": "SUM",
@@ -50,12 +54,12 @@ BASE = [
      # 时间轴乱跳、趋势看不出来（2026-11-13 用户要求时间密集后调整）
      {**_spec("趋势", dim="上架时间", metric="日销量"),
       "binding": {"dataset_id": None, "dimension": "上架时间", "metric": "日销量", "agg": "SUM",
-                  "top_n": 400, "sort": "desc", "metrics": [], "limit": 500,
+                  "grain": "month", "top_n": 400, "sort": "desc", "metrics": [], "limit": 500,
                   "order_by_dimension": True}}),
     ("base.area", "面积图", "area", "时间序列", "累积规模",
      {**_spec("面积", dim="上架时间", metric="日销量"),
       "binding": {"dataset_id": None, "dimension": "上架时间", "metric": "日销量", "agg": "SUM",
-                  "top_n": 400, "sort": "desc", "metrics": [], "limit": 500,
+                  "grain": "month", "top_n": 400, "sort": "desc", "metrics": [], "limit": 500,
                   "order_by_dimension": True}}),
     ("base.pie", "饼图", "pie", "占比", "构成占比，可外置标签",
      {**_spec("占比", dim="种类", metric="日销量"), "chart": {"label_layout": "outside"}}),
@@ -87,7 +91,7 @@ BASE = [
       "binding": {"dataset_id": None, "dimension": "痛点", "metric": "热销指数", "agg": "SUM",
                   "split": "/", "top_n": 30, "sort": "desc", "metrics": [], "limit": 500},
       # 主题色：6 套里选一套（前端 CLOUD_PALETTES），默认「潮彩」
-      "chart": {**_spec("词云")["chart"], "cloud_palette": "潮彩"}}),
+      "chart": {"cloud_palette": "潮彩"}}),
     ("base.combo", "柱线组合", "combo", "组合", "柱看体量 + 线看质量（双轴）",
      {**_spec("组合", dim="价格带", metric="日销量", agg="AVG",
               metrics=[{"name": "热销指数", "agg": "AVG"}]),
@@ -99,14 +103,25 @@ BASE = [
      {**_spec("排行", dim="产品标题", metric="日销量"),
       "rank": {"order": "value", "max_items": 10}}),
     ("base.insight", "结论卡", "insight", "内容", "键值结论，支持 {指标} 占位符",
-     {**_spec("结论", dim=None, metric=None), "content": {
-         "items": [{"k": "结论", "v": "这条结论可以引用 {指标} 占位符"}]}}),
+     # 模板也要「真算数」：绑两个真指标，句子里的 {指标名} 由后端按当前筛选实时替换
+     {**_spec("结论", dim=None, metric="日销量"),
+      "binding": {"dataset_id": 20, "dimension": None, "metric": "日销量", "agg": "SUM",
+                  "top_n": 10, "sort": "desc", "limit": 500,
+                  "metrics": [{"name": "热销指数", "agg": "AVG"}]},
+      "content": {"items": [
+          {"k": "销量", "v": "当前筛选下累计日销量 {日销量}"},
+          {"k": "热度", "v": "热销指数平均 {热销指数}"},
+      ]}}),
     ("base.section", "分节标题", "section", "页面模块", "编号 + 图标 + 标题 + 说明；把一个页面分成几节",
      {**_spec("分节标题", dim=None, metric=None),
       "ui": {"accent": "indigo", "min_height": 56},
       "content": {"index": "一", "icon": "grid", "items": [], "text": ""}}),
     ("base.banner", "头标卡", "banner", "页面模块", "页头大图：kicker + 大标题（尾段渐变）+ 副标题 + 右侧统计",
+     # 右侧统计不写字面量：绑到真实列上按当前筛选聚合（在榜 SKU / 品牌数 / 覆盖种类），
+     # 换数据集也不会出现「36 / 14 / 6」这种写死的假数字
      {**_spec("头标卡", dim=None, metric=None),
+      "binding": {"dataset_id": 20, "dimension": None, "metric": None, "agg": "SUM",
+                  "top_n": 10, "sort": "desc", "limit": 500, "metrics": []},
       "ui": {"accent": "sky", "radius": 12, "min_height": 200, "edge": True, "shadow_px": 16},
       "banner": {
           "kicker": "2026 Q4 · 榜单采集 · 单期快照",
@@ -114,9 +129,9 @@ BASE = [
           "accent": "市场分析看板",
           "subtitle": "拼多多 · 天猫 · 京东 · 抖音 ｜ 示例数据（可直接替换为真实采集表）",
           "stats": [
-              {"value": "36", "unit": "", "label": "在榜 SKU"},
-              {"value": "14", "unit": "", "label": "竞品品牌"},
-              {"value": "6", "unit": "", "label": "覆盖种类"},
+              {"value": "", "unit": "", "label": "在榜 SKU", "metric": "产品id", "agg": "COUNT"},
+              {"value": "", "unit": "", "label": "竞品品牌", "metric": "品牌", "agg": "COUNT_DISTINCT"},
+              {"value": "", "unit": "", "label": "覆盖种类", "metric": "种类", "agg": "COUNT_DISTINCT"},
           ],
           "tone": "sky",
       }}),

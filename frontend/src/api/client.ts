@@ -4,6 +4,17 @@ import axios from "axios";
 
 const TOKEN_KEY = "access_token";
 const REFRESH_KEY = "refresh_token";
+const DEVICE_KEY = "mcbi.device.id";
+
+/** 稳定的浏览器设备号（安全指纹的一部分；不含个人信息，清缓存会重新生成） */
+function deviceId(): string {
+  let id = localStorage.getItem(DEVICE_KEY);
+  if (!id) {
+    id = (globalThis.crypto?.randomUUID?.() || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`);
+    localStorage.setItem(DEVICE_KEY, id);
+  }
+  return id;
+}
 
 const client = axios.create({
   baseURL: "/api",
@@ -12,6 +23,19 @@ const client = axios.create({
     "Content-Type": "application/json",
   },
 });
+
+// ── 最近一次请求号（页面水印展示用，与后端 X-Request-Id 同值）──────
+let lastRequestId = "";
+
+/** 读取最近一次 API 请求的请求号；没有就返回空串 */
+export function getLastRequestId(): string {
+  return lastRequestId;
+}
+
+function rememberRequestId(headers: Record<string, any> | undefined) {
+  const rid = headers?.["x-request-id"];
+  if (rid) lastRequestId = String(rid);
+}
 
 // ── CSRF Token 管理（Double Submit Cookie）─────────────
 const CSRF_COOKIE_NAME = "csrf_token";
@@ -42,6 +66,8 @@ client.interceptors.request.use(
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+    // 设备指纹：后端用它把「同一个人换了设备 / 脚本调用」区分开
+    config.headers["X-Device-Id"] = deviceId();
 
     // POST/PUT/DELETE/PATCH 请求附加 CSRF token
     const method = (config.method || "get").toLowerCase();
@@ -67,8 +93,12 @@ let refreshQueue: Array<(token: string) => void> = [];
 
 // 响应拦截器：自动刷新 token + 友好错误消息
 client.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    rememberRequestId(response.headers as Record<string, any> | undefined);
+    return response;
+  },
   async (error) => {
+    rememberRequestId(error.response?.headers as Record<string, any> | undefined);
     const originalRequest = error.config;
 
     // 401 且未重试过 → 尝试刷新 token
@@ -149,7 +179,7 @@ let offlineBanner: HTMLDivElement | null = null;
 function showOfflineBanner() {
   if (offlineBanner) return;
   offlineBanner = document.createElement("div");
-  offlineBanner.id = "mingzebi-offline-banner";
+  offlineBanner.id = "mingcebi-offline-banner";
   offlineBanner.textContent = "网络连接已断开，请检查网络后刷新页面";
   Object.assign(offlineBanner.style, {
     position: "fixed", top: "0", left: "0", right: "0",

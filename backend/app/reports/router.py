@@ -11,19 +11,22 @@ import re
 from datetime import datetime
 from urllib.parse import quote
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
+from app.admin.permissions import has_permission, is_admin
 from app.dashboards import repository as dash_repo
 from app import notifications
 from app.dashboards.models import validate_doc
 from app.dashboards.router import _require_edit, _require_read
 from app.database import get_db
+from app.middleware.audit import log_audit
 from app.middleware.auth import get_current_user
 from app.models.user import User
 from app.reports import generate, scheduler, tokens
 from app.reports import repository as repo
+from app.security import outbound
 
 router = APIRouter(prefix="/bi/reports", tags=["BI定时报表"])
 
@@ -42,7 +45,7 @@ def _board_views(doc) -> list[dict]:
     return [{"key": view.key, "title": view.title} for view in doc.views]
 
 
-def _clean(payload: dict, *, base: dict | None = None) -> dict:
+def _clean(payload: dict, *, base: dict | None = None, user: User) -> dict:
     merged = {**(base or {}), **payload}
 
     name = str(merged.get("name") or "").strip()[:120]
@@ -66,13 +69,23 @@ def _clean(payload: dict, *, base: dict | None = None) -> dict:
         raise HTTPException(400, "通知渠道只能是站内 / 自定义 Webhook / 钉钉 / 企业微信 / 邮件")
     webhook_url = str(merged.get("webhook_url") or "").strip()[:500]
     email_to = str(merged.get("email_to") or "").strip()[:500]
+    admin = is_admin(user)
     if channel == "email":
         emails = notifications.valid_emails(email_to)
         if not emails:
             raise HTTPException(400, "请填写收件人邮箱")
-        email_to = ", ".join(emails)
+        try:
+            email_to = outbound.validate_email_targets(
+                ", ".join(emails), is_admin=admin, user_email=getattr(user, "email", "") or "")
+        except outbound.OutboundError as exc:
+            raise HTTPException(403 if not admin else 400, str(exc)) from exc
     elif channel != "inapp" and not webhook_url.startswith(("http://", "https://")):
         raise HTTPException(400, "通知地址必须以 http:// 或 https:// 开头")
+    if channel not in ("inapp", "email"):
+        try:
+            webhook_url = outbound.validate_webhook_url(webhook_url, is_admin=admin)
+        except outbound.OutboundError as exc:
+            raise HTTPException(403 if not admin else 400, str(exc)) from exc
 
     view_key = str(merged.get("view_key") or "").strip()[:80]
     enabled = merged.get("enabled", True)
@@ -88,6 +101,17 @@ def _clean(payload: dict, *, base: dict | None = None) -> dict:
         "email_to": email_to if channel == "email" else "",
         "enabled": bool(enabled),
     }
+
+
+def _audit_outbound(user: User, action: str, target_id: int, data: dict) -> None:
+    """外发配置写审计（站内通知不记；目标做脱敏）."""
+    channel = str(data.get("channel") or "inapp")
+    if channel == "inapp":
+        return
+    log_audit(getattr(user, "id", None), action, "report_subscription", target_id, {
+        "channel": channel,
+        "target": outbound.mask_target(data.get("email_to") or data.get("webhook_url") or ""),
+    })
 
 
 def _sub_or_404(db: Session, sub_id: int) -> dict:
@@ -130,7 +154,7 @@ def create_subscription(
 ):
     dashboard_id = _as_int(payload.get("dashboard_id"), "看板")
     row = _require_edit(dash_repo.get(db, dashboard_id), current_user, db)
-    data = _clean(payload)
+    data = _clean(payload, user=current_user)
 
     views = {view["key"] for view in _board_views(validate_doc(row.doc))}
     if data["view_key"] and data["view_key"] not in views:
@@ -141,7 +165,9 @@ def create_subscription(
         "created_by": current_user.id,
         "next_run_at": scheduler.next_run_at(data["frequency"], data["send_time"], data["week_day"]),
     })
-    return repo.create_subscription(db, data)
+    created = repo.create_subscription(db, data)
+    _audit_outbound(current_user, "report.subscription.outbound", int(created.get("id") or 0), data)
+    return created
 
 
 @router.put("/subscriptions/{sub_id}")
@@ -153,7 +179,7 @@ def update_subscription(
 ):
     sub = _sub_or_404(db, sub_id)
     _require_sub_edit(db, sub, current_user)
-    data = _clean(payload, base=sub)
+    data = _clean(payload, base=sub, user=current_user)
 
     row = dash_repo.get(db, sub["dashboard_id"])
     views = {view["key"] for view in _board_views(validate_doc(row.doc))} if row else set()
@@ -165,7 +191,9 @@ def update_subscription(
     if changed_schedule or not sub.get("next_run_at"):
         data["next_run_at"] = scheduler.next_run_at(
             data["frequency"], data["send_time"], data["week_day"])
-    return repo.update_subscription(db, sub_id, data)
+    updated = repo.update_subscription(db, sub_id, data)
+    _audit_outbound(current_user, "report.subscription.outbound", sub_id, data)
+    return updated
 
 
 @router.delete("/subscriptions/{sub_id}")
@@ -195,6 +223,7 @@ def run_now(
 @router.post("/export/{dashboard_id}")
 def export_dashboard(
     dashboard_id: int,
+    request: Request,
     payload: dict = Body(default={}),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -204,6 +233,27 @@ def export_dashboard(
     kind = str(payload.get("format") or "xlsx").strip().lower()
     if kind not in ("xlsx", "html", "pdf", "png"):
         raise HTTPException(400, "导出格式只支持 xlsx / html / pdf / png")
+    # Excel = 明细数据；HTML/PDF/PNG = 汇总呈现。两者分开授权。
+    detail = kind == "xlsx"
+    code = "bi:data:export:detail" if detail else "bi:data:export:summary"
+    if not has_permission(db, current_user, code):
+        raise HTTPException(403, "没有导出权限，请联系管理员开通")
+
+    # R4 组合风控：陌生设备 + 非工作时段 + 明细导出 → 告警（默认）/ 阻断（配置后）
+    from app.middleware.audit_context import get_request_meta
+    from app.security import guard
+
+    meta = get_request_meta()
+    if detail:
+        verdict = guard.assess_sensitive_export(
+            db, user=current_user, ip=meta.get("ip", ""),
+            fp=meta.get("fingerprint", ""), dashboard_id=dashboard_id,
+        )
+        if verdict["blocked"]:
+            raise HTTPException(403, "陌生设备在非工作时段导出明细，已被安全卫士拦截，请联系管理员")
+    guard.observe_business("export_detail" if detail else "export_summary",
+                           ip=meta.get("ip", ""), fp=meta.get("fingerprint", ""),
+                           user_id=current_user.id)
     try:
         files = generate.export_dashboard(
             db, row, current_user,
@@ -211,10 +261,13 @@ def export_dashboard(
             params=payload.get("params") or {},
             title=str(payload.get("title") or ""),
             cross_filters=payload.get("cross_filters") or [],
+            request_id=getattr(request.state, "request_id", "") or "",
         )
         path = (generate.render_artifact(kind, files["html_path"])
                 if kind in ("pdf", "png") else
                 files["xlsx_path"] if kind == "xlsx" else files["html_path"])
+        log_audit(current_user.id, f"data.export.{'detail' if detail else 'summary'}",
+                  "dashboard", dashboard_id, {"format": kind})
     except Exception as exc:
         raise HTTPException(400, f"导出失败：{str(exc)[:200]}") from exc
 

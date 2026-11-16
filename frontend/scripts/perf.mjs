@@ -9,7 +9,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import process from "node:process";
 
-const PORT = Number(process.env.MZBI_PREVIEW_PORT || 5301);
+const PORT = Number(process.env.MCBI_PREVIEW_PORT || 5301);
 const BASE_URL = `http://127.0.0.1:${PORT}`;
 
 function run(command, args, options = {}) {
@@ -50,7 +50,7 @@ try {
     console.error("✗ preview 启动超时（端口被占用？）");
   } else {
     exitCode = run("npx", ["playwright", "test", "e2e/perf.spec.ts", "--reporter=list"], {
-      env: { ...process.env, MZBI_BASE_URL: BASE_URL },
+      env: { ...process.env, MCBI_BASE_URL: BASE_URL },
     });
   }
 } finally {

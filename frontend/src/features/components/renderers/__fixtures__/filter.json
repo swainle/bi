@@ -1,0 +1,162 @@
+{
+  "kind": "filter",
+  "title": "筛选栏",
+  "fields": [
+    {
+      "id": "platform",
+      "label": "平台",
+      "type": "select",
+      "default": "",
+      "options": [
+        {
+          "t": "平台A",
+          "v": "平台A"
+        },
+        {
+          "t": "平台B",
+          "v": "平台B"
+        },
+        {
+          "t": "平台C",
+          "v": "平台C"
+        }
+      ],
+      "multiple": false,
+      "placeholder": "",
+      "width": 0,
+      "note": "",
+      "column": "平台",
+      "ranges": {},
+      "dataset_map": {},
+      "split": false,
+      "options_map": {}
+    },
+    {
+      "id": "category",
+      "label": "种类",
+      "type": "select",
+      "default": "",
+      "options": [
+        {
+          "t": "猫咪零食",
+          "v": "猫咪零食"
+        },
+        {
+          "t": "狗狗零食",
+          "v": "狗狗零食"
+        },
+        {
+          "t": "仓鼠食品",
+          "v": "仓鼠食品"
+        },
+        {
+          "t": "兔子食品",
+          "v": "兔子食品"
+        },
+        {
+          "t": "鸟食品",
+          "v": "鸟食品"
+        },
+        {
+          "t": "乌龟食品",
+          "v": "乌龟食品"
+        }
+      ],
+      "multiple": false,
+      "placeholder": "",
+      "width": 0,
+      "note": "",
+      "column": "种类",
+      "ranges": {},
+      "dataset_map": {},
+      "split": false,
+      "options_map": {}
+    },
+    {
+      "id": "band",
+      "label": "价格带",
+      "type": "select",
+      "default": "",
+      "options": [
+        {
+          "t": "<20元",
+          "v": "<20元"
+        },
+        {
+          "t": "20-40元",
+          "v": "20-40元"
+        },
+        {
+          "t": "40-60元",
+          "v": "40-60元"
+        },
+        {
+          "t": "60-80元",
+          "v": "60-80元"
+        },
+        {
+          "t": "≥80元",
+          "v": "≥80元"
+        }
+      ],
+      "multiple": false,
+      "placeholder": "",
+      "width": 0,
+      "note": "",
+      "column": "价格带",
+      "ranges": {},
+      "dataset_map": {},
+      "split": false,
+      "options_map": {}
+    },
+    {
+      "id": "date",
+      "label": "上架时间",
+      "type": "date",
+      "default": "",
+      "options": [],
+      "multiple": false,
+      "placeholder": "",
+      "width": 160,
+      "note": "",
+      "column": "上架时间",
+      "ranges": {},
+      "dataset_map": {},
+      "split": false,
+      "options_map": {}
+    },
+    {
+      "id": "keyword",
+      "label": "搜索",
+      "type": "search",
+      "default": "",
+      "options": [],
+      "multiple": false,
+      "placeholder": "搜索",
+      "width": 200,
+      "note": "",
+      "column": "",
+      "ranges": {},
+      "dataset_map": {},
+      "split": false,
+      "options_map": {}
+    }
+  ],
+  "inline": true,
+  "value": null,
+  "unit": "",
+  "ui": {
+    "accent": "indigo",
+    "radius": 14,
+    "min_height": 60,
+    "show_unit": true,
+    "animate": true,
+    "align": "left",
+    "columns": 1,
+    "badge": "",
+    "edge": true,
+    "edge_px": 1.0,
+    "edge_alpha": 22,
+    "shadow_px": 16
+  }
+}

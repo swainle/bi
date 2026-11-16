@@ -12,6 +12,9 @@ import {
   Save, TextFields, Title as TitleIcon, Tune, ViewQuilt,
 } from "@mui/icons-material";
 import client from "../api/client";
+import { useAuth } from "../hooks/useAuth";
+import { useWatermarkText } from "../hooks/useWatermarkText";
+import WatermarkOverlay from "../components/WatermarkOverlay";
 import { CanvasDetailContext, asCanvasItem, boardOf, type BoardArea } from "../features/components/board/canvasDetail";
 import { ACCENTS } from "../features/components/palette";
 import { RENDERERS, KIND_LABEL, KIND_ROLE, ROLE_LABEL } from "../features/components/registry";
@@ -20,6 +23,7 @@ import { navHomePage } from "../features/components/navHome";
 import FilterBar from "../features/components/renderers/FilterBar";
 import NavCard, { type NavPayload, type NavUi } from "../features/components/renderers/NavCard";
 import { useDatasetFields } from "../features/components/board/useDatasetFields";
+import TopListDialog from "../features/components/board/TopListDialog";
 import type {
   Accent, ComponentItem, ComponentSpec, DashboardDoc, DashboardRender, DashboardSummary,
   DatasetBrief, DocAction, DocItem, FilterFieldSpec, RenderPayload, UiSpec,
@@ -145,6 +149,7 @@ export default function DashboardPage() {
   const [surfaceWidth, setSurfaceWidth] = useState(1440);
   const initialized = useRef(false);
   const saveTimer = useRef(0);
+  const { hasPerm } = useAuth();
 
   const loadDoc = useCallback(async () => {
     const res = await client.get(`/bi/dashboards/${dashboardId}`);
@@ -177,11 +182,12 @@ export default function DashboardPage() {
   ) => {
     setLoading(true);
     try {
+      /* 整页渲染要跑十几张卡的 SQL（死数据源时会到 30s+），默认 15s 会把它掐掉 */
       const res = await client.post(`/bi/dashboards/${dashboardId}/render`, {
         view: viewKey,
         params: nextParams,
         cross_filters: nextCross ? [{ column: nextCross.column, value: nextCross.value }] : [],
-      });
+      }, { timeout: 120000 });
       const data = res.data as DashboardRender;
       setRender(data);
       setError("");
@@ -245,6 +251,10 @@ export default function DashboardPage() {
   /** 导航卡「导出 CSV」：把当前页用到的数据集整表导出（每个数据集一个 CSV，遵循同一套 RLS/脱敏/筛选） */
   /** 把若干数据集整表导出（每个一个 CSV） */
   const exportDatasets = useCallback(async (ids: number[]) => {
+    if (!hasPerm("bi:data:export:detail")) {
+      setToast("没有明细导出权限，请联系管理员开通");
+      return;
+    }
     if (!ids.length) { setToast("当前页还没有数据"); return; }
     let ok = 0;
     let truncated = false;
@@ -274,7 +284,7 @@ export default function DashboardPage() {
     setToast(ok
       ? `已导出 ${ok} 个数据集 CSV${truncated ? `（单表上限 ${LIMIT} 行）` : ""}`
       : "导出失败");
-  }, []);
+  }, [hasPerm]);
 
   const exportCurrentPageData = useCallback(async (scope: "primary" | "all" | "dataset" = "primary", targetId?: number | null) => {
     /* 统计每个数据集在当前页被多少张卡引用：primary 只导用得最多的那个 */
@@ -308,6 +318,7 @@ export default function DashboardPage() {
   /** 渲染用列表：当前页没放全局导航就把它叠在最上面（只在渲染层，不写回文档） */
   /** 给「弹窗画板」用的画布坐标版 items（DocItem 的坐标在 layout 里，画板判定要展平） */
   const canvasItems = useMemo(() => items.map((it) => asCanvasItem(it)), [items]);
+
 
   /** 按 key 找画板（含其它页面：弹窗画板可以放在别的页） */
   const findBoard = useCallback((key: string | undefined): BoardArea | null => {
@@ -346,6 +357,18 @@ export default function DashboardPage() {
     return [{ ...globalNavItem, key: `${globalNavItem.key}__global` }, ...items];
   }, [items, globalNavItem]);
   const cards = render?.cards ?? {};
+  /** 指标卡右上角徽标 → TOP N 榜单弹窗（只读，不动页面状态） */
+  const [topKey, setTopKey] = useState<string | null>(null);
+  /** 这一页的卡片实际读的数据集（后端按平台分套切过表）：筛选栏「逐级筛选」按它取候选值 */
+  const pageDatasets = useMemo(() => {
+    const usage = new Map<number, number>();
+    Object.values(cards).forEach((card) => {
+      const id = Number((card as { dataset_id?: number } | null)?.dataset_id);
+      if (Number.isFinite(id) && id > 0) usage.set(id, (usage.get(id) ?? 0) + 1);
+    });
+    /* 卡片最多的那张排第一：逐级候选值只按它取，避免把不同数据集的词表合并 */
+    return [...usage.entries()].sort((a, b) => b[1] - a[1]).map(([id]) => id);
+  }, [cards]);
   const paramFields: FilterFieldSpec[] = render?.param_defs ?? [];
   /** 版面按可用宽度等比铺满（上限 1.25，避免字体过大）；页面自身 md:6 留白即出血 */
   const surfaceScale = Math.min(1.25, surfaceWidth / DESIGN_W);
@@ -673,13 +696,18 @@ export default function DashboardPage() {
       }
     } catch (e: any) {
       if (popup) popup.close();
-      setToast(e?.response?.status === 403 ? "没有查看这个看板的权限" : "导出失败，请重试");
+      setToast(e?.response?.status === 403 ? "没有导出权限，请联系管理员开通" : "导出失败，请重试");
     } finally {
       setExporting(false);
     }
   };
 
   const canEdit = meta?.my_permission !== "view";
+  const watermarkText = useWatermarkText();
+  // 导出与后端同口径：xlsx 要明细权限，pdf/png/html 要汇总权限；都没有就不显示入口
+  const canExportDetail = hasPerm("bi:data:export:detail");
+  const canExportSummary = hasPerm("bi:data:export:summary");
+  const canExport = canExportDetail || canExportSummary;
 
   if (error && !doc) {
     return <Box sx={{ p: 6 }}><Alert severity="error">{error}</Alert></Box>;
@@ -701,6 +729,7 @@ export default function DashboardPage() {
       {/* 预览时「编辑 / 导出」不占版面：浮在右上角，设计页面从顶栏下方第一个像素开始 */}
       {!inCanvas && dashboardId > 0 && (
         <>
+          {canExport && (
           <Button
             size="small"
             disabled={exporting}
@@ -710,6 +739,7 @@ export default function DashboardPage() {
           >
             导出
           </Button>
+          )}
           <Button
             size="small"
             startIcon={<BookmarkBorder sx={{ fontSize: 15 }} />}
@@ -781,18 +811,26 @@ export default function DashboardPage() {
             transformOrigin={{ vertical: "top", horizontal: "right" }}
             slotProps={{ paper: { sx: { mt: 1, minWidth: 176, borderRadius: 2, border: "1px solid #EEF3FB" } } }}
           >
-            <MenuItem dense onClick={() => void exportBoard("xlsx")} sx={{ fontSize: 13 }}>
-              Excel（.xlsx）
-            </MenuItem>
-            <MenuItem dense onClick={() => void exportBoard("pdf")} sx={{ fontSize: 13 }}>
-              PDF（.pdf）
-            </MenuItem>
-            <MenuItem dense onClick={() => void exportBoard("png")} sx={{ fontSize: 13 }}>
-              PNG 长图（.png）
-            </MenuItem>
-            <MenuItem dense onClick={() => void exportBoard("html")} sx={{ fontSize: 13 }}>
-              HTML / 打印为 PDF
-            </MenuItem>
+            {canExportDetail && (
+              <MenuItem dense onClick={() => void exportBoard("xlsx")} sx={{ fontSize: 13 }}>
+                Excel（.xlsx）
+              </MenuItem>
+            )}
+            {canExportSummary && (
+              <MenuItem dense onClick={() => void exportBoard("pdf")} sx={{ fontSize: 13 }}>
+                PDF（.pdf）
+              </MenuItem>
+            )}
+            {canExportSummary && (
+              <MenuItem dense onClick={() => void exportBoard("png")} sx={{ fontSize: 13 }}>
+                PNG 长图（.png）
+              </MenuItem>
+            )}
+            {canExportSummary && (
+              <MenuItem dense onClick={() => void exportBoard("html")} sx={{ fontSize: 13 }}>
+                HTML / 打印为 PDF
+              </MenuItem>
+            )}
           </Menu>
         </>
       )}
@@ -912,6 +950,7 @@ export default function DashboardPage() {
                     }}>
                       <FilterBar fields={paramFields} values={params}
                         surface={!!item.spec?.filter?.background}
+                        datasets={pageDatasets}
                         onChange={(id, value) => setParams((p) => ({ ...p, [id]: value }))} />
                     </Box>
                   ) : type === "heading" ? (
@@ -966,6 +1005,7 @@ export default function DashboardPage() {
                                 window.scrollTo({ top: 0, behavior: "smooth" });
                               }
                             }}
+                            onTopList={payload.top?.enabled ? () => setTopKey(String(item.key)) : undefined}
                             onExport={payload.kind === "table" && typeof item.spec?.binding?.dataset_id === "number"
                               ? () => { void exportDatasets([item.spec?.binding?.dataset_id as number]); }
                               : undefined}
@@ -1018,6 +1058,18 @@ export default function DashboardPage() {
         onSpecChange={(spec, debounce) => selectedItem && updateSpec(selectedItem.key, spec, debounce)}
         onDelete={() => selectedIndex >= 0 && removeItem(selectedIndex)}
       />
+
+      {/* 指标卡右上角徽标 → 独立 TOP N 榜单（只读，不改页面状态） */}
+      {topKey && (
+        <TopListDialog
+          open
+          onClose={() => setTopKey(null)}
+          dashboardId={Number(id)}
+          itemKey={topKey}
+          view={view}
+          params={params}
+        />
+      )}
 
       {/* 组件选择 */}
       <Dialog open={addOpen} onClose={() => setAddOpen(false)} maxWidth="md" fullWidth>
@@ -1133,6 +1185,7 @@ export default function DashboardPage() {
       </Dialog>
 
       <Snackbar open={Boolean(toast)} autoHideDuration={2200} onClose={() => setToast("")} message={toast} />
+      <WatermarkOverlay text={watermarkText} />
       </Box>
     </Box>
   );

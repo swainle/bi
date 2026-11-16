@@ -1391,12 +1391,18 @@ def list_models(
             "base_url": active["base_url"] if active else "",
             "source": "database" if ai_models.from_db() else ("file" if ai_models.from_json_file() else ("env" if ai_models.from_env() else "")),
         },
+        # 供应商预设：温度 / 最大输出 / 上下文按各家官方默认值给，用户可再改
         "providers": [
-            {"code": "deepseek", "name": "DeepSeek", "base_url": "https://api.deepseek.com/v1", "model": "deepseek-chat"},
-            {"code": "openai", "name": "OpenAI", "base_url": "https://api.openai.com/v1", "model": "gpt-4o-mini"},
-            {"code": "qwen", "name": "通义千问", "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1", "model": "qwen-plus"},
-            {"code": "moonshot", "name": "Moonshot", "base_url": "https://api.moonshot.cn/v1", "model": "moonshot-v1-8k"},
-            {"code": "custom", "name": "自定义", "base_url": "", "model": ""},
+            {"code": "deepseek", "name": "DeepSeek", "base_url": "https://api.deepseek.com/v1",
+             "model": "deepseek-chat", "temperature": 1.0, "max_tokens": 8192, "context_window": 131072},
+            {"code": "openai", "name": "OpenAI", "base_url": "https://api.openai.com/v1",
+             "model": "gpt-4o-mini", "temperature": 1.0, "max_tokens": 16384, "context_window": 128000},
+            {"code": "qwen", "name": "通义千问", "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+             "model": "qwen-plus", "temperature": 0.7, "max_tokens": 32768, "context_window": 131072},
+            {"code": "moonshot", "name": "Moonshot", "base_url": "https://api.moonshot.cn/v1",
+             "model": "moonshot-v1-8k", "temperature": 1.0, "max_tokens": 4096, "context_window": 8192},
+            {"code": "custom", "name": "自定义", "base_url": "", "model": "",
+             "temperature": None, "max_tokens": None, "context_window": None},
         ],
     }
 

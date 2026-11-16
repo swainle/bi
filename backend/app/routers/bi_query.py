@@ -33,6 +33,16 @@ router = APIRouter(prefix="/bi/query", tags=["BI查询契约"])
 
 
 def _parse(payload: dict) -> QueryObject:
+    # 安全边界：HTTP 入口不接受「用户自带 SQL 片段」。
+    # 自定义子查询 / 指标表达式只允许语义层在服务端根据数据集配置生成，
+    # 否则普通成员可以用 (SELECT ...) 读取任意表（2026-11-14 模拟实测）。
+    if str(payload.get("subquery") or "").strip():
+        raise HTTPException(400, "查询契约不接受自定义子查询")
+    metrics = payload.get("metrics") or []
+    if isinstance(metrics, list):
+        for item in metrics:
+            if isinstance(item, dict) and str(item.get("expression") or "").strip():
+                raise HTTPException(400, "查询契约不接受自定义表达式；请使用已定义的指标口径")
     try:
         return QueryObject(**payload)
     except ValidationError as exc:

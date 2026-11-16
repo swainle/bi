@@ -48,6 +48,8 @@ _EXEMPT_PATHS = (
     "/api/bi/engine/ai/",
     # 前端错误上报 — ErrorBoundary 使用 raw fetch() 无法走 axios 拦截器
     "/api/report",
+    # MCP 网关 — Agent 走 Bearer 令牌（无 cookie 会话），CSRF 不适用
+    "/api/mcp/",
 )
 
 # cookie 名称

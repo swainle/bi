@@ -172,6 +172,25 @@ export default function TableCard({ payload, ui, compact, onMore, onLoadAll, onR
     }
   };
 
+  /** 点一行：开了「点击行弹出」就按画板弹（编辑器里走内联面板，成品页走抽屉）；
+   *  没开就交给外层 onRowClick。表格本体和「查看更多」弹窗共用这一份。 */
+  const openRowDetail = (row: Record<string, unknown>): boolean => {
+    if (!detail?.enabled) { onRowClick?.(row); return false; }
+    /* 没选画板时别直接结束：页面上只有一块画板就用它（多块不猜，交给面板选） */
+    const localBoards = (detailInline?.items ?? []).filter((it) => it.type === "board");
+    const fallbackKey = !detail.board_key && localBoards.length === 1 ? String(localBoards[0].key) : "";
+    const target = detail.board_key || fallbackKey;
+    const board = detailInline?.findBoard?.(target) ?? boardOf(detailInline?.items, target);
+    if (!board) return true;
+    if (detailInline?.open) {
+      detailInline.open({
+        detail, row, board,
+        tableKey: String((payload as unknown as { detailBoardKey?: string }).detailBoardKey || ""),
+      });
+    } else { setDetailRow({ row, board }); }
+    return true;
+  };
+
   const compute = payload.compute ?? { format: "int", decimals: 0, scale: 1, offset: 0, prefix: "", suffix: "", transform: "raw" };
   const transform = compute.transform ?? "raw";
 
@@ -225,27 +244,7 @@ export default function TableCard({ payload, ui, compact, onMore, onLoadAll, onR
   const canMore = Boolean(payload.more !== false && total > rows.length);
   /** 行首缩略图：图来自 thumb_key 列的图片地址（不是图片地址就显示占位框） */
   const thumbKey = payload.thumb ? (payload.thumb_key ?? "") : "";
-  const IMAGE_SRC = /^(data:image\/|\/uploads\/|https?:\/\/(?:[^?#]*\.(?:png|jpe?g|webp|gif|avif)(?:[?#]|$)|[^?#]*(?:image|img|pic|photo|thumb)))/i;
-  /** ID 形式的图片字段：值是文件夹名，后端取文件夹里序号最小的第一张 */
-  const ID_VALUE = /^[-\w\u4e00-\u9fa5]{1,120}$/;
-  /** 缩略图候选地址：① 图片字段的值 ② 商品链接里的 {链接id}_main（软链命名规则）；按顺序回退 */
-  const thumbSources = (row: Record<string, unknown>): string[] => {
-    const out: string[] = [];
-    const raw = String(row[thumbKey] ?? "").trim();
-    if (raw) {
-      if (IMAGE_SRC.test(raw)) out.push(raw);
-      else if (ID_VALUE.test(raw)) out.push(`/api/bi/images/${encodeURIComponent(raw)}`);
-    }
-    for (const value of Object.values(row)) {
-      const match = /goods_id=(\d{6,})/.exec(String(value ?? ""));
-      if (match) {
-        const url = `/api/bi/images/${match[1]}_main`;
-        if (!out.includes(url)) out.push(url);
-        break;
-      }
-    }
-    return out;
-  };
+  const thumbSources = (row: Record<string, unknown>): string[] => thumbSourcesOf(thumbKey, row);
   const thumbsVisible = Boolean(payload.thumb) && Boolean(thumbKey);
   /** 缩略图字段不重复当普通列显示 */
   const bodyColumns = thumbsVisible ? columns.filter((column) => column.key !== thumbKey) : columns;
@@ -530,22 +529,7 @@ export default function TableCard({ payload, ui, compact, onMore, onLoadAll, onR
               {pageRows.map((row, index) => (
                 <tr
                   key={index}
-                  onClick={() => {
-                    if (detail?.enabled) {
-                      // 先按 key 跨页面找，再退回当前页面
-                      const board = detailInline?.findBoard?.(detail.board_key) ?? boardOf(detailInline?.items, detail.board_key);
-                      if (!board) return;
-                      // 编辑器画布内 → 交给画布右侧面板；成品页 → 按配置弹窗
-                      if (detailInline?.open) {
-                        detailInline.open({
-                          detail, row, board,
-                          tableKey: String((payload as unknown as { detailBoardKey?: string }).detailBoardKey || ""),
-                        });
-                      } else { setDetailRow({ row, board }); }
-                      return;
-                    }
-                    onRowClick?.(row);
-                  }}
+                  onClick={() => { openRowDetail(row); }}
                   style={{ cursor: onRowClick || detail?.enabled ? "pointer" : "default" }}
                   onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = "#F8FBFF"; }}
                   onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = "transparent"; }}
@@ -712,6 +696,14 @@ export default function TableCard({ payload, ui, compact, onMore, onLoadAll, onR
                 {(allRows ?? []).map((row, index) => (
                   <tr
                     key={index}
+                    onClick={() => {
+                      /* 弹窗里点行同样弹行详情：成品页让行详情抽屉叠在「查看更多」上面（方便接着点下一条）；
+                         编辑器里的行详情是画布内的内联面板，必须先把弹窗关掉才看得见。 */
+                      const inline = Boolean(detailInline?.open);
+                      openRowDetail(row);
+                      if (inline) setAllOpen(false);
+                    }}
+                    style={{ cursor: detail?.enabled || onRowClick ? "pointer" : "default" }}
                     onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = "#F8FBFF"; }}
                     onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = "transparent"; }}
                   >
@@ -771,7 +763,30 @@ export default function TableCard({ payload, ui, compact, onMore, onLoadAll, onR
 }
 
 /** 缩略图：地址取不到就显示占位框，不留裂图 */
-function Thumb({ sources, onOpen }: { sources: string[]; onOpen?: (src: string) => void }) {
+/** 缩略图候选地址（弹窗里也要用同一套规则）：① 图片字段的值 ② 商品链接里的 {链接id}_main */
+const IMAGE_SRC = /^(data:image\/|\/uploads\/|https?:\/\/(?:[^?#]*\.(?:png|jpe?g|webp|gif|avif)(?:[?#]|$)|[^?#]*(?:image|img|pic|photo|thumb)))/i;
+/** ID 形式的图片字段：值是文件夹名，后端取文件夹里序号最小的第一张 */
+const ID_VALUE = /^[-\w\u4e00-\u9fa5]{1,120}$/;
+
+export function thumbSourcesOf(thumbKey: string, row: Record<string, unknown>): string[] {
+  const out: string[] = [];
+  const raw = String(row[thumbKey] ?? "").trim();
+  if (raw) {
+    if (IMAGE_SRC.test(raw)) out.push(raw);
+    else if (ID_VALUE.test(raw)) out.push(`/api/bi/images/${encodeURIComponent(raw)}`);
+  }
+  for (const value of Object.values(row)) {
+    const match = /goods_id=(\d{6,})/.exec(String(value ?? ""));
+    if (match) {
+      const url = `/api/bi/images/${match[1]}_main`;
+      if (!out.includes(url)) out.push(url);
+      break;
+    }
+  }
+  return out;
+}
+
+export function Thumb({ sources, onOpen }: { sources: string[]; onOpen?: (src: string) => void }) {
   const [index, setIndex] = useState(0);
   const key = sources.join("|");
   useEffect(() => { setIndex(0); }, [key]);
@@ -975,6 +990,7 @@ function BoardPopup({ detail, popup, onClose }: {
     return (
       <Dialog
         open={open} onClose={onClose} maxWidth={false}
+        sx={{ zIndex: 1500 }}
         PaperProps={{
           sx: {
             width, height, borderRadius: 3, overflow: "hidden",
@@ -989,7 +1005,12 @@ function BoardPopup({ detail, popup, onClose }: {
   return (
     <Drawer
       anchor={placement === "left" ? "left" : "right"} open={open} onClose={onClose}
-      PaperProps={{ sx: { width, maxWidth: "100vw", height: "100%", bgcolor: "#fff" } }}
+      /* 层级压在「查看更多」弹窗之上；根节点不吃点击（pointer-events: none）——
+         这样抽屉悬浮在右侧，底下弹窗的行还能继续点，连着看下一条不用来回开关。 */
+      sx={{ zIndex: 1500 }}
+      ModalProps={{ hideBackdrop: true, disableEnforceFocus: true, disableScrollLock: true }}
+      PaperProps={{ sx: { width, maxWidth: "100vw", height: "100%", bgcolor: "#fff", pointerEvents: "auto" } }}
+      slotProps={{ root: { style: { pointerEvents: "none" } } }}
     >
       {body}
     </Drawer>

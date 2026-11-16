@@ -31,6 +31,7 @@ from app.query import metrics, redis_bus, running, slowlog
 from app.query.builder import build
 from app.query.column_types import column_types as _column_types
 from app.query.contract import QueryObject
+from app.security import rls_backstop
 from app.security.errors import RlsBlockedError
 from app.security.masking import apply_masks
 from app.security.rls import decide as rls_decide
@@ -191,7 +192,12 @@ def run(
     from app.security import dataset_rules
 
     if apply_row_level and dataset_id:
-        rls_conditions.extend(dataset_rules.row_conditions(db, dataset_id, user))
+        # 数据集规则 + 部门隔离（S3）一起 AND；方言决定标识符引号
+        rls_conditions.extend(
+            dataset_rules.row_conditions(db, dataset_id, user, query.dialect or "postgres")
+        )
+        # S6：物理表策略预检（缺失先自愈，仍失败 → 403，不放行）
+        rls_backstop.preflight(db, int(dataset_id))
 
     types = _column_types(db, query.table)
     built = build(
@@ -213,9 +219,13 @@ def run(
     metrics.incr("query.in_flight")
     try:
         _apply_timeout(db)
+        # S6：把部门范围写进事务变量；配了 BI_RLS_APP_ROLE 时数据查询期间切只读角色
+        if dataset_id:
+            rls_backstop.apply_session(db, user, int(dataset_id))
         running.register(qid, user_id=user_id, table=query.table, pid=_backend_pid(db))
         try:
-            result = db.execute(text(built.sql), built.params).fetchall()
+            with rls_backstop.read_role(db):
+                result = db.execute(text(built.sql), built.params).fetchall()
         except Exception as exc:
             detail = str(exc).lower()
             if "user request" in detail:  # pg_cancel_backend（手动取消）

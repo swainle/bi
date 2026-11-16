@@ -47,6 +47,7 @@ async def lifespan(app: FastAPI):
     bootstrap.ensure_project_names()
     bootstrap.ensure_components()
     bootstrap.ensure_rbac_seed()
+    bootstrap.ensure_rls_backstop()
     bootstrap.ensure_seed_data()
     bootstrap.ensure_admin()
 
@@ -80,6 +81,24 @@ async def lifespan(app: FastAPI):
     from app.sources import sync_scheduler
 
     sync_scheduler.start_background()
+
+    # 外部数据库会话采样（S7 二期）：非应用连接（psql / 黑客直连）每 60s 记一次安全事件
+    def _security_db_watch():
+        import time as _time
+
+        from app.security.security_events import sample_external_db_sessions
+
+        while True:
+            _time.sleep(60)
+            try:
+                sample_external_db_sessions()
+                from app.security import guard as _guard
+
+                _guard.cleanup()
+            except Exception:
+                pass
+
+    threading.Thread(target=_security_db_watch, daemon=True).start()
     yield
 
 
@@ -100,13 +119,18 @@ app.add_middleware(
 )
 app.add_middleware(GZipMiddleware, minimum_size=500)
 
+from app.middleware.audit_user import AuditUserMiddleware  # noqa: E402
 from app.middleware.logging import RequestLoggingMiddleware  # noqa: E402
 from app.middleware.rate_limit import RateLimitMiddleware  # noqa: E402
 from app.middleware.csrf import CSRFMiddleware  # noqa: E402
+from app.middleware.security_watch import SecurityWatchMiddleware  # noqa: E402
 
+app.add_middleware(AuditUserMiddleware)
 app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(RateLimitMiddleware)
 app.add_middleware(CSRFMiddleware)
+# 最外层：能看到 CSRF / 限流 / 鉴权的最终状态码，并给所有审计写指纹
+app.add_middleware(SecurityWatchMiddleware)
 
 # ── 路由注册 ───────────────────────────────────────────────────
 from app.routers import auth, bi_admin, bi_datasource, bi_engine, bi_team  # noqa: E402
@@ -167,6 +191,23 @@ app.include_router(errors_router.router, prefix="/api")
 from app.admin import router as admin_router  # noqa: E402
 
 app.include_router(admin_router, prefix="/api")
+
+# ── 操作监控（S7：操作 / AI / MCP 统一流水）────────────────────────
+from app.admin import monitor as monitor_router  # noqa: E402
+
+app.include_router(monitor_router.router, prefix="/api/admin")
+
+# ── MCP 工具网关（管理后台：客户端 / 工具目录；网关在 S2 接入）────────
+from app.mcp import router as mcp_router  # noqa: E402
+from app.mcp import gateway as mcp_gateway  # noqa: E402
+
+app.include_router(mcp_router.router, prefix="/api/admin")
+app.include_router(mcp_gateway.router, prefix="/api")
+
+# ── AI 排版（编辑器「AI 整理版面」；只产布局操作，不写文档）────────────
+from app.ai import router as ai_layout_router  # noqa: E402
+
+app.include_router(ai_layout_router.router, prefix="/api")
 
 
 # ── 健康检查 ───────────────────────────────────────────────────

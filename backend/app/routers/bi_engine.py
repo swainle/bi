@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Body, File, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Query, Body, File, UploadFile, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -22,6 +22,7 @@ from app.models.user import User
 
 # ═══════ 安全内核（独立模块，改这里不会牵连路由逻辑）═══════
 from app.security.errors import RlsBlockedError, SecurityError
+from app.security import watermark
 from app.security.rls import apply_to_sql, decide as rls_decide, where_sql as rls_where
 from app.security.rls.injector import inject_conditions
 from app.admin.permissions import require
@@ -99,6 +100,60 @@ def _parse_function(func_type: str, metric_col: str, time_col: str) -> str:
 def _validate_col(col: str):
     if not _re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', col):
         raise HTTPException(400, f"非法列名: {col}")
+
+
+# 查询构建器的 SQL 片段白名单：聚合 / JOIN / 排序 / 行数都只接受结构化输入，
+# 不再把用户字符串原样拼进 SQL（2026-11-14 安全模拟：order_by / join.on / agg / limit 均可注入）。
+_AGGREGATES = {"SUM", "AVG", "MIN", "MAX", "COUNT", "COUNT_DISTINCT"}
+_JOIN_TYPES = {"INNER", "LEFT", "RIGHT", "FULL", "CROSS"}
+_IDENT = r"[A-Za-z_][A-Za-z0-9_]*"
+_ORDER_ITEM = _re.compile(rf"^({_IDENT})(?:\s+(ASC|DESC))?$", _re.IGNORECASE)
+_JOIN_SIDE = rf"{_IDENT}(?:\.{_IDENT})?"
+
+
+def _validate_agg(agg) -> str:
+    value = str(agg or "").strip().upper()
+    if value not in _AGGREGATES:
+        raise HTTPException(400, f"不支持的聚合方式: {agg}")
+    return value
+
+
+def _validate_limit(limit) -> int:
+    try:
+        value = int(limit)
+    except (TypeError, ValueError):
+        raise HTTPException(400, "limit 必须是整数")
+    if value < 1 or value > 5000:
+        raise HTTPException(400, "limit 需在 1~5000 之间")
+    return value
+
+
+def _order_clause(order_by) -> str:
+    text = str(order_by or "").strip()
+    if not text:
+        return ""
+    parts = []
+    for chunk in text.split(","):
+        piece = chunk.strip()
+        matched = _ORDER_ITEM.match(piece)
+        if not matched:
+            raise HTTPException(400, f"非法排序条件: {piece}")
+        parts.append(f'"{matched.group(1)}"'
+                     + (f" {matched.group(2).upper()}" if matched.group(2) else ""))
+    return "ORDER BY " + ", ".join(parts)
+
+
+def _validate_join_on(on) -> str:
+    text = str(on or "").strip()
+    if not text:
+        raise HTTPException(400, "JOIN 缺少 ON 条件")
+    parts = []
+    for cond in _re.split(r"\s+AND\s+", text, flags=_re.IGNORECASE):
+        matched = _re.match(rf"^\s*({_JOIN_SIDE})\s*=\s*({_JOIN_SIDE})\s*$", cond)
+        if not matched:
+            raise HTTPException(400, f"非法 JOIN 条件: {cond.strip()[:80]}")
+        parts.append(f"{matched.group(1)} = {matched.group(2)}")
+    return " AND ".join(parts)
 
 
 # 查询构建器允许的筛选运算符（白名单，值一律走绑定参数）
@@ -571,10 +626,11 @@ def get_table_data(
 @router.get("/export/{table}")
 def export_excel(
     table: str,
-    current_user: User = Depends(get_current_user),
+    request: Request,
+    current_user: User = Depends(require("bi:data:export:detail", "没有明细导出权限，请联系管理员开通")),
     db: Session = Depends(get_db),
 ):
-    """导出 BI 表数据为 Excel"""
+    """导出 BI 表数据为 Excel（需要明细导出权限）"""
     if table not in ALLOWED_TABLES:
         raise HTTPException(status_code=404, detail=f"表 {table} 不在白名单中")
 
@@ -586,8 +642,26 @@ def export_excel(
     where_clause = rls_where(decision)
     where_sql_part = f" WHERE {where_clause}" if where_clause else ""
 
+    # R4 组合风控：陌生设备 + 非工作时段 + 明细导出 → 告警（默认）/ 阻断（配置后）
+    from app.middleware.audit_context import get_request_meta
+    from app.security import guard
+
+    meta = get_request_meta()
+    verdict = guard.assess_sensitive_export(
+        db, user=current_user, ip=meta.get("ip", ""), fp=meta.get("fingerprint", ""),
+        table=table,
+    )
+    if verdict["blocked"]:
+        raise HTTPException(403, "陌生设备在非工作时段导出明细，已被安全卫士拦截，请联系管理员")
+    guard.observe_business("export_detail", ip=meta.get("ip", ""),
+                           fp=meta.get("fingerprint", ""), user_id=current_user.id)
+
     try:
-        rows = db.execute(text(f"SELECT * FROM {table}{where_sql_part} ORDER BY id")).fetchall()
+        # 不是所有业务表都有 id（如 bi_demo_sku）；没有 id 时不做排序，避免固定 ORDER BY id 直接 500。
+        from app.query.column_types import column_types as _column_types
+
+        order_sql = ' ORDER BY "id"' if "id" in _column_types(db, table) else ""
+        rows = db.execute(text(f"SELECT * FROM {table}{where_sql_part}{order_sql}")).fetchall()
         if not rows:
             raise HTTPException(404, "无数据")
 
@@ -598,13 +672,28 @@ def export_excel(
 
         columns = list(rows[0]._mapping.keys())
         row_dicts = _apply_masks(table, [dict(r._mapping) for r in rows], db)
-        ws.append(columns)
-        for r in row_dicts:
-            ws.append([r[c] for c in columns])
+        # 水印身份化：导出人 / 部门 / 时间 / 请求号（导出文件外传后可回溯）
+        info = watermark.identity(
+            db, current_user,
+            request_id=getattr(request.state, "request_id", "") or "",
+            source="明细导出",
+        )
+        next_row = watermark.xlsx_stamp(ws, info, start_row=1, span=max(1, len(columns)))
+        header_row = next_row + 1
+        from openpyxl.styles import Font
+
+        for index, name in enumerate(columns, start=1):
+            ws.cell(row=header_row, column=index, value=name).font = Font(bold=True)
+        for offset, r in enumerate(row_dicts, start=header_row + 1):
+            for index, name in enumerate(columns, start=1):
+                ws.cell(row=offset, column=index, value=r[name])
+        watermark.xlsx_header(ws, info)
 
         output = io.BytesIO()
         wb.save(output)
         output.seek(0)
+        log_audit(current_user.id, "data.export.detail", "table", 0,
+                  {"table": table, "rows": len(row_dicts), "request_id": info["request_id"]})
         return StreamingResponse(
             output,
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -942,17 +1031,19 @@ def query_builder(
     if joins:
         for j in joins:
             jt = str(j["table"])
-            j_on = str(j["on"])
-            j_type = str(j.get("type", "INNER"))
+            j_type = str(j.get("type", "INNER")).strip().upper()
+            if j_type not in _JOIN_TYPES:
+                raise HTTPException(400, f"不支持的 JOIN 类型: {j.get('type')}")
             if jt not in ALLOWED_TABLES:
                 raise HTTPException(404, f"JOIN 表 {jt} 不在白名单中")
+            j_on = _validate_join_on(j.get("on"))
             from_clause += f" {j_type} JOIN {jt} ON {j_on}"
 
     metrics = payload.get("metrics", [])
     dimensions = payload.get("dimensions", [])
     filters = payload.get("filters", [])
     order_by = payload.get("order_by", "")
-    limit = payload.get("limit", 500)
+    limit = _validate_limit(payload.get("limit", 500))
 
     # Build SELECT（维度支持时间粒度：字符串=列名，字典={"column","grain"}）
     from app.query.column_types import column_types as _col_types, needs_cast
@@ -980,7 +1071,7 @@ def query_builder(
     else:
         for m in metrics:
             col = str(m["col"])
-            agg = str(m.get("agg", "SUM"))
+            agg = _validate_agg(m.get("agg", "SUM"))
             alias = str(m.get("alias", f"{agg}_{col}"))
             _validate_col(col)
             _validate_col(alias)
@@ -1038,7 +1129,7 @@ def query_builder(
             if isinstance(dimensions[0], dict)
             else str(dimensions[0])
         )
-    order_clause = f"ORDER BY {order_by}" if order_by else (f'ORDER BY "{first_dim}"' if first_dim else "")
+    order_clause = _order_clause(order_by) or (f'ORDER BY "{first_dim}"' if first_dim else "")
 
     sql = f"""SELECT {", ".join(select_parts)} FROM {from_clause}
 {where_clause} {group_clause} {order_clause} LIMIT {limit}"""
@@ -1322,10 +1413,18 @@ def clone_template_to_dashboard(
 
 
 @router.post("/metrics/execute/{metric_id}")
-def execute_metric(metric_id: int, payload: dict = Body(...), db: Session = Depends(get_db)):
+def execute_metric(metric_id: int, payload: dict = Body(...),
+                   current_user: User = Depends(get_current_user),
+                   db: Session = Depends(get_db)):
     row = db.execute(text("SELECT formula FROM bi_metrics WHERE id=:id"), {"id": metric_id}).fetchone()
     if not row: raise HTTPException(404, "指标不存在")
-    formula = row[0]
+    # 落库前已校验；执行前再校验一次，防止历史脏数据 / 手工 SQL 写入绕过
+    from app.semantic.validator import SemanticError, validate_metric_expression
+
+    try:
+        formula = validate_metric_expression(str(row[0] or ""))
+    except SemanticError as exc:
+        raise HTTPException(400, f"指标公式不合法：{exc}") from exc
     table = payload.get("table", "")
     if table not in ALLOWED_TABLES: raise HTTPException(404, f"表 {table} 不在白名单中")
     try:
@@ -1349,8 +1448,15 @@ def list_metrics(category: str = Query(default=""), db: Session = Depends(get_db
 
 @router.post("/metrics")
 def create_metric(payload: dict = Body(...), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    # 公式最终会被拼进 SELECT 执行，必须是「聚合表达式」：禁止子查询 / 写操作 / 危险函数
+    from app.semantic.validator import SemanticError, validate_metric_expression
+
+    try:
+        formula = validate_metric_expression(str(payload.get("formula") or ""))
+    except SemanticError as exc:
+        raise HTTPException(400, str(exc)) from exc
     db.execute(text("INSERT INTO bi_metrics (name, formula, description, category, business_line, owner_id) VALUES (:n,:f,:d,:c,:bl,:uid)"),
-               {"n": payload["name"], "f": payload["formula"], "d": payload.get("description",""), "c": payload.get("category","通用"), "bl": payload.get("business_line","通用"), "uid": current_user.id})
+               {"n": payload["name"], "f": formula, "d": payload.get("description",""), "c": payload.get("category","通用"), "bl": payload.get("business_line","通用"), "uid": current_user.id})
     result = db.execute(text("SELECT lastval()")).scalar()
     db.commit()
     return {"id": result, "name": payload["name"]}
@@ -1446,7 +1552,7 @@ def cluster_guide():
         "current": {"instances": 2, "load_balancer": "nginx", "database": "single_master"},
         "scale_steps": [
             "1. docker-compose.yml 增加 app3/app4 服务定义（复制 app1 配置）",
-            "2. nginx.conf upstream mingzebi_backend 添加 server app3:8000; server app4:8000;",
+            "2. nginx.conf upstream mingcebi_backend 添加 server app3:8000; server app4:8000;",
             "3. docker-compose up -d --scale app=4",
             "4. PostgreSQL 配置 streaming replication 只读副本：",
             "   - 主库: wal_level=replica, max_wal_senders=5",
@@ -2372,71 +2478,12 @@ def _parse_pivot_table(ws, header_row: int, persons: list[str], metric_rows: lis
 
 # ═══════ LLM 调用工具 ═══════
 
-import requests as _requests
-from pathlib import Path as _Path
-
-def _load_default_llm() -> dict | None:
-    """加载默认 AI 模型配置。
-
-    顺序：管理后台维护的库表 → data/ai_models.json → 环境变量（见 app/services/ai_models.py）。
-    """
-    try:
-        from app.services.ai_models import legacy_chat_config
-
-        cfg = legacy_chat_config()
-        if cfg:
-            return cfg
-    except Exception:
-        pass
-    models_file = _Path(__file__).parent.parent.parent / "data" / "ai_models.json"
-    if not models_file.exists():
-        return None
-    try:
-        models = json.loads(models_file.read_text())
-        for m in models:
-            if m.get("isDefault") and m.get("enabled") and m.get("apiKey"):
-                return m
-        # 兜底：取第一个启用的
-        for m in models:
-            if m.get("enabled") and m.get("apiKey"):
-                return m
-    except Exception:
-        pass
-    return None
-
 def _call_llm(prompt: str, system: str = "", max_tokens: int = 4096) -> str:
-    """调用默认 LLM（DeepSeek）."""
-    cfg = _load_default_llm()
-    if not cfg:
-        return ""
+    """统一走 ai_engine 的调用链（默认模型 → 其它启用模型 → 文件 → 环境变量）."""
+    from app.services.bi_ai_engine import _call_llm as _call
 
-    headers = {
-        "Authorization": f"Bearer {cfg['apiKey']}",
-        "Content-Type": "application/json",
-    }
-    messages = []
-    if system:
-        messages.append({"role": "system", "content": system})
-    messages.append({"role": "user", "content": prompt})
+    return _call(prompt, system, max_tokens)
 
-    try:
-        endpoint = cfg.get("chat_url") or f"{str(cfg['baseURL']).rstrip('/')}/chat/completions"
-        r = _requests.post(
-            endpoint,
-            json={
-                "model": cfg.get("model", "deepseek-v4-pro"),
-                "messages": messages,
-                "temperature": cfg.get("temperature", 0.3),
-                "max_tokens": max_tokens,
-            },
-            headers=headers,
-            timeout=60,
-        )
-        if r.status_code == 200:
-            return r.json()["choices"][0]["message"]["content"]
-        return ""
-    except Exception:
-        return ""
 
 def _read_pivot_as_rows(ws, header_row: int, persons: list[str], metric_rows: list[int], max_row: int) -> tuple:
     import re as _sre

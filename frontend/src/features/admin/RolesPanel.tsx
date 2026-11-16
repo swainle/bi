@@ -34,6 +34,10 @@ const SCOPE_LABELS: Record<string, string> = {
 interface PermissionItem { code: string; name: string; group: string }
 
 const PRIMARY_GROUP = "管理后台";
+/** 能力权限：给了不进管理后台，只放开 AI / Agent / 导出删除这类动作 */
+const CAPABILITY_GROUPS = ["AI 能力", "MCP 能力", "数据能力"];
+/** 导出开关：单独提到「数据导出」一栏，便于管理员一眼找到并一键开关 */
+const EXPORT_CODES = ["bi:data:export:summary", "bi:data:export:detail"];
 
 export default function RolesPanel({ scope }: { scope?: string }) {
   const { user } = useAuth();
@@ -89,7 +93,7 @@ export default function RolesPanel({ scope }: { scope?: string }) {
   const groups = useMemo(() => {
     const order = [
       "bi:overview", "bi:user:manage", "bi:role:manage",
-      "bi:model:manage", "bi:error:view", "bi:ops:manage",
+      "bi:model:manage", "bi:error:view", "bi:ops:manage", "bi:mcp:manage",
     ];
     const primary = permissions
       .filter((p) => p.group === PRIMARY_GROUP)
@@ -102,15 +106,19 @@ export default function RolesPanel({ scope }: { scope?: string }) {
         return ai - bi;
       });
     const business = permissions.filter((p) => p.group === "业务入口");
+    const exportPerms = permissions.filter((p) => EXPORT_CODES.includes(p.code));
+    const capability = permissions.filter(
+      (p) => CAPABILITY_GROUPS.includes(p.group) && !EXPORT_CODES.includes(p.code),
+    );
     const legacy = permissions.filter(
-      (p) => p.group !== PRIMARY_GROUP && p.group !== "业务入口",
+      (p) => p.group !== PRIMARY_GROUP && p.group !== "业务入口" && !CAPABILITY_GROUPS.includes(p.group),
     );
     const legacyGroups = new Map<string, PermissionItem[]>();
     legacy.forEach((p) => {
       const key = p.group || "其他";
       legacyGroups.set(key, [...(legacyGroups.get(key) || []), p]);
     });
-    return { primary, business, legacy: [...legacyGroups.entries()] };
+    return { primary, business, exportPerms, capability, legacy: [...legacyGroups.entries()] };
   }, [permissions]);
 
   const dirty = useMemo(() => {
@@ -135,6 +143,15 @@ export default function RolesPanel({ scope }: { scope?: string }) {
         ? prev.permissions.filter((c) => c !== code)
         : [...prev.permissions, code],
     }));
+  };
+
+  /** 导出开关：一键全开 / 全关（仍只改草稿，点保存才生效） */
+  const toggleExportAll = (on: boolean) => {
+    if (!selected || !canEdit) return;
+    setDraft((prev) => {
+      const rest = prev.permissions.filter((code) => !EXPORT_CODES.includes(code));
+      return { ...prev, permissions: on ? [...rest, ...EXPORT_CODES] : rest };
+    });
   };
 
   const save = async () => {
@@ -374,6 +391,58 @@ export default function RolesPanel({ scope }: { scope?: string }) {
                     <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", mb: 1.5 }}>
                       {groups.business.map(renderPermission)}
                     </Box>
+                  </>
+                )}
+
+                {groups.exportPerms.length > 0 && (
+                  <>
+                    <Box sx={{ display: "flex", alignItems: "center", gap: 1, mt: 1.5, mb: 0.5 }}>
+                      <Typography sx={{ fontSize: 11.5, fontWeight: 600, color: "#64748B", letterSpacing: 0.3 }}>
+                        数据导出
+                      </Typography>
+                      {canEdit && (
+                        <>
+                          <Button size="small" onClick={() => toggleExportAll(true)}
+                            sx={{ minWidth: 0, fontSize: 11, textTransform: "none", color: "#4F46E5" }}>
+                            全部开启
+                          </Button>
+                          <Button size="small" onClick={() => toggleExportAll(false)}
+                            sx={{ minWidth: 0, fontSize: 11, textTransform: "none", color: "#64748B" }}>
+                            全部关闭
+                          </Button>
+                        </>
+                      )}
+                    </Box>
+                    <Typography sx={{ fontSize: 11, color: "#A1A1A6", mb: 0.5 }}>
+                      勾选 = 允许导出，取消 = 关闭导出；关闭后该角色看不到导出按钮，
+                      直接调导出接口返回 403（管理员角色始终可用）。保存后生效。
+                    </Typography>
+                    <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", mb: 1.5 }}>
+                      {groups.exportPerms.map(renderPermission)}
+                    </Box>
+                  </>
+                )}
+
+                {groups.capability.length > 0 && (
+                  <>
+                    <Typography sx={{ fontSize: 11.5, fontWeight: 600, color: "#64748B", mt: 1.5, mb: 0.5, letterSpacing: 0.3 }}>
+                      能力权限
+                    </Typography>
+                    <Typography sx={{ fontSize: 11, color: "#A1A1A6", mb: 0.75 }}>
+                      AI 分析、Agent 代调用与删除；与后台分区无关，勾了也不会进管理后台
+                    </Typography>
+                    {CAPABILITY_GROUPS.map((group) => {
+                      const items = groups.capability.filter((p) => p.group === group);
+                      if (items.length === 0) return null;
+                      return (
+                        <Box key={group} sx={{ mb: 1 }}>
+                          <Typography sx={{ fontSize: 11, color: "#A1A1A6", mb: 0.25 }}>{group}</Typography>
+                          <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))" }}>
+                            {items.map(renderPermission)}
+                          </Box>
+                        </Box>
+                      );
+                    })}
                   </>
                 )}
 

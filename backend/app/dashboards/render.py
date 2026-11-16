@@ -93,6 +93,16 @@ def resolved_fields(filter_spec, platform: str) -> list:
     return out
 
 
+def is_filter_item(item: Any) -> bool:
+    """这条元素是不是筛选栏 —— 只看 type 不够：历史文档 / 组件库拖进来的筛选栏，
+    type 可能存成 chart、component 是 base.filter（前端 isFilterBarItem 已按同一口径兜底）。
+    后端漏判的后果是「整条筛选栏的参数都不算数」，卡片怎么点都不变。"""
+    if getattr(item, "type", "") == "filter":
+        return True
+    code = str(getattr(item, "component", "") or "")
+    return code == "base.filter" or code.endswith(".filter")
+
+
 def collect_param_defs(db: Session, doc: DashboardDoc, view_key: str | None = None,
                        params: dict | None = None) -> list[dict]:
     """汇总当前视图筛选栏字段（已按当前平台解析）；同 id 后者覆盖前者."""
@@ -100,7 +110,7 @@ def collect_param_defs(db: Session, doc: DashboardDoc, view_key: str | None = No
     for view, item in doc.all_items():
         if view_key and view.key != view_key:
             continue
-        if item.type != "filter":
+        if not is_filter_item(item):
             continue
         try:
             if item.spec:
@@ -121,9 +131,23 @@ def collect_param_defs(db: Session, doc: DashboardDoc, view_key: str | None = No
     defs: dict[str, dict] = {}
     for item, spec in pairs:
         for field in resolved_fields(spec.filter, platform):
-            data = field.model_dump()
-            defs[data["id"]] = {**data, "component": item.component}
+            merge_param_def(defs, field.model_dump(), item.component)
     return list(defs.values())
+
+
+def merge_param_def(defs: dict[str, dict], data: dict, component: str | None = None) -> None:
+    """把一个筛选字段并进 defs（同 id 后者覆盖前者，但**空壳不能顶掉绑了列的那条**）.
+
+    同一个 id 出现两次很常见：页面上留了两条筛选栏、旧筛选栏没删、复制文档留下的副本。
+    如果后一条还没绑字段（column 空），它会把前一条已经配好的过滤条件整页顶掉 ——
+    现象就是「筛选栏上明明选着值，卡片纹丝不动」（2026-11-15 用户实测）。
+    """
+    existing = defs.get(data.get("id"))
+    if existing is not None \
+            and str(existing.get("column") or "").strip() \
+            and not str(data.get("column") or "").strip():
+        return
+    defs[data["id"]] = {**data, "component": component}
 
 
 def effective_params(defs: list[dict], requested: dict | None) -> dict:
@@ -406,8 +430,8 @@ def render_dashboard(
     page_items = view_items_for(view, platform)
     render_items = [
         item for item in page_items
-        if item.type not in ("heading", "text", "divider", "board")
-    ]  # 页面元素由前端直接渲染（画板在成品页是弹窗内容，不直接铺）
+        if item.type not in ("heading", "text", "divider", "board") and not is_filter_item(item)
+    ]  # 页面元素由前端直接渲染（画板在成品页是弹窗内容，不直接铺；筛选栏也由前端画）
     user_view = _user_view(user)
     try:
         workers = int(os.getenv("BI_RENDER_WORKERS", "4") or "4")

@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>明策BI × Apache Superset · 能力对比 v2</title>
+<style>
+  :root{
+    --ink:#0F172A; --ink2:#334155; --muted:#64748B; --faint:#94A3B8;
+    --line:#EEF3FB; --border:#D8E2F5; --bg:#F6F9FD;
+    --mz:#4F46E5; --mz-soft:#EEF0FE; --mz-bar:#6366F1;
+    --ss:#0E8F8F; --ss-soft:#E7F5F5; --ss-bar:#14A3A3;
+    --radius:14px;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font:13px/1.65 -apple-system,BlinkMacSystemFont,"SF Pro SC","PingFang SC","Helvetica Neue",Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1080px;margin:0 auto;padding:0 24px 72px}
+
+  header{padding:56px 0 28px}
+  .kicker{font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);font-weight:600}
+  .vtag{display:inline-block;margin-left:8px;font-size:10.5px;letter-spacing:.04em;background:var(--mz-soft);color:#4338CA;border-radius:999px;padding:2px 8px;vertical-align:2px;font-weight:650}
+  h1{font-size:30px;line-height:1.3;letter-spacing:-.02em;margin:12px 0 10px;font-weight:650}
+  .sub{color:var(--muted);font-size:13.5px;max-width:780px}
+  .meta{margin-top:16px;display:flex;gap:18px;flex-wrap:wrap;font-size:11.5px;color:var(--faint)}
+  .meta b{color:var(--ink2);font-weight:600}
+
+  .verdict{padding:26px 26px 22px;background:#fff;border:1px solid #E6EDF8;border-radius:16px;box-shadow:0 1px 2px rgba(15,23,42,.03)}
+  .verdict h2{font-size:15px;margin:0 0 4px;font-weight:650;letter-spacing:-.01em}
+  .verdict p{margin:0;color:var(--muted);font-size:12.5px}
+  .verdict p b{color:var(--ink2);font-weight:600}
+  .scores{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:20px}
+  .score{border:1px solid var(--line);border-radius:12px;padding:16px 16px 14px;background:#FCFDFF;position:relative}
+  .score .lbl{font-size:11.5px;color:var(--muted);font-weight:600;letter-spacing:.02em}
+  .score .pair{display:flex;align-items:baseline;gap:8px;margin-top:8px}
+  .score .n{font-size:26px;font-weight:650;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+  .score .n.mz{color:var(--mz)}
+  .score .n.ss{color:var(--ss)}
+  .score .vs{font-size:11.5px;color:var(--faint)}
+  .score .who{margin-top:6px;font-size:11.5px;color:var(--ink2)}
+  .score .who em{font-style:normal;font-weight:650}
+  .up{position:absolute;right:14px;top:14px;font-size:10.5px;font-weight:650;color:#0F8A5F;background:#EAF7F1;border-radius:999px;padding:2px 7px}
+
+  h3.sec{font-size:11.5px;font-weight:600;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;margin:44px 0 12px}
+  h3.sec span{text-transform:none;letter-spacing:0;font-weight:400;color:var(--faint);margin-left:8px}
+
+  table{width:100%;border-collapse:separate;border-spacing:0;background:#fff;border:1px solid #E6EDF8;border-radius:var(--radius);overflow:hidden}
+  thead th{
+    background:#F2F7FE;color:var(--muted);font-size:11.5px;font-weight:600;text-align:left;
+    padding:11px 14px;border-bottom:1px solid var(--line);white-space:nowrap
+  }
+  thead th.num{text-align:right}
+  tbody td{padding:11px 14px;border-bottom:1px solid var(--line);vertical-align:middle}
+  tbody tr:last-child td{border-bottom:0}
+  tbody tr:hover{background:rgba(15,23,42,.018)}
+  .dim{font-weight:600;color:var(--ink);white-space:nowrap}
+  .dim small{display:block;font-weight:400;color:var(--faint);font-size:11px;letter-spacing:0}
+  td.barcell{width:158px;padding-left:4px}
+  .bar{position:relative;height:6px;border-radius:999px;background:#EFF4FB;overflow:hidden}
+  .bar i{position:absolute;inset:0 auto 0 0;border-radius:999px}
+  .bar.mz i{background:linear-gradient(90deg,#6366F1,#4F46E5)}
+  .bar.ss i{background:linear-gradient(90deg,#37B6B6,#0E8F8F)}
+  td.num{text-align:right;font-variant-numeric:tabular-nums;font-weight:650;font-size:13px;white-space:nowrap}
+  td.num.mz{color:var(--mz)} td.num.ss{color:var(--ss)}
+  .delta{font-size:11px;font-weight:600;white-space:nowrap;border-radius:999px;padding:2px 8px}
+  .delta.mz{background:var(--mz-soft);color:#4338CA}
+  .delta.ss{background:var(--ss-soft);color:#0B6E6E}
+  .delta.eq{background:#F1F5F9;color:#64748B}
+  .chg{font-size:10.5px;font-weight:650;font-variant-numeric:tabular-nums;color:#0F8A5F;margin-left:3px}
+  .chg.zero{color:#CBD5E1;font-weight:400}
+  tr.total td{background:#FBFDFF;border-top:1px solid var(--border);font-weight:650}
+
+  .rk{font-size:11px;font-weight:650;color:var(--faint);font-variant-numeric:tabular-nums;white-space:nowrap}
+  td.cap{font-size:12.2px;color:var(--ink2)}
+  td.cap b{color:var(--ink);font-weight:650}
+  .st{font-size:10.5px;font-weight:650;border-radius:999px;padding:2px 8px;white-space:nowrap}
+  .st.done{background:#EAF7F1;color:#0F8A5F}
+  .st.part{background:#FEF4E7;color:#96601A}
+  .st.no{background:#F1F5F9;color:#94A3B8}
+  .ledger-sum{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+  .ledger-sum span{font-size:11.5px;color:var(--muted);background:#fff;border:1px solid #E6EDF8;border-radius:999px;padding:3px 11px}
+  .ledger-sum b{color:var(--ink);font-variant-numeric:tabular-nums}
+
+  .detail{border:1px solid #E6EDF8;border-radius:var(--radius);background:#fff;padding:20px 22px;margin-top:12px}
+  .detail .head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}
+  .detail h4{margin:0;font-size:13.5px;font-weight:650;letter-spacing:-.01em}
+  .detail h4 span{color:var(--faint);font-weight:400;font-size:11.5px;margin-left:8px;letter-spacing:0}
+  .chip{font-size:11px;font-weight:650;padding:3px 9px;border-radius:999px;white-space:nowrap}
+  .chip.mz{background:var(--mz-soft);color:#4338CA}
+  .chip.ss{background:var(--ss-soft);color:#0B6E6E}
+  .chip.eq{background:#F1F5F9;color:#64748B}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .side{border:1px solid var(--line);border-radius:11px;padding:13px 14px;background:#FCFDFF}
+  .side .name{display:flex;align-items:center;justify-content:space-between;font-size:11.5px;font-weight:650;margin-bottom:7px}
+  .side.mz .name{color:var(--mz)} .side.ss .name{color:var(--ss)}
+  .side .name em{font-style:normal;font-size:10.5px;color:#0F8A5F;background:#EAF7F1;border-radius:999px;padding:1px 6px}
+  .side p{margin:0;color:var(--ink2);font-size:12.2px;line-height:1.7}
+  .side p + p{margin-top:6px}
+  .side .gap{color:#B4491E}
+  .side .new{color:#0B7A50}
+  .side .new b{color:#0B6B47}
+  .note{margin-top:12px;padding-top:12px;border-top:1px dashed var(--line);font-size:12px;color:var(--muted)}
+  .note b{color:var(--ink2);font-weight:600}
+
+  .take{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-top:12px}
+  .take div{border:1px solid #E6EDF8;background:#fff;border-radius:12px;padding:15px 17px}
+  .take h5{margin:0 0 6px;font-size:12.5px;font-weight:650}
+  .take p{margin:0;font-size:12.2px;color:var(--muted);line-height:1.7}
+  .take p b{color:var(--ink2);font-weight:650}
+  .callout{margin-top:16px;border:1px solid #E4E7FE;background:linear-gradient(180deg,#FAFAFF,#F5F6FF);border-radius:14px;padding:20px 22px}
+  .callout h5{margin:0 0 8px;font-size:13px;font-weight:650;color:#3730A3}
+  .callout p{margin:0 0 8px;font-size:12.5px;color:#3F3D56;line-height:1.75}
+  .callout p:last-child{margin-bottom:0}
+  .callout strong{color:#312E81}
+  footer{margin-top:40px;padding-top:18px;border-top:1px solid var(--line);color:var(--faint);font-size:11.5px;line-height:1.8}
+
+  @media (max-width:880px){
+    .scores{grid-template-columns:1fr}
+    .two,.take{grid-template-columns:1fr}
+    td.barcell,thead th.barcell{display:none}
+    h1{font-size:24px}
+    .vtag{display:block;margin:8px 0 0;width:fit-content}
+  }
+  @media print{
+    body{background:#fff}
+    .verdict,table,.detail,.take div{box-shadow:none}
+    .detail{break-inside:avoid}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="kicker">Competitive Review · 2026-11-16</div>
+  <h1>明策BI × Apache Superset<br />18 项能力对比与评分<span class="vtag">v2 · 随功能更新重评</span></h1>
+  <p class="sub">上一版是 2026-11-15 00:37 出的。此后补齐了 R3–R16：水印身份化、卫士 v2、Prompt 注入、Agent 死循环、MCP 生产化、敏感字段自动脱敏、AI 配额、导出开关，并做了窄卡自适应与组件外发规范。本次按新能力重算，每项标出变化。</p>
+  <div class="meta">
+    <span><b>评分项</b> 18</span>
+    <span><b>较上版</b> 84.0 → 85.3（+1.3）</span>
+    <span><b>数据来源</b> 仓库实测 + Superset 6.1 官方文档</span>
+    <span><b>日期</b> 2026-11-16</span>
+  </div>
+</header>
+
+<section class="verdict">
+  <h2>一句话结论</h2>
+  <p>这一版把等权总分从 84.0 拉到 85.3，<b>首次反超 Superset（85.1）</b>。但 0.2 分在统计上就是平手 —— 真正的变化在结构：明策在治理深度上已明显领先，Superset 在平台广度上仍明显领先。按你自家公司的用法加权，领先从 +1.2 扩大到 <b>+2.4</b>；按平台化加权，Superset 仍领先 2.4 分。</p>
+
+  <div class="scores">
+    <div class="score">
+      <div class="up">+1.3</div>
+      <div class="lbl">等权总分（18 项平均）</div>
+      <div class="pair"><span class="n mz">85.3</span><span class="vs">vs</span><span class="n ss">85.1</span></div>
+      <div class="who">明策BI <em>+0.2</em>（上版 −1.1）</div>
+    </div>
+    <div class="score">
+      <div class="up">+1.2</div>
+      <div class="lbl">自用场景加权（编辑/权限/AI 重）</div>
+      <div class="pair"><span class="n mz">86.3</span><span class="vs">vs</span><span class="n ss">83.9</span></div>
+      <div class="who">明策BI <em>+2.4</em>（上版 +1.2）</div>
+    </div>
+    <div class="score">
+      <div class="lbl">平台化加权（连接/扩展/并发重）</div>
+      <div class="pair"><span class="n ss">86.3</span><span class="vs">vs</span><span class="n mz">83.9</span></div>
+      <div class="who">Superset <em>+2.4</em>（上版 +3.7）</div>
+    </div>
+  </div>
+</section>
+
+<h3 class="sec">本次更新了什么<span>R0–R16 台账 · docs/安全与MCP优化方案.md</span></h3>
+<div class="ledger-sum">
+  <span>已实施 <b>15</b> / 17</span>
+  <span>部分 <b>1</b>（导出开关已做，审批流与暗水印未做）</span>
+  <span>未实施 <b>1</b>（SSO/IAM）</span>
+  <span>后端 <b>300</b> 路由 · <b>60</b> 迁移 · <b>37</b> 测试 · <b>19</b> 回归脚本</span>
+</div>
+<table>
+  <thead>
+    <tr><th style="width:52px">编号</th><th>能力（缺口 → 现在的做法）</th><th style="width:78px">状态</th><th style="width:118px">影响评分项</th></tr>
+  </thead>
+  <tbody>
+    <tr><td class="rk">R0</td><td class="cap">指标表达式可注入 SQL → HTTP 入口拒绝子查询/表达式，结构化校验</td><td><span class="st done">已实施</span></td><td>数据安全</td></tr>
+    <tr><td class="rk">R1</td><td class="cap">导出权限码空挂 → 后端挂码 + 前端按权限隐藏，导航卡 CSV 无权限直接拒</td><td><span class="st done">已实施</span></td><td>权限</td></tr>
+    <tr><td class="rk">R2</td><td class="cap">报表/告警可外发任意地址 → 域名白名单 + SSRF 防护 + 不跟重定向</td><td><span class="st done">已实施</span></td><td>数据安全</td></tr>
+    <tr><td class="rk">R3</td><td class="cap"><b>水印不绑定身份</b> → 页面覆盖层 + HTML/PDF/PNG/Excel 全链路带「用户·部门·时间·请求号」</td><td><span class="st done">已实施</span></td><td>数据安全</td></tr>
+    <tr><td class="rk">R4</td><td class="cap"><b>卫士只有单指标阈值</b> → 组合风控 + IP/CIDR/角色三级白名单 + 业务高频只告警不封</td><td><span class="st done">已实施</span></td><td>数据安全</td></tr>
+    <tr><td class="rk">R5</td><td class="cap"><b>无 Prompt 注入防护</b> → AI 输入 / MCP 参数 / 工具返回三层检测，返回二次清洗</td><td><span class="st done">已实施</span></td><td>数据安全 · AI</td></tr>
+    <tr><td class="rk">R6</td><td class="cap"><b>无 Agent 死循环防护</b> → 会话 60 步 / 重复 5 次 / 无进展 6 次，task_id 豁免</td><td><span class="st done">已实施</span></td><td>数据安全 · AI</td></tr>
+    <tr><td class="rk">R7</td><td class="cap"><b>MCP 入参不校验</b> → 按 inputSchema 校验，失败 400</td><td><span class="st done">已实施</span></td><td>API</td></tr>
+    <tr><td class="rk">R8</td><td class="cap"><b>无幂等键</b> → client + tool + idempotency_key 去重（7 天）</td><td><span class="st done">已实施</span></td><td>API</td></tr>
+    <tr><td class="rk">R9</td><td class="cap"><b>编排无事务/回收</b> → 终止型失败回收本会话孤儿草稿</td><td><span class="st done">已实施</span></td><td>API · AI</td></tr>
+    <tr><td class="rk">R10</td><td class="cap"><b>无客户端级配额/熔断</b> → QPS 20 / 日 2000 / 失败率熔断 300s / 统一错误码</td><td><span class="st done">已实施</span></td><td>并发 · API</td></tr>
+    <tr><td class="rk">R11</td><td class="cap"><b>工具目录与实现不一致</b> → 删掉 6 个未实现工具，目录 17 条与实现一一对应</td><td><span class="st done">已实施</span></td><td>API</td></tr>
+    <tr><td class="rk">R12</td><td class="cap"><b>令牌治理缺口</b> → scopes（工具名/风险级/*）、设备名、上限 5、一键撤销、30 分钟 TTL、服务账号</td><td><span class="st done">已实施</span></td><td>权限 · API</td></tr>
+    <tr><td class="rk">R13</td><td class="cap"><b>敏感字段需人工配置</b> → 新数据集按标签（薪资/成本/手机/身份证/邮箱/地址/密码）自动脱敏</td><td><span class="st done">已实施</span></td><td>数据安全</td></tr>
+    <tr><td class="rk">R14</td><td class="cap"><b>无 AI 成本配额</b> → 每用户每日 300 次 / 100 万 token，超限 429</td><td><span class="st done">已实施</span></td><td>AI</td></tr>
+    <tr><td class="rk">R15</td><td class="cap">无 SSO/IAM（钉钉/企微/飞书/OIDC 未接）</td><td><span class="st no">未实施</span></td><td>权限</td></tr>
+    <tr><td class="rk">R16</td><td class="cap">导出开关已做成角色权限（明细/汇总两码 + 15/15 回归）；导出审批流与暗水印未做</td><td><span class="st part">部分</span></td><td>权限 · 数据安全</td></tr>
+  </tbody>
+</table>
+
+<h3 class="sec">评分总表<span>分数后的绿色数字为较 11-15 版的变化</span></h3>
+<table>
+  <thead>
+    <tr>
+      <th>维度</th>
+      <th class="num">明策BI</th>
+      <th class="barcell"></th>
+      <th class="num">Superset</th>
+      <th class="barcell"></th>
+      <th>胜负</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td class="dim">前端<small>技术基座 · 工程质量</small></td><td class="num mz">87 <span class="chg">+1</span></td><td class="barcell"><div class="bar mz"><i style="width:87%"></i></div></td><td class="num ss">88</td><td class="barcell"><div class="bar ss"><i style="width:88%"></i></div></td><td><span class="delta ss">SS +1</span></td></tr>
+    <tr><td class="dim">后端<small>框架 · 工程结构</small></td><td class="num mz">85 <span class="chg">+1</span></td><td class="barcell"><div class="bar mz"><i style="width:85%"></i></div></td><td class="num ss">85</td><td class="barcell"><div class="bar ss"><i style="width:85%"></i></div></td><td><span class="delta eq">持平</span></td></tr>
+    <tr><td class="dim">底座<small>架构 · 部署形态</small></td><td class="num mz">76 <span class="chg zero">—</span></td><td class="barcell"><div class="bar mz"><i style="width:76%"></i></div></td><td class="num ss">90</td><td class="barcell"><div class="bar ss"><i style="width:90%"></i></div></td><td><span class="delta ss">SS +14</span></td></tr>
+    <tr><td class="dim">语义层<small>数据集 · 字段 · 指标</small></td><td class="num mz">85 <span class="chg zero">—</span></td><td class="barcell"><div class="bar mz"><i style="width:85%"></i></div></td><td class="num ss">86</td><td class="barcell"><div class="bar ss"><i style="width:86%"></i></div></td><td><span class="delta ss">SS +1</span></td></tr>
+    <tr><td class="dim">查询引擎<small>SQL Lab · 异步 · 取消</small></td><td class="num mz">82 <span class="chg zero">—</span></td><td class="barcell"><div class="bar mz"><i style="width:82%"></i></div></td><td class="num ss">90</td><td class="barcell"><div class="bar ss"><i style="width:90%"></i></div></td><td><span class="delta ss">SS +8</span></td></tr>
+    <tr><td class="dim">查询优化<small>缓存 · 预聚合 · 治理</small></td><td class="num mz">86 <span class="chg zero">—</span></td><td class="barcell"><div class="bar mz"><i style="width:86%"></i></div></td><td class="num ss">82</td><td class="barcell"><div class="bar ss"><i style="width:82%"></i></div></td><td><span class="delta mz">MZ +4</span></td></tr>
+    <tr><td class="dim">指标管理<small>认证 · 版本 · 血缘</small></td><td class="num mz">88 <span class="chg zero">—</span></td><td class="barcell"><div class="bar mz"><i style="width:88%"></i></div></td><td class="num ss">74</td><td class="barcell"><div class="bar ss"><i style="width:74%"></i></div></td><td><span class="delta mz">MZ +14</span></td></tr>
+    <tr><td class="dim">企业级并发<small>多 worker · 配额 · 熔断</small></td><td class="num mz">84 <span class="chg">+2</span></td><td class="barcell"><div class="bar mz"><i style="width:84%"></i></div></td><td class="num ss">90</td><td class="barcell"><div class="bar ss"><i style="width:90%"></i></div></td><td><span class="delta ss">SS +6</span></td></tr>
+    <tr><td class="dim">数据库连接<small>方言覆盖 · 驱动</small></td><td class="num mz">74 <span class="chg zero">—</span></td><td class="barcell"><div class="bar mz"><i style="width:74%"></i></div></td><td class="num ss">92</td><td class="barcell"><div class="bar ss"><i style="width:92%"></i></div></td><td><span class="delta ss">SS +18</span></td></tr>
+    <tr><td class="dim">API 接口<small>REST · MCP · 错误码</small></td><td class="num mz">88 <span class="chg">+4</span></td><td class="barcell"><div class="bar mz"><i style="width:88%"></i></div></td><td class="num ss">90</td><td class="barcell"><div class="bar ss"><i style="width:90%"></i></div></td><td><span class="delta ss">SS +2</span></td></tr>
+    <tr><td class="dim">日志监控<small>指标 · 审计 · 探针</small></td><td class="num mz">91 <span class="chg">+1</span></td><td class="barcell"><div class="bar mz"><i style="width:91%"></i></div></td><td class="num ss">82</td><td class="barcell"><div class="bar ss"><i style="width:82%"></i></div></td><td><span class="delta mz">MZ +9</span></td></tr>
+    <tr><td class="dim">看板页面编辑<small>版面 · 布局 · 交互</small></td><td class="num mz">93 <span class="chg">+1</span></td><td class="barcell"><div class="bar mz"><i style="width:93%"></i></div></td><td class="num ss">72</td><td class="barcell"><div class="bar ss"><i style="width:72%"></i></div></td><td><span class="delta mz">MZ +21</span></td></tr>
+    <tr><td class="dim">可视化应用层<small>图表类型 · 呈现</small></td><td class="num mz">84 <span class="chg">+2</span></td><td class="barcell"><div class="bar mz"><i style="width:84%"></i></div></td><td class="num ss">90</td><td class="barcell"><div class="bar ss"><i style="width:90%"></i></div></td><td><span class="delta ss">SS +6</span></td></tr>
+    <tr><td class="dim">AI 能力<small>内置 LLM · 配额 · Agent</small></td><td class="num mz">91 <span class="chg">+1</span></td><td class="barcell"><div class="bar mz"><i style="width:91%"></i></div></td><td class="num ss">76</td><td class="barcell"><div class="bar ss"><i style="width:76%"></i></div></td><td><span class="delta mz">MZ +15</span></td></tr>
+    <tr><td class="dim">可拓展性<small>插件 · 分包开发</small></td><td class="num mz">73 <span class="chg">+5</span></td><td class="barcell"><div class="bar mz"><i style="width:73%"></i></div></td><td class="num ss">92</td><td class="barcell"><div class="bar ss"><i style="width:92%"></i></div></td><td><span class="delta ss">SS +19</span></td></tr>
+    <tr><td class="dim">数据安全<small>RLS · 水印 · 外发</small></td><td class="num mz">95 <span class="chg">+2</span></td><td class="barcell"><div class="bar mz"><i style="width:95%"></i></div></td><td class="num ss">80</td><td class="barcell"><div class="bar ss"><i style="width:80%"></i></div></td><td><span class="delta mz">MZ +15</span></td></tr>
+    <tr><td class="dim">权限<small>RBAC · 数据范围 · 凭据</small></td><td class="num mz">93 <span class="chg">+1</span></td><td class="barcell"><div class="bar mz"><i style="width:93%"></i></div></td><td class="num ss">82</td><td class="barcell"><div class="bar ss"><i style="width:82%"></i></div></td><td><span class="delta mz">MZ +11</span></td></tr>
+    <tr><td class="dim">运维<small>发版 · 升级 · 备份</small></td><td class="num mz">80 <span class="chg">+2</span></td><td class="barcell"><div class="bar mz"><i style="width:80%"></i></div></td><td class="num ss">90</td><td class="barcell"><div class="bar ss"><i style="width:90%"></i></div></td><td><span class="delta ss">SS +10</span></td></tr>
+    <tr class="total"><td>等权总分</td><td class="num mz">85.3 <span class="chg">+1.3</span></td><td></td><td class="num ss">85.1</td><td></td><td><span class="delta mz">MZ +0.2</span></td></tr>
+  </tbody>
+</table>
+
+<h3 class="sec">逐项拆解 · 依据与差距</h3>
+
+<div class="detail">
+  <div class="head"><h4>01 前端<span>技术基座 · 工程质量</span></h4><span class="chip ss">Superset 微胜 +1</span></div>
+  <div class="two">
+    <div class="side mz"><div class="name"><span>明策BI · 87</span><em>+1</em></div><p>React 18 + TS + MUI v5 + Vite 5 + ECharts 6；自研画布引擎与撤销栈；Storybook 8 + Vitest + Playwright 视觉回归 + 体积预算。</p><p class="new">新增：<b>CardFit 收敛口径 + 四档尺寸验收</b>（224×104 必测）、23 个 kind 的真实 fixture、`useBoxSize` 走 ResizeObserver「先比较再 setState」。</p><p class="gap">差距：无官方嵌入 SDK、无多语言。</p></div>
+    <div class="side ss"><div class="name"><span>Superset · 88</span></div><p>React + TS + AntD；50+ 可视化插件；20+ 语言 i18n；官方嵌入 SDK + guest token；Monaco SQL Lab。</p><p class="gap">差距：Explore 交互与版面表达偏旧。</p></div>
+  </div>
+</div>
+
+<div class="detail">
+  <div class="head"><h4>02 后端<span>框架 · 工程结构</span></h4><span class="chip eq">打平</span></div>
+  <div class="two">
+    <div class="side mz"><div class="name"><span>明策BI · 85</span><em>+1</em></div><p>FastAPI + Pydantic v2 + SQLAlchemy 2.0，300 个路由；MCP 拆成独立层（gateway / validate / limits / loop_guard / security_policy / orchestration）；异步任务 inline / worker 双模。</p></div>
+    <div class="side ss"><div class="name"><span>Superset · 85</span></div><p>Flask + Flask-AppBuilder；Flask-Migrate、Celery、成熟 CLI；配置项 200+。</p><p class="gap">差距：FAB 权限/视图模型较重。</p></div>
+  </div>
+</div>
+
+<div class="detail">
+  <div class="head"><h4>03 底座<span>架构 · 部署形态</span></h4><span class="chip ss">Superset 明显胜 +14</span></div>
+  <div class="two">
+    <div class="side mz"><div class="name"><span>明策BI · 76</span></div><p>compose + prod overlay（2 worker）+ Helm chart + livez/readyz 探针 + 60 个迁移。</p><p class="gap">差距：元数据库单 PG，无托管/多活；Redis 仍是可选依赖。</p></div>
+    <div class="side ss"><div class="name"><span>Superset · 90</span></div><p>web×N + Celery worker + beat + Redis + 元数据库，可水平扩；官方 K8s/Helm；Preset 等托管形态。</p></div>
+  </div>
+</div>
+
+<div class="detail">
+  <div class="head"><h4>04 语义层<span>数据集 · 字段 · 指标</span></h4><span class="chip ss">Superset 微胜 +1</span></div>
+  <div class="two">
+    <div class="side mz"><div class="name"><span>明策BI · 85</span></div><p>数据集 / 字段 / 指标三层 + 中文别名；编译器只产出结构化 QueryObject。</p><p class="new">新增：数据分级（normal / confidential / financial）落到数据集上，驱动 MCP 的行数预算与查询形态。</p></div>
+    <div class="side ss"><div class="name"><span>Superset · 86</span></div><p>物理/虚拟数据集、计算列、saved metrics、SQL 表达式、6.x 语义视图、dbt 集成。</p></div>
+  </div>
+</div>
+
+<div class="detail">
+  <div class="head"><h4>05 查询引擎<span>SQL Lab · 异步 · 取消</span></h4><span class="chip ss">Superset 明显胜 +8</span></div>
+  <div class="two">
+    <div class="side mz"><div class="name"><span>明策BI · 82</span></div><p>结构化查询契约（按方言 quote / 分页 / 时间粒度），直连与本地抽取双路径，语句级超时 + PG 端取消，查询取消接口，跨方言回归。</p><p class="gap">短板：分析师的自由 SQL 被有意收紧（拒绝子查询与自定义表达式）。</p></div>
+    <div class="side ss"><div class="name"><span>Superset · 90</span></div><p>SQL Lab：Monaco、补全、结果可视化、保存查询、虚拟数据集、Jinja；异步查询、取消、结果集后端、行数上限。</p></div>
+  </div>
+  <div class="note"><b>这 8 分是「安全换灵活」：</b>R0 之后明策不再接受任何用户 SQL 片段，攻击面收窄的代价就是分析师手感。</div>
+</div>
+
+<div class="detail">
+  <div class="head"><h4>06 查询优化<span>缓存 · 预聚合 · 治理</span></h4><span class="chip mz">明策胜 +4</span></div>
+  <div class="two">
+    <div class="side mz"><div class="name"><span>明策BI · 86</span></div><p>整页渲染缓存（key 含用户/updated_at/视图/参数/版面，保存即失效）、物化视图加速、5 分钟增量刷新、读路径索引、连接池三旋钮、慢查询采样落表、每用户并发配额。</p></div>
+    <div class="side ss"><div class="name"><span>Superset · 82</span></div><p>Redis / 内存多层缓存、结果级缓存、Dashboard 性能（异步取数）；预聚合依赖数据库自身。</p></div>
+  </div>
+</div>
+
+<div class="detail">
+  <div class="head"><h4>07 指标管理<span>认证 · 版本 · 血缘</span></h4><span class="chip mz">明策明显胜 +14</span></div>
+  <div class="two">
+    <div class="side mz"><div class="name"><span>明策BI · 88</span></div><p>certified 认证 + 版本号 + 口径变更自动快照并取消认证 + usages 引用账本 + 字段级血缘 + dbt/LookML 两段式导入。</p></div>
+    <div class="side ss"><div class="name"><span>Superset · 74</span></div><p>saved metrics 可复用，数据集 / 图表可认证。</p><p class="gap">差距：无指标版本、无引用账本、无字段级血缘。</p></div>
+  </div>
+</div>
+
+<div class="detail">
+  <div class="head"><h4>08 企业级并发<span>多 worker · 配额 · 熔断</span></h4><span class="chip ss">Superset 胜 +6</span></div>
+  <div class="two">
+    <div class="side mz"><div class="name"><span>明策BI · 84</span><em>+2</em></div><p>卡片并行渲染（4/16 线程）、单卡独立 Session 失败隔离、每账号并发配额（local/redis）、限流、async worker 队列、连接池耗尽 503 + Retry-After。</p><p class="new">新增：MCP 客户端级 QPS（20）/ 每日调用（2000）/ 失败率熔断（300s），配额从「人」扩到「客户端」。</p><p class="gap">差距：缺大规模公开验证，Redis 仍可选。</p></div>
+    <div class="side ss"><div class="name"><span>Superset · 90</span></div><p>Celery 异步 + 多 worker + 结果后端 + 缓存；PB 级与多租户部署案例成熟。</p></div>
+  </div>
+</div>
+
+<div class="detail">
+  <div class="head"><h4>09 数据库连接<span>方言覆盖 · 驱动</span></h4><span class="chip ss">Superset 明显胜 +18</span></div>
+  <div class="two">
+    <div class="side mz"><div class="name"><span>明策BI · 74</span></div><p>15 类：PG / MySQL / MariaDB / TiDB / SQL Server / Oracle / Db2 / 人大金仓 / ClickHouse / Doris / StarRocks / Presto / Impala / Hive / Redshift；驱动实时探测 + 缺驱动置灰。</p><p class="gap">短板：本版未新增，仍是 15 类；无 Snowflake / BigQuery / Databricks / Athena / Druid / Kylin。</p></div>
+    <div class="side ss"><div class="name"><span>Superset · 92</span></div><p>40+ 官方 dialect，覆盖主流云数仓与湖仓；新增 dialect 门槛低。</p></div>
+  </div>
+  <div class="note"><b>但明策多一个 Superset 没有的：</b>人大金仓（国产化替换场景）。</div>
+</div>
+
+<div class="detail">
+  <div class="head"><h4>10 API 接口<span>REST · MCP · 错误码</span></h4><span class="chip ss">Superset 微胜 +2</span></div>
+  <div class="two">
+    <div class="side mz"><div class="name"><span>明策BI · 88</span><em>+4</em></div><p>300 个 REST 路由 + OpenAPI 自动文档。</p><p class="new">MCP 生产化：inputSchema 入参校验、幂等键（7 天）、终止型失败回收草稿、QPS/日配额/熔断、统一 JSON-RPC 错误码（-32002 上游 / -32003 权限 / -32004 参数 / -32010 死循环 / -32029 配额）、工具目录 17 条与实现一一对应。</p><p class="gap">差距：无官方 SDK、无 API 版本化策略。</p></div>
+    <div class="side ss"><div class="name"><span>Superset · 90</span></div><p>完整 REST API + Swagger + 官方 Python/JS SDK + 嵌入 SDK + 5.0 起的 MCP Server。</p></div>
+  </div>
+</div>
+
+<div class="detail">
+  <div class="head"><h4>11 日志监控<span>指标 · 审计 · 探针</span></h4><span class="chip mz">明策胜 +9</span></div>
+  <div class="two">
+    <div class="side mz"><div class="name"><span>明策BI · 91</span><em>+1</em></div><p><code>/api/metrics</code> 覆盖查询成功/失败/超时/取消/配额/并发、缓存命中、队列、连接池、慢查询 1h+24h；慢查询落表、前后端错误日志、操作审计、安全事件、livez/readyz、Sentry、pgaudit 指南。</p><p class="new">新增：AI 用量表（每日调用 / token）、MCP 异常冻结与解冻宽限的审计轨迹、组合风控事件。</p></div>
+    <div class="side ss"><div class="name"><span>Superset · 82</span></div><p>event logging（DB/文件/CloudWatch）、statsd/DataDog 指标、健康检查、Sentry。</p></div>
+  </div>
+</div>
+
+<div class="detail">
+  <div class="head"><h4>12 看板页面编辑<span>版面 · 布局 · 交互</span></h4><span class="chip mz">明策压倒胜 +21</span></div>
+  <div class="two">
+    <div class="side mz"><div class="name"><span>明策BI · 93</span><em>+1</em></div><p>1440 版面自由拖拽 + 撤销栈 + 分平台套 + 组件库/模板/收藏视图 + 联动与下钻 + AI 整理版面（一次应用 = 一个撤销步）。</p><p class="new">新增：「查看更多」弹窗里点行也能弹行详情（弹窗保持打开、抽屉叠在上面继续点下一条）；窄矮卡自适应，224×104 不再压叠。</p></div>
+    <div class="side ss"><div class="name"><span>Superset · 72</span></div><p>行 / 列网格拼装 + 原生筛选器 + 交叉过滤 + tabs。</p><p class="gap">差距：不能自由叠加、无文字/形状/头标卡、无撤销、无 AI 排版。</p></div>
+  </div>
+  <div class="note"><b>明策最大领先项（+21）：</b>Superset 的看板是「图表容器」，明策的看板是「可设计的一页」。</div>
+</div>
+
+<div class="detail">
+  <div class="head"><h4>13 可视化应用层<span>图表类型 · 呈现</span></h4><span class="chip ss">Superset 胜 +6</span></div>
+  <div class="two">
+    <div class="side mz"><div class="name"><span>明策BI · 84</span><em>+2</em></div><p>23 类，含 banner / nav / section / insight / rank_list 这类「业务页」组件。</p><p class="new">新增：统一 `fitChart` 收敛（图体 &lt;56px 不画轴/图例/数值、宽 &lt;320 只防重叠），23 个 kind 用真实 fixture 对四档尺寸验收，缩略图 compact 模式。</p><p class="gap">短板：类型数量仍少，无插件扩展。</p></div>
+    <div class="side ss"><div class="name"><span>Superset · 90</span></div><p>50+ 图表插件、国家地图、Handlebars 自定义、插件化新增图表。</p></div>
+  </div>
+</div>
+
+<div class="detail">
+  <div class="head"><h4>14 AI 能力<span>内置 LLM · 配额 · Agent</span></h4><span class="chip mz">明策明显胜 +15</span></div>
+  <div class="two">
+    <div class="side mz"><div class="name"><span>明策BI · 91</span><em>+1</em></div><p>内置 LLM（多模型回退、Key 加密、调用审计）：NL→SQL、生成图表、生成整屏、诊断、推荐、SQL 优化、自动建模、智能告警、根因、解读、安全扫描、向量知识库、AI 排版；写看板有「只改自己草稿 + 渲染自检 + 乐观锁 + 发布必须人工」四重边界。</p><p class="new">新增：AI 成本配额（每日 300 次 / 100 万 token，超限 429）、AI 端点全部挂权限码、Prompt 注入三层检测、Agent 死循环防护（60 步 / 重复 5 / 无进展 6）。</p></div>
+    <div class="side ss"><div class="name"><span>Superset · 76</span></div><p>5.0+ 内置 MCP Server（约 22 工具、preview-first、RBAC、guest token）。</p><p class="gap">短板：产品内无内置 LLM，靠外部 Claude/ChatGPT 驱动；无 NL→图表 UI、无根因/解读。</p></div>
+  </div>
+  <div class="note"><b>本质差别：</b>Superset 是「给 AI 开了一扇门」，明策是「AI 长在产品里」。</div>
+</div>
+
+<div class="detail">
+  <div class="head"><h4>15 可拓展性<span>插件 · 分包开发</span></h4><span class="chip ss">Superset 压倒胜 +19</span></div>
+  <div class="two">
+    <div class="side mz"><div class="name"><span>明策BI · 73</span><em>+5</em></div><p>MCP 工具可加；组件库 / 模板市场是数据级扩展。</p><p class="new">新增：<b>组件开发规范</b>（A/B/C 三类任务边界、RendererProps 契约、7 条禁止事项、PR 四栏模板）+ <b>组件数据契约</b>（逐 kind 的 payload 真实结构，代替后端源码）+ <b>23 个真实 fixture</b> —— 前端渲染器可以外发分包开发，对方只装 pnpm + Storybook，不需要 Python/数据库。</p><p class="gap">短板：仍是「改代码」而不是「装插件」；新增一种组件要动后端 5 处 + 前端 4 处；无插件沙箱、无公开扩展 API。</p></div>
+    <div class="side ss"><div class="name"><span>Superset · 92</span></div><p>可视化插件体系、DB engine spec 插件、扩展（Extensions）框架、200+ 配置项、全球社区贡献。</p></div>
+  </div>
+  <div class="note"><b>Superset 最大领先项（−19）：</b>明策学会了「把组件活分出去」，但还没做到「别人装进来」。</div>
+</div>
+
+<div class="detail">
+  <div class="head"><h4>16 数据安全<span>RLS · 水印 · 外发</span></h4><span class="chip mz">明策压倒胜 +15</span></div>
+  <div class="two">
+    <div class="side mz"><div class="name"><span>明策BI · 95</span><em>+2</em></div><p>表级 RLS 兜底（FORCE RLS、fail-closed）+ 数据集行规则/列脱敏 + 部门隔离 + 查询契约拒用户 SQL 片段 + 危险函数黑名单 + 外发通道 + 安全卫士 + CSRF + 限流 + 导出分权 + pgaudit。</p><p class="new">新增：<b>水印身份化</b>（页面覆盖层 + HTML/PDF/PNG/Excel + 明细首行，带用户·部门·时间·请求号，截图外传可追到人）、<b>敏感字段自动脱敏</b>（薪资/成本/手机/身份证/邮箱/地址/密码按标签默认上掩码，关掉要留审计）、<b>卫士 v2</b>（组合风控 + IP/CIDR/角色三级白名单 + 业务高频只告警不封）、<b>MCP 数据守卫</b>（数据分级行数预算、异常冻结 + 解冻宽限）、指纹 v2（不混 IP）。</p></div>
+    <div class="side ss"><div class="name"><span>Superset · 80</span></div><p>RBAC + RLS（Jinja 模板）+ guest token 嵌入 + 事件审计。</p><p class="gap">差距：无原生列级脱敏、无部门隔离、无外发管控、无身份水印。</p></div>
+  </div>
+  <div class="note"><b>这一项拉得最开（+15）：</b>明策是「多层互相兜底 + 出事可追溯」，Superset 是「有权限控制」。水印这一条多数开源 BI 都没有。</div>
+</div>
+
+<div class="detail">
+  <div class="head"><h4>17 权限<span>RBAC · 数据范围 · 凭据</span></h4><span class="chip mz">明策胜 +11</span></div>
+  <div class="two">
+    <div class="side mz"><div class="name"><span>明策BI · 93</span><em>+1</em></div><p>角色 = 功能权限 + 数据范围（all / dept_and_children / dept / self）；权限码白名单；后台分区/业务入口/AI/MCP/数据能力分层；资源级 view/edit；注册审批；token_version 即时失效；189 项越权矩阵。</p><p class="new">新增：导出改成角色权限（明细/汇总两码，取消勾选前端隐藏 + 接口 403）；MCP 客户端部门范围 + 看板范围收口（Agent 只能碰指定看板，数据集工具按看板实际引用收口）；令牌 scopes（工具名/风险级/*）、服务账号、每授权独立 secret、上限 5、一键撤销。</p><p class="gap">短板：<b>仍无 SSO/IAM</b>（R15 未实施）；Superset 有 OAuth/LDAP/SAML/REMOTE_USER。</p></div>
+    <div class="side ss"><div class="name"><span>Superset · 82</span></div><p>FAB RBAC（角色/权限/菜单）+ owner + RLS + OAuth/LDAP/SAML/REMOTE_USER。</p><p class="gap">差距：无部门树与数据范围、无审批流、无凭据级治理。</p></div>
+  </div>
+  <div class="note"><b>两边各有硬伤：</b>明策缺身份联邦（接不进企业 IdP），Superset 缺组织维度（只能按角色/行级，不能按部门树）。</div>
+</div>
+
+<div class="detail">
+  <div class="head"><h4>18 运维<span>发版 · 升级 · 备份</span></h4><span class="chip ss">Superset 胜 +10</span></div>
+  <div class="two">
+    <div class="side mz"><div class="name"><span>明策BI · 80</span><em>+2</em></div><p>compose + prod overlay + Helm + 探针 + worker + 60 个迁移 + 幂等 bootstrap；CI 门禁齐全。</p><p class="new">新增：19 个自带清场的回归脚本 + R0–R16 缺口台账（哪项做了什么、还剩什么一眼可见），运维可追。</p><p class="gap">短板：仍缺文档化备份/恢复与版本升级路径、无托管形态。</p></div>
+    <div class="side ss"><div class="name"><span>Superset · 90</span></div><p>官方 Helm/K8s、升级指南、CLI 迁移、托管服务、庞大社区排障。</p></div>
+  </div>
+</div>
+
+<h3 class="sec">怎么用这张表</h3>
+<div class="take">
+  <div>
+    <h5>如果目标是「自己公司用」</h5>
+    <p>选明策BI。18 项 = 赢 7 项、平 1 项、输 10 项，但赢的全在你每天要用的地方：看板好不好看、AI 能不能直接出图、权限能不能卡到部门、数据会不会漏、外传能不能追到人；输的多是「平台能力」，自用场景用不满。</p>
+  </div>
+  <div>
+    <h5>如果目标是「做产品卖给别人」</h5>
+    <p>Superset 仍领先 2.4 分。40+ 连接、插件体系、i18n、嵌入 SDK 是碾压级的；你要接 Snowflake / BigQuery 客户、要白标嵌入，自研至少一年。</p>
+  </div>
+  <div>
+    <h5>互补，而不是二选一</h5>
+    <p>Superset 当「取数与探索层」（SQL Lab + 云数仓直连），明策当「交付层」（设计看板 + 权限 + AI + 水印）。中间用物化表或 API 对接，两边优势都拿到。</p>
+  </div>
+  <div>
+    <h5>本版之后，最该补的三件事</h5>
+    <p>① <b>SSO/IAM</b>（R15，接钉钉/企微/飞书/OIDC —— 权限 93 分的唯一硬伤）；② 云数仓连接器（Snowflake/BigQuery）；③ 组件与数据源的注册式扩展，把「改 5 处代码」变成「装一个包」。</p>
+  </div>
+</div>
+
+<div class="callout">
+  <h5>评分口径</h5>
+  <p><strong>评什么：</strong>能力覆盖度、工程成熟度（边界与失败路径是否处理）、场景适配（中文企业自建场景下的实际手感）。不是绝对代码质量，也不是性能 benchmark。</p>
+  <p><strong>怎么来的：</strong>明策侧全部来自本仓库实测（300 路由 / 60 迁移 / 37 个测试文件 / 19 个回归脚本 / R0–R16 台账）；Superset 侧对齐 6.x 官方文档（含 <a href="https://superset.apache.org/user-docs/6.1.0/using-superset/using-ai-with-superset/" style="color:#4338CA">AI/MCP 用户文档</a>、<a href="https://superset.apache.org/admin-docs/configuration/mcp-server/" style="color:#4338CA">MCP 部署文档</a>）。</p>
+  <p><strong>这 0.2 分怎么理解：</strong>85.3 对 85.1 统计上就是平手。真正的结论不在总分，而在结构 —— 明策在「治理深度」上已明显超过（安全 +15、权限 +11、指标 +14、AI +15），Superset 在「平台广度」上仍明显领先（连接 +18、可拓展 +19、底座 +14）。<strong>选型看的是你缺哪一半，不是谁多 0.2 分。</strong></p>
+</div>
+
+<footer>
+  明策BI · 能力对比报告 v2 · 2026-11-16 · 100 分制，等权总分 = 18 项算术平均<br />
+  较 v1（2026-11-15，84.0 : 85.1）逐项变化已标在分数后：本版净增 23 分，折合总分 +1.3。
+</footer>
+
+</div>
+</body>
+</html>

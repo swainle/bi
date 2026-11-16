@@ -17,45 +17,90 @@ from sqlalchemy.orm import Session
 from fastapi import HTTPException
 
 # ═══════ LLM 调用 ═══════
-def _call_llm(prompt: str, system: str = "", max_tokens: int = 4096) -> str:
-    """调用默认 LLM（管理后台配置 → 环境变量）"""
-    import requests, os
-
-    from app.services.ai_models import default_config
-
-    cfg = None
+def _audit_ai_call(cfg: dict | None, prompt: str, *, index: int,
+                   started: float, ok: bool, error: str = "") -> None:
+    """每次模型调用（含回退 / 失败）都落一条审计，管理员后台「操作监控」可见."""
     try:
-        cfg = default_config()
-    except Exception:
-        cfg = None
+        from app.middleware.audit import log_audit
+        from app.middleware.audit_context import get_audit_user
 
-    if cfg:
-        endpoint = cfg["chat_url"]
-        api_key = cfg["api_key"]
-        model = cfg["model"]
-        temperature = cfg["temperature"]
-    else:
-        api_key = os.environ.get("LLM_API_KEY") or os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("OPENAI_API_KEY", "")
-        api_base = os.environ.get("LLM_API_BASE") or os.environ.get("DEEPSEEK_API_BASE", "https://api.deepseek.com")
-        endpoint = f"{api_base.rstrip('/')}/v1/chat/completions" if not api_base.rstrip("/").endswith("/v1") else f"{api_base.rstrip('/')}/chat/completions"
-        model = os.environ.get("LLM_MODEL") or os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
-        temperature = 0.3
-    if not api_key:
+        log_audit(get_audit_user(), "ai.call", "ai_model", int((cfg or {}).get("id") or 0), {
+            "model": (cfg or {}).get("model", ""),
+            "name": (cfg or {}).get("name", ""),
+            "prompt": str(prompt or "")[:120],
+            "ok": ok,
+            "fallback": index > 0,
+            "latency_ms": int((time.monotonic() - started) * 1000),
+            "error": str(error)[:160],
+        })
+    except Exception:
+        pass
+
+
+def _call_llm(prompt: str, system: str = "", max_tokens: int = 4096) -> str:
+    """调用 LLM：优先管理后台的默认模型，连不上按顺序回退到其它启用模型 → 文件 → 环境变量."""
+    import requests
+
+    from app.middleware.audit_context import get_audit_user
+    from app.security import prompt_guard
+    from app.services import ai_quota
+
+    # R5：AI 输入 / 提示词注入检测（attack 直接 400，suspicious 只告警）
+    prompt_guard.check_prompt(prompt, source="ai", user_id=get_audit_user())
+    # R14：每用户每日调用 / token 预算（超限 429）
+    ai_quota.reserve(get_audit_user())
+
+    from app.services.ai_models import candidate_configs
+
+    try:
+        candidates = candidate_configs()
+    except Exception:
+        candidates = []
+    if not candidates:
+        _audit_ai_call(None, prompt, index=0, started=time.monotonic(),
+                       ok=False, error="no_api_key")
         return '{"error": "no_api_key"}'
 
-    resp = requests.post(
-        endpoint,
-        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-        json={
-            "model": model,
-            "messages": [{"role": "system", "content": system}, {"role": "user", "content": prompt}],
-            "max_tokens": max_tokens,
-            "temperature": temperature,
-        },
-        timeout=120,
-    )
-    resp.raise_for_status()
-    return resp.json()["choices"][0]["message"]["content"]
+    messages = ([{"role": "system", "content": system}] if system else []) + [
+        {"role": "user", "content": prompt}
+    ]
+    last_error = ""
+    for index, cfg in enumerate(candidates):
+        attempt_started = time.monotonic()
+        try:
+            resp = requests.post(
+                cfg["chat_url"],
+                headers={"Authorization": f"Bearer {cfg['api_key']}",
+                         "Content-Type": "application/json"},
+                json={
+                    "model": cfg["model"],
+                    "messages": messages,
+                    "max_tokens": max_tokens,
+                    "temperature": cfg["temperature"],
+                },
+                timeout=(10, 120),
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            # 推理类模型的正文可能在 reasoning_content 里（或极短额度下 content 为空），不要直接 KeyError
+            message = ((data.get("choices") or [{}])[0].get("message") or {})
+            text = str(message.get("content") or message.get("reasoning_content") or "")
+            if text.strip():
+                _audit_ai_call(cfg, prompt, index=index, started=attempt_started, ok=True)
+                ai_quota.add_tokens(get_audit_user(),
+                                    (len(prompt) + len(system) + len(text)) // 4)
+                if index > 0:
+                    print(f"[ai] 默认模型不可用，已回退到：{cfg.get('name') or cfg['model']}")
+                return text
+            last_error = f"{cfg.get('name') or cfg['model']}：空回复"
+            _audit_ai_call(cfg, prompt, index=index, started=attempt_started,
+                           ok=False, error=last_error)
+        except Exception as exc:
+            last_error = f"{cfg.get('name') or cfg['model']}：{str(exc)[:160]}"
+            _audit_ai_call(cfg, prompt, index=index, started=attempt_started,
+                           ok=False, error=last_error)
+    print(f"[ai] 所有模型均不可用，最后错误：{last_error}")
+    return ""
 
 
 # ═══════ Vector Embedding ═══════

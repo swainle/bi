@@ -1,0 +1,154 @@
+{
+  "rows": [
+    {
+      "产品标题": "猫条零食鱼油益生元菌调理肠胃罐头猫粮成幼猫营养增肥补水湿粮包",
+      "日销量": 999
+    },
+    {
+      "产品标题": "高汤鲜肉猫罐头猫零食猫主食罐营养增肥补水不掉毛猫咪成幼猫湿粮",
+      "日销量": 200
+    },
+    {
+      "产品标题": "2罐每日洁齿猫零食幼猫通用夹心饼干冻干磨牙棒三文鱼鸡肉",
+      "日销量": 700
+    },
+    {
+      "产品标题": "宠物零食大礼包猫条猫薄荷饼干罐头冻干",
+      "日销量": 100
+    },
+    {
+      "产品标题": "猫零食狗狗猫咪零食冻干鸡肉粒宠物鸡胸肉桶装混合全家桶营养增肥",
+      "日销量": 100
+    },
+    {
+      "产品标题": "冻干鸡胸肉粒独立小包装发腮无谷高蛋白宠物零食营养增肥",
+      "日销量": 999
+    },
+    {
+      "产品标题": "冻干鸡胸肉粒无谷高蛋白鸡肉粒发腮宠物零食猫咪零食锁鲜",
+      "日销量": 200
+    },
+    {
+      "产品标题": "猫条零食发腮锁鲜成幼猫通用猫粮补水独立小包装湿粮包调理肠胃",
+      "日销量": 1700
+    },
+    {
+      "产品标题": "磨牙棒耐咀嚼宠物零食成幼犬洁齿独立小包装狗狗零食清新口气",
+      "日销量": 300
+    },
+    {
+      "产品标题": "兔肉干宠物零食营养独立小包装成幼犬通用低敏耐咀嚼易消化",
+      "日销量": 999
+    }
+  ],
+  "columns": [
+    {
+      "key": "产品标题",
+      "label": "产品标题",
+      "type": "text",
+      "align": "left",
+      "width": 0
+    },
+    {
+      "key": "日销量",
+      "label": "日销量",
+      "type": "number",
+      "align": "right",
+      "width": 0
+    }
+  ],
+  "count": 180,
+  "page_size": 10,
+  "more": true,
+  "more_label": "查看更多",
+  "sortable": false,
+  "index_column": true,
+  "thumb": false,
+  "thumb_key": "",
+  "detail": {
+    "enabled": false,
+    "board_key": "",
+    "popup": "right",
+    "key_field": "",
+    "items": []
+  },
+  "kind": "table",
+  "dimension_label": null,
+  "metric_label": null,
+  "series_label": null,
+  "component_kind": "table",
+  "title": "明细表",
+  "subtitle": "",
+  "unit": "",
+  "ui": {
+    "accent": "indigo",
+    "radius": 14,
+    "min_height": 260,
+    "show_unit": true,
+    "animate": true,
+    "align": "left",
+    "columns": 1,
+    "badge": "",
+    "edge": true,
+    "edge_px": 1.0,
+    "edge_alpha": 22,
+    "shadow_px": 16
+  },
+  "compute": {
+    "headline": "first",
+    "hint": "none",
+    "format": "int",
+    "bucket_size": null,
+    "bucket_start": null,
+    "bucket_count": 0,
+    "transform": "raw",
+    "scale": 1.0,
+    "offset": 0.0,
+    "decimals": 0,
+    "prefix": "",
+    "suffix": ""
+  },
+  "chart": {
+    "show_labels": true,
+    "show_legend": true,
+    "show_grid": true,
+    "show_title": true,
+    "show_meta": true,
+    "x_title": "",
+    "y_title": "",
+    "label_rotate": 0,
+    "y_min": null,
+    "y_max": null,
+    "bar_width": 26,
+    "hbar_threshold_key": "",
+    "hbar_threshold_gte": null,
+    "hbar_highlight": "violet",
+    "smooth": true,
+    "label_format": "auto",
+    "cloud_palette": "潮彩",
+    "scatter_mode": "point",
+    "trend_line": false,
+    "dot_size": 8,
+    "x_key": "",
+    "y_key": "",
+    "size_key": "",
+    "log_x": false,
+    "log_y": false,
+    "label_layout": "inside",
+    "single_slice": true,
+    "pie_inner": 46,
+    "pie_start": 90,
+    "pie_label": "name_pct",
+    "pie_gap": true,
+    "pie_rose": false
+  },
+  "combo": {
+    "bar_name": "",
+    "line_name": "",
+    "note": "",
+    "right_axis": true,
+    "smooth": true
+  },
+  "rls": false,
+  "top": null
+}

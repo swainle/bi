@@ -24,6 +24,7 @@ const CanvasBoardPage = lazy(() => import("./pages/CanvasBoardPage"));
 const ProjectsPage = lazy(() => import("./pages/ProjectsPage"));
 const DashboardPage = lazy(() => import("./pages/DashboardPage"));
 const AdminPage = lazy(() => import("./pages/AdminPage"));
+const McpAccessPage = lazy(() => import("./pages/McpAccessPage"));
 
 function PageLoader() {
   return (
@@ -104,6 +105,14 @@ function ThemedApp() {
                     <Route path="bi/editor" element={<Navigate to="/bi/canvas" replace />} />
                     <Route path="bi/audit" element={<AuditLogPage />} />
                     <Route path="bi/admin" element={<AdminPage />} />
+                    <Route
+                      path="bi/mcp"
+                      element={
+                        <ProtectedRoute permKey="bi:mcp:use">
+                          <McpAccessPage />
+                        </ProtectedRoute>
+                      }
+                    />
                     <Route
                       path="bi/components"
                       element={

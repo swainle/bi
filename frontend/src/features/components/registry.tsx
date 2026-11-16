@@ -37,6 +37,8 @@ export interface RendererProps {
   onRowClick?: (row: Record<string, unknown>) => void;
   /** KPI / 榜卡：整卡点击 */
   onClick?: () => void;
+  /** 指标卡：右上角徽标点击（打开独立的 TOP N 榜单弹窗） */
+  onTopList?: () => void;
   /** 当前所在页面 key（导航卡推导「当前页」高亮） */
   currentPage?: string;
   /** 导航卡挂了页面的菜单项被点击 → 切到那一页（预览页接） */

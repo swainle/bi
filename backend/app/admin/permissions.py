@@ -41,7 +41,9 @@ BI_PERMISSIONS: list[tuple[str, str, str]] = [
     ("bi:role:manage", "角色与权限", "管理后台"),
     ("bi:model:manage", "模型配置", "管理后台"),
     ("bi:error:view", "错误日志", "管理后台"),
+    ("bi:audit:view", "操作监控", "管理后台"),
     ("bi:ops:manage", "运维操作", "管理后台"),
+    ("bi:mcp:manage", "MCP 客户端", "管理后台"),
 ]
 
 BI_PERMISSION_CODES = [code for code, _name, _group in BI_PERMISSIONS]
@@ -54,8 +56,26 @@ AI_PERMISSIONS: list[tuple[str, str, str]] = [
 ]
 AI_PERMISSION_CODES = [code for code, _name, _group in AI_PERMISSIONS]
 
-# 界面上真正存在的权限码：管理后台 + 业务入口 + AI 能力。
-VISIBLE_PERMISSION_CODES = set(BI_PERMISSION_CODES) | set(NAV_PERMISSION_CODES) | set(AI_PERMISSION_CODES)
+# Agent / MCP 能力（非后台分区：给了也不进管理后台，只决定「能不能让 Agent 代调用 / 代写」）
+MCP_PERMISSIONS: list[tuple[str, str, str]] = [
+    ("bi:mcp:use", "Agent 代调用", "MCP 能力"),
+    ("bi:mcp:write", "Agent 写看板", "MCP 能力"),
+]
+MCP_PERMISSION_CODES = [code for code, _name, _group in MCP_PERMISSIONS]
+
+# 数据能力（导出 / 删除这类需要单独开关的高危动作）
+DATA_PERMISSIONS: list[tuple[str, str, str]] = [
+    ("bi:data:export:summary", "汇总导出", "数据能力"),
+    ("bi:data:export:detail", "明细导出", "数据能力"),
+    ("bi:resource:delete", "删除资源", "数据能力"),
+]
+DATA_PERMISSION_CODES = [code for code, _name, _group in DATA_PERMISSIONS]
+
+# 界面上真正存在的权限码：管理后台 + 业务入口 + AI / MCP / 数据能力。
+VISIBLE_PERMISSION_CODES = (
+    set(BI_PERMISSION_CODES) | set(NAV_PERMISSION_CODES)
+    | set(AI_PERMISSION_CODES) | set(MCP_PERMISSION_CODES) | set(DATA_PERMISSION_CODES)
+)
 
 DATA_SCOPE_VALUES = {"all", "dept_and_children", "dept", "self"}
 DATA_SCOPE_LABELS = {
@@ -244,9 +264,13 @@ __all__ = [
     "AI_PERMISSIONS",
     "BI_PERMISSIONS",
     "BI_PERMISSION_CODES",
+    "DATA_PERMISSION_CODES",
+    "DATA_PERMISSIONS",
     "DATA_SCOPE_LABELS",
     "DATA_SCOPE_VALUES",
     "NAV_PERMISSION_CODES",
+    "MCP_PERMISSION_CODES",
+    "MCP_PERMISSIONS",
     "VISIBLE_PERMISSION_CODES",
     "admin_scope",
     "allowed_permissions",

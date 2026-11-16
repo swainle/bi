@@ -1,6 +1,6 @@
 /** 顶部导航栏 —— 明策BI（Apple 风极简：白底、细分隔线、胶囊导航） */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import {
   AppBar,
@@ -28,6 +28,7 @@ import {
   AdminPanelSettings as AdminPanelSettingsIcon,
   Dashboard as DashboardIcon,
   History as HistoryIcon,
+  SmartToy as SmartToyIcon,
   LogoDev as LogoIcon,
   Logout as LogoutIcon,
   DarkMode as DarkModeIcon,
@@ -58,15 +59,16 @@ interface PendingRegistration {
   created_at: string;
 }
 
-const NAV = [
+const NAV: { label: string; path: string; icon: ReactNode; perm?: string }[] = [
   { label: "我的看板", path: "/bi", icon: <DashboardIcon sx={{ fontSize: 16 }} /> },
   { label: "操作审计", path: "/bi/audit", icon: <HistoryIcon sx={{ fontSize: 16 }} /> },
+  { label: "MCP 授权", path: "/bi/mcp", icon: <SmartToyIcon sx={{ fontSize: 16 }} />, perm: "bi:mcp:use" },
 ];
 
 export default function TopBar() {
   const nav = useNavigate();
   const { pathname } = useLocation();
-  const { user, logout } = useAuth();
+  const { user, logout, hasPerm } = useAuth();
   const { mode, toggle } = useThemeMode();
   const [anchor, setAnchor] = useState<null | HTMLElement>(null);
   const [alertAnchor, setAlertAnchor] = useState<null | HTMLElement>(null);
@@ -260,7 +262,7 @@ export default function TopBar() {
 
         {/* 导航 */}
         <Stack direction="row" spacing={0.5}>
-          {NAV.map((item) => {
+          {NAV.filter((item) => !item.perm || hasPerm(item.perm)).map((item) => {
             const active =
               item.path === "/bi"
                 ? pathname === "/bi" ||

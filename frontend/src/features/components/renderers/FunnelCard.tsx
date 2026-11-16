@@ -5,12 +5,15 @@ import { Box } from "@mui/material";
 import { accentOf } from "../palette";
 import CardShell from "../skin/CardShell";
 import { SERIES, TEXT, TOOLTIP } from "../skin/tokens";
+import { TIGHT_HEIGHT, fitChart } from "../skin/CardFit";
+import { useBoxSize } from "../skin/useBoxSize";
 import { chartOf, formatValue } from "../skin/format";
 import type { RenderPayload, UiSpec } from "../types";
 
 export default function FunnelCard({ payload, ui, compact, onSliceClick }: { payload: RenderPayload; ui: UiSpec; compact?: boolean; onSliceClick?: (name: string) => void }) {
   const token = accentOf(ui.accent);
   const opts = chartOf(payload.chart);
+  const [boxRef, box] = useBoxSize<HTMLDivElement>();
   const series = (payload.series ?? [])
     .map((point) => ({ name: String(point.name ?? ""), value: Number(point.value ?? 0) }))
     .filter((point) => point.value > 0);
@@ -23,7 +26,9 @@ export default function FunnelCard({ payload, ui, compact, onSliceClick }: { pay
     );
   }
 
-  const showLegend = opts.show_legend && !compact;
+  // 图体太矮时：去掉上下留白、加粗最小尺寸，否则漏斗会被压成一条线
+  const tall = box.h > 0 && box.h < TIGHT_HEIGHT;
+  const showLegend = opts.show_legend && !compact && !tall;
   const option = {
     animation: ui.animate,
     animationDuration: 480,
@@ -41,12 +46,12 @@ export default function FunnelCard({ payload, ui, compact, onSliceClick }: { pay
       type: "funnel",
       left: compact ? "4%" : "8%",
       right: compact ? "4%" : "8%",
-      top: compact ? 6 : 16,
-      bottom: showLegend ? 28 : (compact ? 6 : 12),
-      minSize: "18%",
+      top: tall ? 0 : (compact ? 6 : 16),
+      bottom: tall ? 0 : (showLegend ? 28 : (compact ? 6 : 12)),
+      minSize: tall ? "45%" : "18%",
       maxSize: "100%",
       sort: "descending",
-      gap: 2,
+      gap: tall ? 1 : 2,
       label: {
         show: opts.show_labels !== false && !compact,
         position: "inside",
@@ -73,13 +78,15 @@ export default function FunnelCard({ payload, ui, compact, onSliceClick }: { pay
       hideTitle={opts.show_title === false}
       meta={opts.show_meta === false ? undefined : (payload.subtitle || undefined)}
     >
-      <ReactEChartsCore
-        option={option}
-        onEvents={{ click: (params: { name?: string }) => onSliceClick?.(String(params?.name ?? "")) }}
-        notMerge
-        style={{ width: "100%", height: "100%" }}
-        opts={{ renderer: "canvas" }}
-      />
+      <Box ref={boxRef} sx={{ width: "100%", height: "100%" }}>
+        <ReactEChartsCore
+          option={fitChart(option, box)}
+          onEvents={{ click: (params: { name?: string }) => onSliceClick?.(String(params?.name ?? "")) }}
+          notMerge
+          style={{ width: "100%", height: "100%" }}
+          opts={{ renderer: "canvas" }}
+        />
+      </Box>
     </CardShell>
   );
 }

@@ -63,7 +63,14 @@ def list_rules(db: Session, dataset_id: int) -> dict:
             }
             for r in mask_rows
         ],
+        "dept_scope": _dept_scope_payload(db, int(dataset_id)),
     }
+
+
+def _dept_scope_payload(db: Session, dataset_id: int) -> dict | None:
+    from app.security import dept_scope
+
+    return dept_scope.get_rule(db, dataset_id)
 
 
 def add_row_rule(
@@ -196,8 +203,13 @@ def _rows(db: Session, dataset_id: int, user: Any) -> list[Any]:
     ).fetchall()
 
 
-def row_conditions(db: Session, dataset_id: int | None, user: Any) -> list[str]:
-    """该数据集对当前用户生效的行级条件（编译失败 → fail-closed）."""
+def row_conditions(db: Session, dataset_id: int | None, user: Any,
+                   dialect: str = "postgres") -> list[str]:
+    """该数据集对当前用户生效的行级条件（编译失败 → fail-closed）.
+
+    顺序：手配行级规则 → 部门隔离（S3，`bi_dataset_scope_rule`）；两者同时 AND。
+    部门隔离在 `dept_scope.condition_for` 内自行判断「无规则 / 数据范围 all → 不注入」。
+    """
     if not dataset_id:
         return []
     conditions: list[str] = []
@@ -213,6 +225,12 @@ def row_conditions(db: Session, dataset_id: int | None, user: Any) -> list[str]:
                 detail=f"dataset={dataset_id}",
             ) from exc
         conditions.append(rule)
+
+    from app.security import dept_scope
+
+    dept_condition = dept_scope.condition_for(db, int(dataset_id), user, dialect)
+    if dept_condition:
+        conditions.append(dept_condition)
     return conditions
 
 

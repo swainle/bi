@@ -19,7 +19,7 @@ from ..config import settings as _settings
 PG_URL = _settings.database_url
 DORIS_HOST = os.getenv("DORIS_HOST", "127.0.0.1")
 DORIS_PORT = int(os.getenv("DORIS_PORT", "9030"))
-DORIS_DB = os.getenv("DORIS_DB", "mingzebi")
+DORIS_DB = os.getenv("DORIS_DB", "mingcebi")
 DORIS_URL = f"mysql+pymysql://root:@{DORIS_HOST}:{DORIS_PORT}/{DORIS_DB}?charset=utf8mb4"
 
 # 同步配置

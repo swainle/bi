@@ -8,8 +8,8 @@ import { useMemo } from "react";
 import { Box, Button, Chip, CircularProgress, Typography } from "@mui/material";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
-  AdminPanelSettings, ArrowBack, BugReport, HowToReg, MonitorHeart, People,
-  SmartToy, SpaceDashboard,
+  AdminPanelSettings, ArrowBack, BugReport, HowToReg, HubOutlined, MonitorHeart, People,
+  SmartToy, SpaceDashboard, Timeline,
 } from "@mui/icons-material";
 import { useAuth } from "../hooks/useAuth";
 import BiSideNav, { type SideNavItem } from "../features/bi-dashboard/BiSideNav";
@@ -19,7 +19,9 @@ import RegistrationsPanel from "../features/admin/RegistrationsPanel";
 import RolesPanel from "../features/admin/RolesPanel";
 import ModelsPanel from "../features/admin/ModelsPanel";
 import ErrorsPanel from "../features/admin/ErrorsPanel";
+import MonitorPanel from "../features/admin/MonitorPanel";
 import OpsPanel from "../features/admin/OpsPanel";
+import McpPanel from "../features/admin/McpPanel";
 import { MUTED } from "../features/admin/shared";
 
 interface AdminSection extends SideNavItem {
@@ -53,8 +55,16 @@ const SECTIONS: AdminSection[] = [
     perm: "bi:error:view", desc: "前端 / 后端异常",
   },
   {
+    key: "monitor", label: "操作监控", icon: <Timeline />, color: "#DC2626",
+    perm: "bi:audit:view", desc: "敏感操作 / AI / MCP 调用",
+  },
+  {
     key: "ops", label: "运维", icon: <MonitorHeart />, color: "#F59E0B",
     perm: "bi:ops:manage", desc: "运行指标与维护",
+  },
+  {
+    key: "mcp", label: "MCP 客户端", icon: <HubOutlined />, color: "#0F766E",
+    perm: "bi:mcp:manage", desc: "Agent 客户端与工具目录",
   },
 ];
 
@@ -230,6 +240,8 @@ export default function AdminPage() {
             {activeKey === "ops" && (
               <OpsPanel canManage={isAdmin || permissions.includes("bi:ops:manage")} />
             )}
+            {activeKey === "monitor" && <MonitorPanel />}
+            {activeKey === "mcp" && <McpPanel />}
           </Box>
         </Box>
       </Box>

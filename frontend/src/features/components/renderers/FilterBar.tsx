@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Box, IconButton, Menu, MenuItem, Popover, TextField, ToggleButton, ToggleButtonGroup, Typography } from "@mui/material";
 import { Check, ChevronLeft, ChevronRight, Event, KeyboardArrowDown } from "@mui/icons-material";
+import client from "../../../api/client";
 import type { FilterFieldSpec } from "../types";
 import { isSplitField, splitKeysOf } from "../split";
 
@@ -15,6 +16,8 @@ interface Props {
   compact?: boolean;
   /** 底部背景：白底圆角卡片（筛选栏自己铺在页面上时不加） */
   surface?: boolean;
+  /** 本页卡片实际读的数据集：给了就做「逐级筛选」（下游候选值按上游条件收窄） */
+  datasets?: number[];
 }
 
 const fieldSx = {
@@ -30,6 +33,51 @@ const fieldSx = {
 /** 分套依据：勾了「分套」（或旧版带 dataset_map）的字段，取值决定这一页看哪一套 */
 export function isDatasetSwitch(field: FilterFieldSpec) {
   return isSplitField(field);
+}
+
+/* ── 逐级筛选：下游下拉只列「上游条件下确实有数据」的值 ──
+   口径与后端 _page_filters 一致：日期 = 当天 00:00~23:59:59 的 BETWEEN，其余为等值；
+   「all / 空」不算条件。取候选值走语义层查询（带当前上游筛选，权限 / RLS / 脱敏照旧生效）。 */
+const OPTION_TTL = 60_000;
+const OPTION_CACHE = new Map<string, { at: number; list: { v: string; t: string }[] }>();
+
+function toFilter(field: FilterFieldSpec, value: unknown): { name: string; op: string; value: unknown } | null {
+  const column = String(field.column || "").trim();
+  if (!column) return null;
+  if (value === undefined || value === null || value === "" || value === "all" || value === "全部") return null;
+  if (field.type === "date") {
+    const parts = (Array.isArray(value) ? value : [value])
+      .map((item) => String(item ?? "").slice(0, 10)).filter(Boolean);
+    if (!parts.length) return null;
+    const start = parts[0];
+    const end = parts[parts.length - 1] || start;
+    return { name: column, op: "BETWEEN", value: [start, `${end} 23:59:59`] };
+  }
+  if (typeof value === "object") return null;
+  return { name: column, op: "=", value: String(value) };
+}
+
+async function fetchCandidates(
+  datasetId: number, column: string, filters: { name: string; op: string; value: unknown }[],
+): Promise<{ v: string; t: string }[]> {
+  const key = `${datasetId}|${column}|${JSON.stringify(filters)}`;
+  const hit = OPTION_CACHE.get(key);
+  if (hit && Date.now() - hit.at < OPTION_TTL) return hit.list;
+  const res = await client.post(`/bi/semantic/datasets/${datasetId}/query`, {
+    dimensions: [column], filters, limit: 5000,
+  });
+  const rows: Record<string, unknown>[] = res.data?.rows || [];
+  const seen = new Set<string>();
+  rows.forEach((row) => {
+    const value = row[column];
+    if (value === null || value === undefined || value === "") return;
+    seen.add(String(value));
+  });
+  const list = [...seen].sort((a, b) => a.localeCompare(b, "zh-CN")).slice(0, 200)
+    .map((value) => ({ v: value, t: value }));
+  if (OPTION_CACHE.size > 200) OPTION_CACHE.clear();
+  OPTION_CACHE.set(key, { at: Date.now(), list });
+  return list;
 }
 
 /** 当前选中的平台（第一个数据集切换器的值） */
@@ -82,7 +130,9 @@ function FilterSelect({ field, value, onChange, allowAll = true }: {
           flex: 1, fontSize: 12.5, color: current ? "#334155" : "#94A3B8",
           whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
         }}>
-          {current?.t || field.options[0]?.t || "全部"}
+          {/* 没选值就显示「全部」：以前回落成第一个选项，看着像「已经选中了某项」，
+              实际过滤并没生效 —— 这也是「筛选栏选了没反应」的来源之一（2026-11-15）。 */}
+          {current?.t || (allowAll ? "全部" : field.options[0]?.t) || "全部"}
         </Box>
         <KeyboardArrowDown sx={{
           fontSize: 16, color: "#94A3B8",
@@ -443,7 +493,7 @@ function FilterDate({ field, value, onChange }: {
   );
 }
 
-export default function FilterBar({ fields, fieldsMap, values, onChange, compact, surface }: Props) {
+export default function FilterBar({ fields, fieldsMap, values, onChange, compact, surface, datasets }: Props) {
   /* 平台入口（切换器）永远来自通用那份；其余字段按当前平台各取一套 */
   const platform = platformOf(fields, values);
   const switchers = fields.filter(isDatasetSwitch);
@@ -455,21 +505,78 @@ export default function FilterBar({ fields, fieldsMap, values, onChange, compact
      平台这套配了就是**完整的一套**：通用里多出来的字段不补回来，
      否则在面板里删掉字段，筛选栏还会从通用那份回落出来（「删了还在」）。 */
   const visible = (() => {
-    if (!perPlatform) return fields;
+    const usable = (list: FilterFieldSpec[]) => list.filter((field) =>
+      /* 没绑字段的（搜索框走关键词、平台入口走切换器，都除外）选了值也不会过滤任何卡片：
+         摆一条看着能用、实际没反应的控件，比不摆更容易让人以为「筛选坏了」（2026-11-15 用户实测）。
+         面板里那一项会带「未绑定」标记，绑上字段就回来了。 */
+      isDatasetSwitch(field) || field.type === "search" || String(field.column || "").trim() !== "");
+    if (!perPlatform) return usable(fields);
     const perById = new Map(perPlatform.map((field) => [field.id, field]));
     const ordered = fields
       .filter((field) => isDatasetSwitch(field) || perById.has(field.id))
       .map((field) => (isDatasetSwitch(field) ? field : perById.get(field.id)!));
     const extra = perPlatform.filter((field) => !fields.some((base) => base.id === field.id));
-    return [...ordered, ...extra];
+    return usable([...ordered, ...extra]);
   })();
 
-  /* 换平台后，原来的选项可能在新平台不存在（比如天猫没有「仓鼠食品」这一档）：
-     这种值要退回「全部」，否则会出现「显示的选项和实际过滤的值不是同一个」。 */
+  /* 逐级筛选：为「有上游条件的字段」取一次候选值（每个数据集一条 distinct 查询，合并去重）.
+     字段顺序 = 面板里的顺序 = 层级；只有上游的条件参与收窄（下游条件不参与，否则会来回打架）。 */
+  const [narrowed, setNarrowed] = useState<Record<string, { v: string; t: string }[]>>({});
+  const cascadeSig = JSON.stringify({
+    values,
+    fields: visible.map((field) => [field.id, field.column, field.type]),
+    datasets,
+  });
+  useEffect(() => {
+    /* 只认「本页主数据集」（卡片最多的那张）：跨数据集合并候选值会把不同口径的词表混在一起 ——
+       例如 测试-01 的平台是 平台A/B/C，榜单端表里是 拼多多/天猫，合并后下拉会冒出根本不在本表的选项。 */
+    const primary = Number((datasets ?? [])[0]);
+    const ids = Number(primary) > 0 ? [primary] : [];
+    const bound = visible.filter((field) => !isDatasetSwitch(field) && field.type !== "search"
+      && field.type !== "date" && String(field.column || "").trim());
+    if (!ids.length || bound.length < 2) { setNarrowed({}); return; }
+    let alive = true;
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        const next: Record<string, { v: string; t: string }[]> = {};
+        for (let index = 0; index < bound.length; index += 1) {
+          const field = bound[index];
+          /* 平台专套的选项由配置决定，不参与收窄 */
+          if (field.options_map && Object.keys(field.options_map).length) continue;
+          const upstream = bound.slice(0, index)
+            .map((item) => toFilter(item, values[item.id]))
+            .filter((item): item is { name: string; op: string; value: unknown } => !!item);
+          const lists = await Promise.all(ids.map((id) =>
+            fetchCandidates(id, String(field.column).trim(), upstream).catch(() => [])));
+          const seen = new Set<string>();
+          const merged: { v: string; t: string }[] = [];
+          lists.flat().forEach((option) => {
+            if (seen.has(option.v)) return;
+            seen.add(option.v);
+            merged.push(option);
+          });
+          if (merged.length) next[field.id] = merged;
+        }
+        if (alive) setNarrowed(next);
+      })();
+    }, 250);
+    return () => { alive = false; window.clearTimeout(timer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cascadeSig]);
+
+  /** 这个字段当前该列的选项：有逐级结果就用它，否则退回配置里的那份 */
+  const optionsFor = (field: FilterFieldSpec): { v: string; t: string }[] => {
+    const dynamic = narrowed[field.id];
+    return dynamic && dynamic.length ? dynamic : optionsOf(field, visible, values);
+  };
+
+  /* 换平台 / 上游筛选收窄后，原来的值可能已经不存在了（比如天猫没有「仓鼠食品」这一档、
+     选了平台A 之后某个品牌只剩别的档）：这种值要退回「全部」，否则会出现
+     「显示的选项和实际过滤的值不是同一个」，而且下游还会继续把上游卡死。 */
   useEffect(() => {
     for (const field of visible) {
       if (isDatasetSwitch(field) || field.type === "search" || field.type === "date") continue;
-      const options = optionsOf(field, visible, values).map((option) => option.v);
+      const options = optionsFor(field).map((option) => option.v);
       if (!options.length) continue;
       const value = values[field.id] ?? field.default;
       if (value === undefined || value === null || value === "") continue;
@@ -480,7 +587,7 @@ export default function FilterBar({ fields, fieldsMap, values, onChange, compact
       if (!valid) onChange?.(field.id, "all");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fields, fieldsMap, values]);
+  }, [fields, fieldsMap, values, narrowed]);
 
   if (!visible.length) return null;
 
@@ -498,7 +605,7 @@ export default function FilterBar({ fields, fieldsMap, values, onChange, compact
       } : {}),
     }}>
       {visible.map((field) => {
-        const fieldOptions = optionsOf(field, visible, values);
+        const fieldOptions = optionsFor(field);
         const sw = isDatasetSwitch(field);
         const value = values[field.id] ?? field.default ?? (sw ? fieldOptions[0]?.v : undefined);
         return (

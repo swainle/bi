@@ -15,8 +15,11 @@ import re
 import smtplib
 from email.message import EmailMessage
 from typing import Any
+from urllib.parse import urlparse
 
 import requests
+
+from app.security import outbound
 
 CHANNELS = ("inapp", "webhook", "dingtalk", "wecom", "email")
 BOT_CHANNELS = ("dingtalk", "wecom")
@@ -97,7 +100,7 @@ def build_email(to_raw: str, subject: str, text: str, *,
     message = EmailMessage()
     conf = _smtp_conf()
     message["Subject"] = subject
-    message["From"] = conf["sender"] or "mingzebi@localhost"
+    message["From"] = conf["sender"] or "mingcebi@localhost"
     message["To"] = ", ".join(recipients)
     message.set_content(body)
     return message
@@ -146,11 +149,19 @@ def send(channel: str, url: str, title: str, text: str, *,
     target = str(url or "").strip()
     if not target:
         return "failed", "通知地址为空"
+    # SSRF 兜底：即使配置里漏了校验，发送前也拒绝内网 / 回环 / 元数据地址
+    try:
+        parsed = urlparse(target)
+        outbound.assert_public_host(parsed.hostname or "",
+                                    parsed.port or (443 if parsed.scheme == "https" else 80))
+    except outbound.OutboundError as exc:
+        return "failed", str(exc)
     try:
         response = requests.post(
             target,
             json=build_payload(channel, title, text, data=data, links=links),
             timeout=timeout or _timeout(),
+            allow_redirects=False,
         )
         if 200 <= response.status_code < 300:
             return channel, ""

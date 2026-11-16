@@ -30,12 +30,13 @@ export default function WatermarkOverlay({ text, visible = true }: Props) {
       if (!ctx) return;
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.font = '14px -apple-system, sans-serif';
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.03)';
+      ctx.font = '13px -apple-system, "PingFang SC", sans-serif';
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.055)';
       ctx.rotate(-20 * Math.PI / 180);
 
-      for (let y = -200; y < canvas.height + 400; y += 120) {
-        for (let x = -200; x < canvas.width + 400; x += 250) {
+      // 斜向平铺：一行身份信息，截图裁切后仍能捞到完整文本
+      for (let y = -260; y < canvas.height + 420; y += 150) {
+        for (let x = -300; x < canvas.width + 420; x += 380) {
           ctx.fillText(watermarkText, x, y);
         }
       }

@@ -243,6 +243,22 @@ function TableThumbSettings({
     });
   };
 
+  /* 换绑数据集后旧图片字段可能不在这张表里（例：直连表的「主图ID」留在测试数据集上）：
+     留着它这张明细表就只剩一条「未知字段」报错，面板里下拉也是空的。这里直接清掉，
+     缩略图保持开启、只是暂时没有图列，不再挡住整张表。 */
+  const optionNames = imageOptions.map((f) => f.name).join("|");
+  useEffect(() => {
+    const key = spec.table_view.thumb_key ?? "";
+    if (!key || !optionNames) return;
+    if (optionNames.split("|").includes(key)) return;
+    onChange({ ...spec, table_view: { ...spec.table_view, thumb_key: "" } });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [spec.table_view.thumb_key, optionNames]);
+
+  const thumbValue = imageOptions.some((f) => f.name === spec.table_view.thumb_key)
+    ? (spec.table_view.thumb_key ?? "")
+    : "";
+
   return (
     <Box sx={{ mt: 1.75, pt: 1.5, borderTop: "1px solid #F1F5FC" }}>
       <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, flexWrap: "wrap" }}>
@@ -253,7 +269,7 @@ function TableThumbSettings({
         />
         <Typography sx={{ fontSize: 12.5, color: "#334155" }}>缩略图</Typography>
         {spec.table_view.thumb && (
-          <TextField select size="small" label="图片字段" value={spec.table_view.thumb_key ?? ""}
+          <TextField select size="small" label="图片字段" value={thumbValue}
             onChange={(e) => applyThumb(true, e.target.value)}
             sx={{ width: 168, "& .MuiOutlinedInput-root": { borderRadius: 1.5, fontSize: 12 } }}>
             {imageOptions.map((f) => (
@@ -626,7 +642,9 @@ export default function QueryPanel({
         </PanelSection>
 
         <Box sx={{ mt: 3 }}>
-          <StylePanel kind={kind} spec={spec} onChange={onChange} height={height} onResize={onResize} />
+                    <StylePanel kind={kind} spec={spec} onChange={onChange} height={height} onResize={onResize}
+            metricOptions={metricOptions} dimensionOptions={dimensionOptions}
+            identifierOptions={identifierOptions ?? []} />
         </Box>
       </Box>
     );
@@ -1179,7 +1197,9 @@ export default function QueryPanel({
         </PanelSection>
 
         <Box sx={{ mt: 3 }}>
-          <StylePanel kind={kind} spec={spec} onChange={onChange} height={height} onResize={onResize} />
+          <StylePanel kind={kind} spec={spec} onChange={onChange} height={height} onResize={onResize}
+            metricOptions={metricOptions} dimensionOptions={dimensionOptions}
+            identifierOptions={identifierOptions ?? []} />
         </Box>
 
         <Divider sx={{ my: 1.75 }} />

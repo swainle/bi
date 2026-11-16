@@ -59,6 +59,8 @@ interface Dataset {
   template_name?: string;
   /** 「测试数据集」页自建的公共测试数据集：同样不进「数据集」页 */
   is_sandbox?: boolean;
+  /** 归属部门；null / 未返回 = 全局 */
+  dept_id?: number | null;
 }
 interface PhysTable {
   table: string; rows: number; columns: { name: string; type: string }[];
@@ -70,6 +72,7 @@ interface RemoteTable {
 }
 interface SourceBrief {
   id: number; name: string; ds_type: string;
+  dept_id?: number | null;
 }
 
 /* 源库列类型 → 字段角色 / 类型 */
@@ -211,6 +214,8 @@ export default function DatasetPanel() {
   /** 直连数据集的源库连通性：{数据集 id: {ok, message, checked_at}} */
   const [status, setStatus] = useState<Record<string, { ok: boolean; message: string; checked_at?: number }>>({});
   const [statusBusy, setStatusBusy] = useState(false);
+  const [departments, setDepartments] = useState<{ id: number; name: string }[]>([]);
+  const deptName = (id?: number | null) => departments.find((d) => d.id === id)?.name || "";
   /** 进页面只强制重探一次 */
   const probed = useRef(false);
   const nav = useNavigate();
@@ -218,12 +223,14 @@ export default function DatasetPanel() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [listRes, tableRes] = await Promise.all([
+      const [listRes, tableRes, deptRes] = await Promise.all([
         client.get("/bi/semantic/datasets"),
         client.get("/bi/semantic/tables"),
+        client.get("/auth/departments"),
       ]);
       setItems(listRes.data?.datasets || []);
       setTables(tableRes.data?.tables || []);
+      setDepartments(deptRes.data?.items || []);
     } catch (e: any) {
       setError(e?.response?.data?.detail || "数据集加载失败");
     } finally {
@@ -367,6 +374,10 @@ export default function DatasetPanel() {
                         <Chip label="直连" size="small"
                           sx={{ fontSize: 10, height: 18, bgcolor: "rgba(37,99,235,0.10)", color: "#2563EB", fontWeight: 600 }} />
                       )}
+                      {deptName(d.dept_id) && (
+                        <Chip label={deptName(d.dept_id)} size="small"
+                          sx={{ fontSize: 10, height: 18, bgcolor: "rgba(16,185,129,0.10)", color: "#047857", fontWeight: 600 }} />
+                      )}
                       {/* 直连数据集：源库连通性小圆点（绿=连得上 / 红=连不上），点一下重测 */}
                       {d.conn_mode === "live" && (() => {
                         const st = status[String(d.id)];
@@ -482,7 +493,15 @@ function CreateDatasetDialog({
   const [sqlText, setSqlText] = useState("");
   const [description, setDescription] = useState("");
   const [importColumns, setImportColumns] = useState(true);
+  const [deptId, setDeptId] = useState<number | "">("");
+  const [departments, setDepartments] = useState<{ id: number; name: string }[]>([]);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    client.get("/auth/departments")
+      .then((r) => setDepartments(r.data?.items || []))
+      .catch(() => setDepartments([]));
+  }, []);
 
   // 直连：数据源 → 源库表
   const [sources, setSources] = useState<SourceBrief[]>([]);
@@ -503,6 +522,9 @@ function CreateDatasetDialog({
     if (mode !== "live" || sourceId === "") { setRemoteTables([]); return; }
     setLoadingTables(true);
     setRemoteTable("");
+    /* 直连：默认跟随数据源的归属部门（数据源本身就是部门资产） */
+    const src = sources.find((s) => s.id === sourceId);
+    if (src?.dept_id) setDeptId(src.dept_id);
     client.get(`/bi/sources/${sourceId}/tables`)
       .then((r) => setRemoteTables(r.data?.tables || []))
       .catch((e: any) => {
@@ -510,7 +532,7 @@ function CreateDatasetDialog({
         onError(e?.response?.data?.detail || "读取源库表清单失败");
       })
       .finally(() => setLoadingTables(false));
-  }, [mode, sourceId]);
+  }, [mode, sourceId, sources]);
 
   const picked = tables.find((t) => t.table === table);
   const pickedRemote = remoteTables.find((t) => t.table === remoteTable);
@@ -531,13 +553,16 @@ function CreateDatasetDialog({
             name: name.trim(), physical_table: remoteTable, description: description.trim(),
             conn_mode: "live", source_id: sourceId,
             fields: importColumns ? liveFields() : [],
+            dept_id: deptId === "" ? null : Number(deptId),
           })
         : mode === "sql"
           ? await client.post("/bi/semantic/datasets", {
               name: name.trim(), sql: sqlText.trim(), description: description.trim(),
+              dept_id: deptId === "" ? null : Number(deptId),
             })
           : await client.post("/bi/semantic/datasets", {
               name: name.trim(), physical_table: table, description: description.trim(),
+              dept_id: deptId === "" ? null : Number(deptId),
             });
       const id = res.data?.id;
       if (mode === "extract" && importColumns && id) {
@@ -633,6 +658,18 @@ function CreateDatasetDialog({
         <TextField fullWidth size="small" label="描述（可选）" value={description}
           onChange={(e) => setDescription(e.target.value)} multiline minRows={2}
           sx={{ mt: 2, "& .MuiOutlinedInput-root": { borderRadius: 2 } }} />
+
+        <TextField fullWidth select size="small" label="归属部门（可选）" value={deptId}
+          onChange={(e) => setDeptId(e.target.value === "" ? "" : Number(e.target.value))}
+          sx={{ mt: 2, "& .MuiOutlinedInput-root": { borderRadius: 2 } }}>
+          <MenuItem value="" sx={{ fontSize: 13 }}>不归属部门（个人可见）</MenuItem>
+          {departments.map((d) => (
+            <MenuItem key={d.id} value={d.id} sx={{ fontSize: 13 }}>{d.name}</MenuItem>
+          ))}
+        </TextField>
+        <Typography sx={{ mt: 0.5, fontSize: 11, color: "#94A3B8" }}>
+          标记归属部门后，本部门（含下级）可见并可取数；不选则只有自己（和管理员）可见
+        </Typography>
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2.5 }}>
         <Button onClick={onClose} sx={{ textTransform: "none" }}>取消</Button>
@@ -1363,6 +1400,15 @@ interface RowRule {
 interface ColumnMask {
   id: number; column_name: string; mask_type: string; mask_pattern: string;
 }
+interface DeptScopeRule {
+  dataset_id: number; column_name: string; mode: "department" | "self" | "all";
+}
+
+const DEPT_MODES = [
+  { v: "department", l: "按部门（含下级）" },
+  { v: "self", l: "只看自己（列存用户 id）" },
+  { v: "all", l: "不隔离" },
+];
 
 const RULE_ROLES = [
   { v: "", l: "所有人" },
@@ -1387,6 +1433,9 @@ function DatasetSecurityPanel({ datasetId, fields }: { datasetId: number; fields
   const [maskField, setMaskField] = useState(fields[0]?.name || "");
   const [maskType, setMaskType] = useState("phone");
   const [maskPattern, setMaskPattern] = useState("{val}");
+  const [deptRule, setDeptRule] = useState<DeptScopeRule | null>(null);
+  const [deptField, setDeptField] = useState(fields[0]?.name || "");
+  const [deptMode, setDeptMode] = useState<"department" | "self" | "all">("department");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1394,6 +1443,12 @@ function DatasetSecurityPanel({ datasetId, fields }: { datasetId: number; fields
       const res = await client.get(`/bi/semantic/datasets/${datasetId}/security`);
       setRules(res.data?.row_rules || []);
       setMasks(res.data?.masks || []);
+      const scope = res.data?.dept_scope || null;
+      setDeptRule(scope);
+      if (scope) {
+        setDeptField(scope.column_name);
+        setDeptMode(scope.mode);
+      }
     } catch (e: any) {
       setErr(e?.response?.data?.detail || "权限配置加载失败");
     } finally {
@@ -1402,6 +1457,28 @@ function DatasetSecurityPanel({ datasetId, fields }: { datasetId: number; fields
   }, [datasetId]);
 
   useEffect(() => { load(); }, [load]);
+
+  const saveDeptScope = async () => {
+    if (!deptField) return;
+    try {
+      await client.put(`/bi/semantic/datasets/${datasetId}/security/dept-scope`, {
+        column_name: deptField, mode: deptMode,
+      });
+      await load();
+    } catch (e: any) {
+      setErr(e?.response?.data?.detail || "保存部门隔离失败");
+    }
+  };
+
+  const removeDeptScope = async () => {
+    try {
+      await client.delete(`/bi/semantic/datasets/${datasetId}/security/dept-scope`);
+      setDeptRule(null);
+      await load();
+    } catch (e: any) {
+      setErr(e?.response?.data?.detail || "取消部门隔离失败");
+    }
+  };
 
   const addRule = async () => {
     if (!condition.trim()) return;
@@ -1454,6 +1531,38 @@ function DatasetSecurityPanel({ datasetId, fields }: { datasetId: number; fields
   return (
     <Box sx={{ maxWidth: 880 }}>
       {err && <Alert severity="error" onClose={() => setErr("")} sx={{ mb: 1.5, fontSize: 12 }}>{err}</Alert>}
+
+      <Typography sx={{ fontSize: 13, fontWeight: 700, mb: 0.4 }}>部门隔离</Typography>
+      <Typography sx={{ fontSize: 11.5, color: "text.secondary", mb: 1 }}>
+        只返回本部门（含下级）的数据；数据范围为「全部部门」的账号不受影响，列脱敏照旧
+      </Typography>
+      <Box sx={{ display: "flex", gap: 1, mb: 1, alignItems: "center" }}>
+        <TextField select size="small" label="部门列" value={deptField}
+          onChange={(e) => setDeptField(e.target.value)}
+          sx={{ width: 170, "& .MuiOutlinedInput-root": { borderRadius: 2 } }}>
+          {fields.map((f) => <MenuItem key={f.id} value={f.name} sx={{ fontSize: 13 }}>{f.name}</MenuItem>)}
+        </TextField>
+        <TextField select size="small" label="模式" value={deptMode}
+          onChange={(e) => setDeptMode(e.target.value as typeof deptMode)}
+          sx={{ width: 190, "& .MuiOutlinedInput-root": { borderRadius: 2 } }}>
+          {DEPT_MODES.map((m) => <MenuItem key={m.v} value={m.v} sx={{ fontSize: 13 }}>{m.l}</MenuItem>)}
+        </TextField>
+        <Button size="small" variant="outlined" onClick={saveDeptScope} disabled={!deptField}
+          sx={{ textTransform: "none", fontSize: 12, borderRadius: 1.5, height: 38 }}>
+          {deptRule ? "更新" : "启用"}
+        </Button>
+        {deptRule && (
+          <Button size="small" onClick={removeDeptScope}
+            sx={{ textTransform: "none", fontSize: 12, color: "error.main" }}>
+            取消隔离
+          </Button>
+        )}
+      </Box>
+      {deptRule && (
+        <Typography sx={{ fontSize: 11.5, color: "#64748B", mb: 0.5 }}>
+          当前：{DEPT_MODES.find((m) => m.v === deptRule.mode)?.l} · 部门列 {deptRule.column_name}
+        </Typography>
+      )}
 
       <Typography sx={{ fontSize: 13, fontWeight: 700, mb: 0.4 }}>行级规则</Typography>
       <Typography sx={{ fontSize: 11.5, color: "text.secondary", mb: 1 }}>

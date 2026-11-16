@@ -6,6 +6,8 @@ import { accentOf } from "../palette";
 import CardShell from "../skin/CardShell";
 import { AXIS, SERIES, TEXT, TOOLTIP } from "../skin/tokens";
 import { chartOf, formatAxis, formatValue } from "../skin/format";
+import { fitChart } from "../skin/CardFit";
+import { useBoxSize } from "../skin/useBoxSize";
 import type { RenderPayload, UiSpec } from "../types";
 
 interface Props {
@@ -16,6 +18,7 @@ interface Props {
 export default function BarCard({ payload, ui, compact, onSliceClick }: Props & { compact?: boolean; onSliceClick?: (name: string) => void }) {
   const token = accentOf(ui.accent);
   const opts = chartOf(payload.chart);
+  const [boxRef, box] = useBoxSize<HTMLDivElement>();
   const compute = payload.compute;
   const series = payload.series ?? [];
   const names = series.map((s) => String(s.name ?? ""));
@@ -103,6 +106,8 @@ export default function BarCard({ payload, ui, compact, onSliceClick }: Props & 
     }],
   };
 
+  if (typeof window !== "undefined") (window as any).__BAR_DEBUG = { box, fitted: fitChart(option, box) };
+
   return (
     <CardShell
       compact={compact}
@@ -113,13 +118,15 @@ export default function BarCard({ payload, ui, compact, onSliceClick }: Props & 
         ? undefined
         : (payload.subtitle || payload.metric_label || undefined)}
     >
-      <ReactEChartsCore
-        option={option}
-        onEvents={{ click: (params: { name?: string }) => onSliceClick?.(String(params?.name ?? "")) }}
-        notMerge
-        style={{ width: "100%", height: "100%" }}
-        opts={{ renderer: "canvas" }}
-      />
+      <Box ref={boxRef} sx={{ width: "100%", height: "100%" }}>
+        <ReactEChartsCore
+          option={fitChart(option, box)}
+          onEvents={{ click: (params: { name?: string }) => onSliceClick?.(String(params?.name ?? "")) }}
+          notMerge
+          style={{ width: "100%", height: "100%" }}
+          opts={{ renderer: "canvas" }}
+        />
+      </Box>
     </CardShell>
   );
 }

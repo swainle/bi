@@ -19,8 +19,24 @@ const ThemeCtx = createContext<ThemeContextValue>({
   isDark: false,
 });
 
+// ── 本地设置读写（旧名 MingzeBI 时期的键迁移一次，用户的选择不丢） ──
+function readSetting(key: string, legacyKey: string): string | null {
+  try {
+    const current = localStorage.getItem(key);
+    if (current !== null) return current;
+    const legacy = localStorage.getItem(legacyKey);
+    if (legacy !== null) {
+      localStorage.setItem(key, legacy);
+      localStorage.removeItem(legacyKey);
+    }
+    return legacy;
+  } catch {
+    return null;
+  }
+}
+
 // ── 壁纸工具（内联，不 import 任何文件） ──
-const WALLPAPER_KEY = "mingzebi_wallpaper";
+const WALLPAPER_KEY = "mingcebi_wallpaper";
 
 const WALLPAPER_CSS: Record<string, { css: string; isDark?: boolean }> = {
   pure:     { css: "#ffffff" },
@@ -51,11 +67,12 @@ export function useThemeMode() {
 }
 
 // ── Provider ──
-const THEME_KEY = "mingzebi_theme_mode";
+const THEME_KEY = "mingcebi_theme_mode";
+const LEGACY_THEME_KEY = "mingzebi_theme_mode";
 
 export function ThemeModeProvider({ children }: { children: ReactNode }) {
   const [mode, setModeState] = useState<ThemeMode>(() => {
-    const stored = localStorage.getItem(THEME_KEY);
+    const stored = readSetting(THEME_KEY, LEGACY_THEME_KEY);
     let initial: ThemeMode = "light";
     if (stored === "dark" || stored === "light") initial = stored;
     else if (document.documentElement.getAttribute("data-wallpaper") === "dark") initial = "dark";

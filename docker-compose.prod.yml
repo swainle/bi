@@ -25,7 +25,7 @@ services:
   worker:
     build:
       context: ./backend
-    container_name: mingzebi-worker
+    container_name: mingcebi-worker
     restart: unless-stopped
     command: ["python", "-m", "app.query.async_jobs.worker"]
     depends_on:
@@ -34,7 +34,7 @@ services:
       redis:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://mingzebi:${POSTGRES_PASSWORD:-mingzebi}@db:5432/mingzebi
+      DATABASE_URL: postgresql://mingcebi:${POSTGRES_PASSWORD:-mingcebi}@db:5432/mingcebi
       JWT_SECRET: ${JWT_SECRET:?请先设置 JWT_SECRET（openssl rand -base64 48）}
       DEBUG: "false"
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}

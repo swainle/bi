@@ -86,7 +86,7 @@ def register_user(db: Session, data: UserCreate) -> dict:
 
     user = User(
         username=data.username,
-        email=data.email or f"phone:{data.phone}@mingzebi.local",  # 仅有手机号时生成占位邮箱
+        email=data.email or f"phone:{data.phone}@mingcebi.local",  # 仅有手机号时生成占位邮箱
         phone=data.phone,
         password_hash=hash_password(data.password),
         token_version=1,

@@ -5,6 +5,8 @@ import { Box } from "@mui/material";
 import { accentOf } from "../palette";
 import CardShell from "../skin/CardShell";
 import { TEXT, TOOLTIP } from "../skin/tokens";
+import { fitChart } from "../skin/CardFit";
+import { useBoxSize } from "../skin/useBoxSize";
 import { chartOf } from "../skin/format";
 import type { RenderPayload, UiSpec } from "../types";
 
@@ -17,6 +19,7 @@ function niceMax(value: number): number {
 export default function RadarCard({ payload, ui, compact }: { payload: RenderPayload; ui: UiSpec; compact?: boolean }) {
   const token = accentOf(ui.accent);
   const opts = chartOf(payload.chart);
+  const [boxRef, box] = useBoxSize<HTMLDivElement>();
   const series = (payload.series ?? [])
     .map((point) => ({ name: String(point.name ?? ""), value: Number(point.value ?? 0) }))
     .filter((point) => point.value > 0);
@@ -71,12 +74,14 @@ export default function RadarCard({ payload, ui, compact }: { payload: RenderPay
       hideTitle={opts.show_title === false}
       meta={opts.show_meta === false ? undefined : (payload.subtitle || undefined)}
     >
-      <ReactEChartsCore
-        option={option}
-        notMerge
-        style={{ width: "100%", height: "100%" }}
-        opts={{ renderer: "canvas" }}
-      />
+      <Box ref={boxRef} sx={{ width: "100%", height: "100%" }}>
+        <ReactEChartsCore
+          option={fitChart(option, box)}
+          notMerge
+          style={{ width: "100%", height: "100%" }}
+          opts={{ renderer: "canvas" }}
+        />
+      </Box>
     </CardShell>
   );
 }

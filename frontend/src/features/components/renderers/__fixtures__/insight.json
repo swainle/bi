@@ -1,0 +1,35 @@
+{
+  "kind": "insight",
+  "title": "结论",
+  "entries": [
+    {
+      "k": "销量",
+      "v": "当前筛选下累计日销量 151,880"
+    },
+    {
+      "k": "热度",
+      "v": "热销指数平均 6,526"
+    }
+  ],
+  "values": {
+    "日销量": "151,880",
+    "热销指数": "6,526"
+  },
+  "text": "",
+  "value": null,
+  "unit": "",
+  "ui": {
+    "accent": "indigo",
+    "radius": 14,
+    "min_height": 260,
+    "show_unit": true,
+    "animate": true,
+    "align": "left",
+    "columns": 1,
+    "badge": "",
+    "edge": true,
+    "edge_px": 1.0,
+    "edge_alpha": 22,
+    "shadow_px": 16
+  }
+}

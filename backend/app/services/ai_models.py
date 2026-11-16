@@ -115,33 +115,88 @@ def from_db() -> dict | None:
     )
 
 
-def from_json_file() -> dict | None:
+def _from_db_all() -> list[dict]:
+    """库里所有启用模型，默认模型排第一（连不上时按这个顺序回退）."""
+    try:
+        from sqlalchemy import text
+
+        from app.database import SessionLocal
+
+        db = SessionLocal()
+        try:
+            rows = db.execute(
+                text(
+                    "SELECT id, name, provider, base_url, model, api_key_enc, temperature, max_tokens "
+                    "FROM bi_ai_model WHERE enabled ORDER BY is_default DESC, id"
+                )
+            ).fetchall()
+        finally:
+            db.close()
+    except Exception:
+        return []
+    configs: list[dict] = []
+    for row in rows:
+        m = row._mapping
+        cfg = _config(
+            m["base_url"], m["model"], decrypt(m["api_key_enc"] or ""),
+            float(m["temperature"] or 0.3), int(m["max_tokens"] or 4096),
+            m["provider"] or "", m["name"] or "", int(m["id"]),
+        )
+        if cfg:
+            configs.append(cfg)
+    return configs
+
+
+def _from_json_all() -> list[dict]:
     if not _JSON_FILE.exists():
-        return None
+        return []
     try:
         models = json.loads(_JSON_FILE.read_text(encoding="utf-8"))
     except Exception:
-        return None
+        return []
     if not isinstance(models, list):
-        return None
+        return []
     ordered = [m for m in models if isinstance(m, dict) and m.get("isDefault")]
     ordered += [m for m in models if isinstance(m, dict) and not m.get("isDefault")]
+    configs: list[dict] = []
     for m in ordered:
         if not m.get("enabled") or not m.get("apiKey"):
             continue
         cfg = _config(m.get("baseURL", ""), m.get("model", ""), m.get("apiKey", ""),
                       float(m.get("temperature") or 0.3), 4096, "json", m.get("name", ""))
         if cfg:
-            return cfg
-    return None
+            configs.append(cfg)
+    return configs
+
+
+def from_json_file() -> dict | None:
+    return (_from_json_all() or [None])[0]
 
 
 def from_env() -> dict | None:
     return _config(settings.llm_api_base, settings.llm_model, settings.llm_api_key)
 
 
+def candidate_configs() -> list[dict]:
+    """按优先级列出可尝试的模型：库默认 → 库其它启用 → 文件 → 环境变量（同一个模型只留一次）.
+
+    调用方逐个真实请求，前一个连不上（超时 / HTTP 错误 / 空回复）就换下一个。
+    """
+    candidates: list[dict] = []
+    seen: set[tuple[str, str, str]] = set()
+    env_cfg = from_env()
+    for cfg in [*_from_db_all(), *_from_json_all(), *([env_cfg] if env_cfg else [])]:
+        key = (cfg["chat_url"], cfg["model"], cfg["api_key"])
+        if key in seen:
+            continue
+        seen.add(key)
+        candidates.append(cfg)
+    return candidates
+
+
 def default_config() -> dict | None:
-    return from_db() or from_json_file() or from_env()
+    """当前首选的模型（管理后台的「默认」；没有默认时取第一个启用的）."""
+    return (candidate_configs() or [None])[0]
 
 
 def legacy_chat_config() -> dict | None:
@@ -178,8 +233,9 @@ def test_connection(base_url: str, model: str, api_key: str, timeout: int = 15) 
             headers={"Authorization": f"Bearer {api_key.strip()}", "Content-Type": "application/json"},
             json={
                 "model": model.strip(),
-                "messages": [{"role": "user", "content": "ping"}],
-                "max_tokens": 8,
+                "messages": [{"role": "user", "content": "ping，请只回复 ok"}],
+                # 留够 token：推理类模型的思维链也会占额度，8 个 token 常常只剩空 content
+                "max_tokens": 64,
                 "temperature": 0,
             },
             timeout=timeout,
@@ -195,21 +251,43 @@ def test_connection(base_url: str, model: str, api_key: str, timeout: int = 15) 
             "latency_ms": elapsed,
             "message": f"HTTP {resp.status_code}：{(resp.text or '')[:240]}",
         }
+
+    body = (resp.text or "")[:240]
     try:
         data = resp.json()
-        content = str(
-            ((data.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
-        ).strip()
     except Exception:
-        content = ""
-    if not content:
-        return {"ok": False, "latency_ms": elapsed, "message": "接口返回 200，但响应里没有 choices[0].message.content"}
+        data = None
+    if not isinstance(data, dict):
+        return {"ok": False, "latency_ms": elapsed,
+                "message": f"接口返回 200，但不是 JSON：{body}"}
+    # 有的网关把错误包在 200 里（如模型名不存在），先把真实原因透出来
+    if data.get("error"):
+        detail = data["error"]
+        if isinstance(detail, dict):
+            detail = detail.get("message") or json.dumps(detail, ensure_ascii=False)
+        return {"ok": False, "latency_ms": elapsed,
+                "message": f"接口返回 200，但返回了错误：{str(detail)[:240]}"}
+
+    choices = data.get("choices") or []
+    if not choices:
+        return {"ok": False, "latency_ms": elapsed,
+                "message": f"接口返回 200，但响应里没有 choices：{body}"}
+    choice = choices[0] if isinstance(choices[0], dict) else {}
+    message = choice.get("message") or {}
+    # 推理模型的正文可能为空（全在 reasoning_content），只要能取到任一种回复就算连通
+    content = str(message.get("content") or "").strip()
+    thinking = str(message.get("reasoning_content") or "").strip()
+    legacy = str(choice.get("text") or "").strip()
+    if not (content or thinking or legacy):
+        return {"ok": False, "latency_ms": elapsed,
+                "message": f"接口返回 200，但回复为空（模型名或参数可能不对）：{body}"}
     return {"ok": True, "latency_ms": elapsed, "message": f"连接正常（{elapsed}ms）"}
 
 
 __all__ = [
     "normalize_base_url",
     "chat_url",
+    "candidate_configs",
     "decrypt_key",
     "mask_key",
     "from_db",

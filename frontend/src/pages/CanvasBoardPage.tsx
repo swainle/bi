@@ -3,19 +3,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
-  Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, Divider, IconButton,
+  Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Divider, IconButton,
   Menu, MenuItem, Snackbar, Tab, Tabs, TextField, ToggleButton, ToggleButtonGroup, Typography,
 } from "@mui/material";
 import {
   Add, AlignHorizontalCenter, AlignHorizontalLeft, AlignHorizontalRight, AlignVerticalBottom,
-  AlignVerticalCenter, AlignVerticalTop,
+  AlignVerticalCenter, AlignVerticalTop, AutoAwesome,
   ChevronLeft, ChevronRight, Close, CloudUpload, ContentCopy, CropFree, CropSquare, DeleteOutline, ExpandMore,
   Redo, Save, TextFields, Title as TitleIcon, Tune, Undo, Visibility,
 } from "@mui/icons-material";
 import client from "../api/client";
 import BoardSurface, { type BoardSurfaceHandle } from "../features/components/board/BoardSurface";
+import TopListDialog from "../features/components/board/TopListDialog";
 import FieldPanel from "../features/components/editor/FieldPanel";
 import QueryPanel from "../features/components/editor/QueryPanel";
+import AiLayoutBar, { type LayoutOp } from "../features/components/editor/AiLayoutBar";
 import SharedFilterFieldsEditor from "../features/components/editor/FilterFieldsEditor";
 import ChartTypeRail from "../features/components/editor/ChartTypeRail";
 import OverlayScrollbar from "../features/components/editor/OverlayScrollbar";
@@ -36,7 +38,7 @@ import type {
   DatasetBrief, DocItem, FilterFieldSpec, Guide, RenderPayload, ShapeKind, ShapeSpec,
 } from "../features/components/types";
 
-interface DashboardBrief { id: number; name: string; updated_at?: string }
+interface DashboardBrief { id: number; name: string; updated_at?: string; published?: boolean; agent_generated?: boolean }
 
 const ACCENTS = ["indigo", "teal", "amber", "rose", "violet", "slate", "sky"] as const;
 
@@ -162,8 +164,18 @@ function emptyBannerSpec(): ComponentSpec {
 
 /** 组件库模板拖进画布时按目标数据集自检：引用了不存在的字段就清掉，绝不让卡片带着死字段上线
  *  （2026-11-13 用户要求「字段不能固定写死」：模板里的维度 / 指标 / 图表轴 / 表格列一律以数据集为准） */
-function pruneSpecFields(spec: ComponentSpec, allowed: Set<string>): ComponentSpec {
+function pruneSpecFields(spec: ComponentSpec, allowed: Set<string>, roleOf?: Map<string, string>): ComponentSpec {
   if (!allowed.size) return spec;
+  /* 目标数据集里这一列是文本/维度，但模板给的是 SUM/AVG 这类数值聚合 → 改成 COUNT。
+     否则拖进来就红字「字段是文本列，SUM 用不了」（2026-11-15 用「榜单端-天猫」实测：16 张卡全报这个）。
+     COUNT 对文本/标识都成立，是唯一能安全退化的聚合。 */
+  const NUMERIC_AGGS = new Set(["SUM", "AVG", "MIN", "MAX"]);
+  const numericlyIllegal = (name: unknown, agg: unknown) => {
+    if (typeof name !== "string" || !name) return false;
+    const role = roleOf?.get(name);
+    if (!role || role === "measure" || role === "metric") return false;   // 数值列 / 数据集指标：照旧
+    return NUMERIC_AGGS.has(String(agg || "SUM").toUpperCase());
+  };
   const keep = (v: unknown) => (typeof v === "string" && v && !allowed.has(v) ? "" : v);
   const binding: Record<string, unknown> = { ...(spec.binding as unknown as Record<string, unknown>) };
   for (const key of ["dimension", "series", "metric"]) {
@@ -174,8 +186,11 @@ function pruneSpecFields(spec: ComponentSpec, allowed: Set<string>): ComponentSp
       .map((x) => (typeof x === "string" ? x : (x as { name?: string })?.name))
       .filter((x): x is string => !!x && allowed.has(x));
   }
+  if (numericlyIllegal(binding.metric, binding.agg)) binding.agg = "COUNT";
   if (Array.isArray(binding.metrics)) {
-    binding.metrics = (binding.metrics as { name?: string }[]).filter((m) => !!m?.name && allowed.has(m.name));
+    binding.metrics = (binding.metrics as { name?: string; agg?: string }[])
+      .filter((m) => !!m?.name && allowed.has(m.name))
+      .map((m) => (numericlyIllegal(m.name, m.agg) ? { ...m, agg: "COUNT" } : m));
   }
   const chart: Record<string, unknown> = { ...(spec.chart as unknown as Record<string, unknown>) };
   for (const key of ["x_key", "y_key", "size_key", "hbar_threshold_key"]) {
@@ -488,6 +503,12 @@ export default function CanvasBoardPage() {
   /** 删除筛选栏前的确认：keys = 待删元素，platforms = 它绑定的平台 */
   const [deleteConfirm, setDeleteConfirm] = useState<{ keys: string[]; platforms: string[] } | null>(null);
   const [dirty, setDirty] = useState(false);
+  /** 这份看板是不是 Agent 建的（发布二次确认里说明来源，来自后端归属登记） */
+  const [agentGenerated, setAgentGenerated] = useState(false);
+  /** 发布二次确认（发布必须用户自己点） */
+  const [publishConfirm, setPublishConfirm] = useState(false);
+  /** 「AI 推荐组件」进行中：按当前数据集字段推荐并插入 */
+  const [recommendBusy, setRecommendBusy] = useState(false);
   /** 正在进行的动作：save=只保存草稿，publish=保存并发布到「我的看板」 */
   const [saving, setSaving] = useState<"save" | "publish" | null>(null);
   const [rendering, setRendering] = useState(false);
@@ -508,14 +529,14 @@ export default function CanvasBoardPage() {
   /** 三栏折叠状态（PS 式收起面板，给画布腾地方），记在本地 */
   const paneAnimTimer = useRef<number>(0);
   const [collapsed, setCollapsed] = useState<{ left?: boolean; mid?: boolean; right?: boolean }>(() => {
-    try { return JSON.parse(localStorage.getItem("mzbi.editor.collapsed") || "{}"); } catch { return {}; }
+    try { return JSON.parse(localStorage.getItem("mcbi.editor.collapsed") || "{}"); } catch { return {}; }
   });
   const togglePane = useCallback((key: "left" | "mid" | "right") => {
     paneAnimating.active = true;
     window.clearTimeout(paneAnimTimer.current);
     setCollapsed((prev) => {
       const next = { ...prev, [key]: !prev[key] };
-      localStorage.setItem("mzbi.editor.collapsed", JSON.stringify(next));
+      localStorage.setItem("mcbi.editor.collapsed", JSON.stringify(next));
       return next;
     });
     // 动画 240ms + 余量：结束后解除冻结并补测画布宽
@@ -525,9 +546,9 @@ export default function CanvasBoardPage() {
     }, 300);
   }, [syncStageWidth]);
   /** 三栏宽度：可拖拽（PS 式），记在本地，刷新后保留 */
-  const leftW = useResizableWidth("mzbi.editor.leftW", 232, 180, 420, 1, syncStageWidth);
-  const midW = useResizableWidth("mzbi.editor.midW", 336, 280, 560, 1, syncStageWidth);
-  const rightW = useResizableWidth("mzbi.editor.rightW", 168, 140, 340, -1, syncStageWidth);
+  const leftW = useResizableWidth("mcbi.editor.leftW", 232, 180, 420, 1, syncStageWidth);
+  const midW = useResizableWidth("mcbi.editor.midW", 336, 280, 560, 1, syncStageWidth);
+  const rightW = useResizableWidth("mcbi.editor.rightW", 168, 140, 340, -1, syncStageWidth);
   /** 画布的实时层句柄：标尺拉参考线时直接推给 DOM，不 setState */
   const surfaceRef = useRef<BoardSurfaceHandle>(null);
   const [stageWidth, setStageWidth] = useState(1000);
@@ -634,7 +655,7 @@ export default function CanvasBoardPage() {
     clipboardRef.current = docs;
     pasteTimes.current = 0;
     try {
-      void navigator.clipboard?.writeText(JSON.stringify({ mingzebi: 1, items: docs }));
+      void navigator.clipboard?.writeText(JSON.stringify({ mingcebi: 1, items: docs }));
     } catch { /* 剪贴板不可用就只留页内那份 */ }
     setToast({ open: true, msg: `已复制 ${docs.length} 个元素`, severity: "success" });
   };
@@ -645,8 +666,9 @@ export default function CanvasBoardPage() {
     try {
       const text = await navigator.clipboard?.readText();
       if (text) {
-        const parsed = JSON.parse(text) as { mingzebi?: number; items?: DocItem[] };
-        if (parsed?.mingzebi === 1 && Array.isArray(parsed.items) && parsed.items.length) docs = parsed.items;
+        const parsed = JSON.parse(text) as { mingcebi?: number; mingzebi?: number; items?: DocItem[] };
+        // 旧名 MingzeBI 时期复制到系统剪贴板的元素仍可粘贴一次
+        if ((parsed?.mingcebi === 1 || parsed?.mingzebi === 1) && Array.isArray(parsed.items) && parsed.items.length) docs = parsed.items;
       }
     } catch { /* 没权限就退回页内剪贴板 */ }
     if (!docs?.length) {
@@ -789,6 +811,7 @@ export default function CanvasBoardPage() {
       /* 旧结构（标题/形状挂在页面级）先在内存里分到各平台，避免切平台少一截内容 */
       const next = migratePlatformSplit(loaded).doc;
       setDoc(next);
+      setAgentGenerated(Boolean(res.data?.agent_generated));
       /* 导航菜单卡勾了「首视页」就落到那一页，否则退回第一页 */
       const firstView = navHomePage(next) || next.views?.[0]?.key || "";
       const firstViewDef = next.views?.find((v) => v.key === firstView) ?? next.views?.[0];
@@ -906,22 +929,27 @@ export default function CanvasBoardPage() {
     };
   }, [view, items, guides, activePlatform, splitItems, detailEditKey]);
 
-  /** 页面上的所有画板（含其他页面与分套里的）：明细表弹窗要能选到 */
+  /** 页面上的所有画板（含其他页面与分套里的）：明细表弹窗要能选到
+   *  标签带上页面名 —— 画板默认都叫「画板」，跨页时就分不清是哪一块了 */
   const boardOptions = useMemo(() => {
     const found: { key: string; label: string }[] = [];
-    const collect = (list?: unknown[]) => {
+    const collect = (list: unknown[] | undefined, pageTitle: string) => {
       (list ?? []).forEach((raw) => {
         const it = raw as { key?: string; type?: string; text?: string };
-        if (it?.type === "board" && it.key) found.push({ key: it.key, label: it.text || "画板" });
+        if (it?.type !== "board" || !it.key) return;
+        const name = it.text || "画板";
+        found.push({ key: it.key, label: pageTitle && pageTitle !== name ? `${pageTitle} · ${name}` : name });
       });
     };
-    collect(items);
+    const currentTitle = (doc?.views ?? []).find((v) => v.key === view)?.title || "";
+    collect(items, currentTitle);
     (doc?.views ?? []).forEach((v) => {
-      collect(v.items as unknown[]);
-      Object.values(v.items_map ?? {}).forEach((list) => collect(list as unknown[]));
+      const title = v.title || v.key;
+      collect(v.items as unknown[], title);
+      Object.values(v.items_map ?? {}).forEach((list) => collect(list as unknown[], title));
     });
     return [...new Map(found.map((b) => [b.key, b])).values()];
-  }, [items, doc]);
+  }, [items, doc, view]);
 
   /** 按 key 找画板：当前画布优先，其次其它页面（跨页面弹窗） */
   const findBoard = useCallback((key: string | undefined) => {
@@ -1254,9 +1282,11 @@ export default function CanvasBoardPage() {
     if (!view || !docId) return;
     setRendering(true);
     const timer = window.setTimeout(() => {
+      /* 整页渲染要跑十几张卡的 SQL，死数据源会让它到 30s+；
+         默认 15s 会把请求掐掉，卡片全清空、看着像「绑定数据集没效果」，所以这里单独放宽 */
       client.post(`/bi/dashboards/${docId}/render`, {
         view, params, items: items.map(toDocItem),
-      })
+      }, { timeout: 120000 })
         .then((res) => {
           const data: DashboardRender = res.data;
           setCards(data.cards || {});
@@ -1266,7 +1296,15 @@ export default function CanvasBoardPage() {
             setParams((prev) => ({ ...data.params, ...prev }));
           }
         })
-        .catch(() => setCards({}))
+        .catch((err) => {
+          /* 失败别清空卡片（清空 = 满屏「暂无数据」，看不出是渲染失败还是真的没数据） */
+          const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+          setToast({
+            open: true,
+            msg: detail || "渲染失败或超时（数据源可能连不上），已保留上次结果",
+            severity: "error",
+          });
+        })
         .finally(() => setRendering(false));
     }, 200);
     return () => window.clearTimeout(timer);
@@ -1324,6 +1362,17 @@ export default function CanvasBoardPage() {
   /** 版面在画布里居中 */
   const stageOffsetX = Math.max(0, Math.round((boardWidth - DESIGN_W * stageScale) / 2));
   const stageHeight = items.reduce((max, i) => Math.max(max, i.y + i.h), 300) + 40;
+
+  /** 本页卡片**实际读**的数据集（后端按平台分套切过表）：筛选栏「逐级筛选」按它取候选值 */
+  const filterDataIds = useMemo(() => {
+    const usage = new Map<number, number>();
+    Object.values(cards).forEach((card) => {
+      const id = Number((card as unknown as { dataset_id?: number } | null)?.dataset_id);
+      if (Number.isFinite(id) && id > 0) usage.set(id, (usage.get(id) ?? 0) + 1);
+    });
+    /* 卡片最多的那张排第一：筛选栏的「逐级候选值」只按它取（混用会把不同口径的词表并在一起） */
+    return [...usage.entries()].sort((a, b) => b[1] - a[1]).map(([id]) => id);
+  }, [cards]);
 
   /** 当前页用到的数据集（导航卡「导出范围」下拉用）：按引用卡片数排序 */
   const pageDatasets = useMemo(() => {
@@ -1448,6 +1497,80 @@ export default function CanvasBoardPage() {
     setDirty(true);
   };
 
+  /** AI 整理：一次应用 = 一个撤销步（先入栈，再把新快照视为已记录） */
+  const applyAiLayout = useCallback((ops: LayoutOp[]) => {
+    if (!ops.length) return;
+    const before = snapOf(itemsRef.current, guidesRef.current);
+    pushHistory(before);
+    const byKey = new Map(ops.map((op) => [op.key, op]));
+    const next = itemsRef.current.map((item) => {
+      const op = byKey.get(item.key);
+      return op ? { ...item, x: op.x, y: op.y, w: op.w, h: op.h } : item;
+    });
+    prevSnap.current = snapOf(next, guidesRef.current);
+    setItems(next);
+    setDirty(true);
+  }, [pushHistory, snapOf]);
+
+  /** A4：按当前数据集字段推荐组件，整排落到页面底部（一次插入 = 一个撤销步） */
+  const insertRecommended = useCallback(async () => {
+    const datasetId = fieldDatasetId ?? datasets[0]?.id;
+    if (!datasetId || recommendBusy) return;
+    setRecommendBusy(true);
+    try {
+      const res = await client.post("/bi/ai/recommend", { dataset_id: datasetId, limit: 4 },
+        { timeout: 60000 });
+      const list = (res.data?.items || []) as DocItem[];
+      if (!list.length) {
+        setToast({ open: true, msg: "这个数据集没有可推荐的组件", severity: "error" });
+        return;
+      }
+      const bottom = itemsRef.current.length
+        ? Math.max(...itemsRef.current.map((item) => item.y + item.h)) + 16
+        : 0;
+      const heightOf = (raw: DocItem) => Number(raw.layout?.h || raw.h || 260);
+      const normal = list.filter((raw) => {
+        const kind = String(raw.component || "").replace("base.", "");
+        return !FULL_WIDTH_KINDS.has(kind as ComponentKind);
+      });
+      const full = list.filter((raw) => !normal.includes(raw));
+      /* 普通卡片一排等分；整宽元素（明细表）另起一行铺满 1440 */
+      const cardW = normal.length
+        ? Math.floor((DESIGN_W - 16 * (normal.length - 1)) / normal.length / 8) * 8
+        : 0;
+      const added = normal.map((raw, index) => toCanvasItem({
+        ...raw,
+        key: newKey("ai"),
+        layout: { x: index * (cardW + 16), y: bottom, w: cardW, h: heightOf(raw) },
+      }));
+      let cursor = bottom + (normal.length
+        ? Math.max(...normal.map(heightOf)) + 16
+        : 0);
+      full.forEach((raw) => {
+        const h = heightOf(raw);
+        added.push(toCanvasItem({
+          ...raw,
+          key: newKey("ai"),
+          layout: { x: 0, y: cursor, w: DESIGN_W, h },
+        }));
+        cursor += h + 16;
+      });
+      const before = snapOf(itemsRef.current, guidesRef.current);
+      pushHistory(before);
+      const next = [...itemsRef.current, ...added];
+      prevSnap.current = snapOf(next, guidesRef.current);
+      setItems(next);
+      setSelectedKeys(added.map((item) => item.key));
+      setDirty(true);
+      setToast({ open: true, msg: `已插入 ${added.length} 个推荐组件`, severity: "success" });
+    } catch (err) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setToast({ open: true, msg: detail || "推荐失败，可手动添加组件", severity: "error" });
+    } finally {
+      setRecommendBusy(false);
+    }
+  }, [fieldDatasetId, datasets, recommendBusy, snapOf, pushHistory]);
+
   /** 多选对齐：以选中集合的外接矩形为基准（与设计软件一致，不需要栅格） */
   const alignSelection = useCallback((mode: (typeof ALIGN_ACTIONS)[number]["mode"]) => {
     if (selectedKeys.length < 2) return;
@@ -1513,6 +1636,8 @@ export default function CanvasBoardPage() {
 
   /** 明细表「行详情」里正在编辑的组件卡片 */
   const [detailCardKey, setDetailCardKey] = useState("");
+  /** 指标卡右上角徽标 → TOP N 榜单弹窗（只读；编辑器里也能点开看） */
+  const [topKey, setTopKey] = useState<string | null>(null);
   const detailCard = useMemo(() => {
     if (!selectedItem || !detailCardKey) return null;
     const detail = selectedItem.spec?.table_view?.detail;
@@ -1647,7 +1772,8 @@ export default function CanvasBoardPage() {
   }, [doc, docId, items, view, guides, saving, stashView, detailEditKey, commitDetailEdit]);
 
   const handleSave = useCallback(() => { void persist(false); }, [persist]);
-  const handlePublish = useCallback(() => { void persist(true); }, [persist]);
+  /** 发布必须用户二次确认：点按钮 → 弹窗确认 → 才落库（Agent 侧工具也禁止直接发布） */
+  const handlePublish = useCallback(() => setPublishConfirm(true), []);
 
   /** 点击添加：落在当前视口中间且整块留在版面内（宽元素不会被顶到右边溢出区） */
   const centerPosition = (width = 320) => {
@@ -1823,12 +1949,14 @@ export default function CanvasBoardPage() {
     /* 换了数据集，模板里那些字段名可能这张表没有 —— 拖进来之前先自检清掉，别让卡带着死字段
        （只有「这套字段确实属于要用的数据集」时才清，字段还没加载完就不动） */
     if (datasetId && insertFields.datasetId === datasetId) {
-      const allowed = new Set([
+      const allFields = [
         ...insertFields.groups.dimensions,
         ...insertFields.groups.metrics,
         ...insertFields.groups.identifiers,
-      ].map((f) => f.name));
-      Object.assign(spec, pruneSpecFields(spec, allowed));
+      ];
+      const allowed = new Set(allFields.map((f) => f.name));
+      const roleOf = new Map(allFields.map((f) => [f.name, String(f.role || "")]));
+      Object.assign(spec, pruneSpecFields(spec, allowed, roleOf));
     }
     /* 指标卡 / 结论卡 / 分节标题没有维度概念：模板里若还留着维度，这里清掉 */
     if (["kpi", "insight", "section"].includes(kind)) spec.binding.dimension = null;
@@ -2093,6 +2221,32 @@ export default function CanvasBoardPage() {
 
         {/* 编辑功能区（可拖到画布）：放在文档 chip 与右侧操作之间居中，窄屏也不会压到 chip */}
         <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, flexShrink: 0 }}>
+          <AiLayoutBar
+            items={items}
+            selectedKeys={selectedKeys}
+            designWidth={DESIGN_W}
+            fullWidthKinds={Array.from(FULL_WIDTH_KINDS)}
+            onApply={applyAiLayout}
+            onUndo={undo}
+          />
+          {/* AI 推荐组件：按当前数据集字段推荐并插入（与「AI 整理」同色系，避免两个功能区两种视觉） */}
+          <Button
+            size="small"
+            disabled={recommendBusy || !doc}
+            onClick={() => void insertRecommended()}
+            startIcon={recommendBusy
+              ? <CircularProgress size={13} color="inherit" />
+              : <AutoAwesome sx={{ fontSize: 16 }} />}
+            title="按当前数据集的字段推荐组件"
+            sx={{
+              textTransform: "none", fontSize: 11.5, height: 26, minWidth: 0, px: 1,
+              borderRadius: 1.25, color: "#4F46E5", bgcolor: "rgba(79,70,229,0.08)",
+              "&:hover": { bgcolor: "rgba(79,70,229,0.14)" },
+              "&.Mui-disabled": { color: "#B6B6BF", bgcolor: "transparent" },
+            }}
+          >
+            {recommendBusy ? "推荐中" : "推荐组件"}
+          </Button>
           {/* 多选对齐（选中 ≥2 个才出现）：6 向对齐 + 两种等间距，两端固定 */}
           {selectedKeys.length >= 2 && (
             <Box sx={{ display: "flex", alignItems: "center", gap: 0.25, mr: 0.25 }}>
@@ -2532,6 +2686,8 @@ export default function CanvasBoardPage() {
               item={selectedItem}
               platform={activePlatform}
               columns={[...groups.dimensions, ...groups.metrics, ...groups.identifiers].map((f) => f.name)}
+              fieldOptions={[...groups.dimensions, ...groups.metrics, ...groups.identifiers]
+                .map((f) => ({ name: f.name, role: f.role }))}
               datasetId={fieldDatasetId}
               onChange={(spec) => patchItem(selectedItem.key, { spec })}
               onEmpty={() => {
@@ -2677,6 +2833,8 @@ export default function CanvasBoardPage() {
               onDrop={handleDrop}
               filterFields={paramDefs}
               filterValues={params}
+              filterDatasets={filterDataIds}
+              onTopList={(key) => setTopKey(key)}
               onFilterChange={(id, value) => setParams((p) => ({ ...p, [id]: value }))}
               onDuplicate={duplicateForDrag}
               currentPage={view}
@@ -2772,6 +2930,18 @@ export default function CanvasBoardPage() {
       </Box>
 
       {/* 删除筛选栏确认：它绑了平台时，删掉会让这些平台的筛选失效 */}
+      {topKey && (
+        <TopListDialog
+          open
+          onClose={() => setTopKey(null)}
+          dashboardId={docId}
+          itemKey={topKey}
+          view={view}
+          params={params}
+          items={items.map(toDocItem)}
+        />
+      )}
+
       <Dialog open={!!deleteConfirm} onClose={() => setDeleteConfirm(null)} maxWidth="xs" fullWidth>
         <DialogTitle sx={{ fontSize: 16, fontWeight: 700, pb: 1 }}>删除筛选栏</DialogTitle>
         <DialogContent>
@@ -2884,6 +3054,28 @@ export default function CanvasBoardPage() {
         ]}
       </Menu>
 
+      {/* 发布二次确认：草稿转正必须用户自己点 */}
+      <Dialog open={publishConfirm} onClose={() => setPublishConfirm(false)} maxWidth="xs" fullWidth
+        PaperProps={{ sx: { borderRadius: 3 } }}>
+        <DialogTitle sx={{ fontSize: 15.5, fontWeight: 700 }}>发布这个看板？</DialogTitle>
+        <DialogContent sx={{ pt: "6px !important" }}>
+          <Typography sx={{ fontSize: 13, color: "#4B5563", lineHeight: 1.7 }}>
+            {agentGenerated
+              ? "这是 Agent 生成的草稿。发布会把它转成正式看板，请确认内容与数据都正确。"
+              : "发布后这份看板会出现在「我的看板」。"}
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5 }}>
+          <Button onClick={() => setPublishConfirm(false)}
+            sx={{ textTransform: "none", fontSize: 13, color: "#86868B" }}>再看看</Button>
+          <Button variant="contained" disabled={!!saving}
+            onClick={() => { setPublishConfirm(false); void persist(true); }}
+            sx={{ textTransform: "none", fontSize: 13, borderRadius: 2, bgcolor: "#4F46E5", boxShadow: "none" }}>
+            确认发布
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       <Snackbar open={toast.open} autoHideDuration={2400}
         onClose={() => setToast((s) => ({ ...s, open: false }))}
         anchorOrigin={{ vertical: "bottom", horizontal: "center" }}>
@@ -2894,9 +3086,10 @@ export default function CanvasBoardPage() {
 }
 
 /** 画布里的筛选字段编辑器：把共用组件接回「整份 spec」的回调 */
-function FilterFieldsEditor({ item, columns, datasetId, platform, onChange, onEmpty }: {
+function FilterFieldsEditor({ item, columns, fieldOptions, datasetId, platform, onChange, onEmpty }: {
   item: CanvasItem;
   columns: string[];
+  fieldOptions?: { name: string; role?: string }[];
   datasetId: number | null;
   platform?: string;
   onChange: (spec: ComponentSpec) => void;
@@ -2909,6 +3102,7 @@ function FilterFieldsEditor({ item, columns, datasetId, platform, onChange, onEm
       fields={item.spec.filter?.fields ?? []}
       fieldsMap={item.spec.filter?.fields_map}
       columns={columns}
+      fieldOptions={fieldOptions}
       datasetId={datasetId}
       onChange={(fields) => onChange({ ...item.spec, filter: filterWithFields(item.spec.filter, fields) })}
       onFieldsMapChange={(fields_map) => onChange({

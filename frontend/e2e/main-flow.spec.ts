@@ -1,22 +1,22 @@
 // 主链路 E2E（本地门禁）：登录跳转 → 我的看板 → 成品看板 → 筛选 → 导出菜单 → 组件库地图 → 模板分享 → 团队协同。
 //
 // 用法（先确保前端 :5300、后端 :8300 都在跑）：
-//   backend/.venv/bin/python scripts/visual_tokens.py   # 生成 /tmp/mzbi_tokens.json（不会踢掉浏览器会话）
+//   backend/.venv/bin/python scripts/visual_tokens.py   # 生成 /tmp/mcbi_tokens.json（不会踢掉浏览器会话）
 //   cd frontend && npm run e2e
 //
 // 说明：
 //   · token 直接注入 localStorage，不走登录接口（见 AGENTS §7.4）；
-//   · 看板 id 可用环境变量覆盖：MZBI_DASHBOARD_ID（渲染）/ MZBI_FILTER_DASHBOARD_ID（筛选）/ MZBI_SHARE_DASHBOARD_ID（分享）；
+//   · 看板 id 可用环境变量覆盖：MCBI_DASHBOARD_ID（渲染）/ MCBI_FILTER_DASHBOARD_ID（筛选）/ MCBI_SHARE_DASHBOARD_ID（分享）；
 //   · 团队协同用例会先分享再「取消协同」恢复原状；如果本来就已分享，只断言不取消。
 import fs from "node:fs";
 import type { Page } from "@playwright/test";
 
 import { expect, test } from "@playwright/test";
 
-const TOKEN_FILE = process.env.MZBI_TOKEN_FILE || "/tmp/mzbi_tokens.json";
-const DASHBOARD_ID = process.env.MZBI_DASHBOARD_ID || "57";
-const FILTER_DASHBOARD_ID = process.env.MZBI_FILTER_DASHBOARD_ID || "58";
-const SHARE_DASHBOARD_ID = process.env.MZBI_SHARE_DASHBOARD_ID || "58";
+const TOKEN_FILE = process.env.MCBI_TOKEN_FILE || "/tmp/mcbi_tokens.json";
+const DASHBOARD_ID = process.env.MCBI_DASHBOARD_ID || "57";
+const FILTER_DASHBOARD_ID = process.env.MCBI_FILTER_DASHBOARD_ID || "58";
+const SHARE_DASHBOARD_ID = process.env.MCBI_SHARE_DASHBOARD_ID || "58";
 
 function readTokens(): { access_token: string; refresh_token: string } {
   if (!fs.existsSync(TOKEN_FILE)) {

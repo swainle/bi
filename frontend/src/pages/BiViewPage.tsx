@@ -23,6 +23,8 @@ import BoardViewer from "../features/components/board/BoardViewer";
 import PddCockpitView from "../features/bi-dashboard/PddCockpitView";
 import PddProfitDashboard from "../features/bi-dashboard/PddProfitDashboard";
 import WatermarkOverlay from "../components/WatermarkOverlay";
+import { useWatermarkText } from "../hooks/useWatermarkText";
+import { useAuth } from "../hooks/useAuth";
 import ImportWizard from "../features/bi-dashboard/ImportWizard";
 import type { DataRow, ChartPanel } from "../features/bi-dashboard/constants";
 
@@ -34,6 +36,9 @@ interface TemplateDef {
 export default function BiViewPage() {
   const { id } = useParams<{ id: string }>();
   const nav = useNavigate();
+  const watermarkText = useWatermarkText();
+  const { hasPerm } = useAuth();
+  const canExportDetail = hasPerm("bi:data:export:detail");
   const [rows, setRows] = useState<DataRow[]>([]);
   const [panels, setPanels] = useState<ChartPanel[]>([]);
   // 画布发布出来的看板：直接按画布布局只读渲染
@@ -267,9 +272,10 @@ export default function BiViewPage() {
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [autoRefresh, refreshInterval, tableName]);
 
-  // 导出 Excel
+  // 导出 Excel（后端需要明细导出权限；无权限时不显示入口）
   const handleExportExcel = () => {
     if (!tableName) return;
+    if (!canExportDetail) { alert("没有明细导出权限，请联系管理员开通"); return; }
     window.open(`/api/bi/engine/export/${tableName}`, "_blank");
     setExportMenu(null);
   };
@@ -295,7 +301,7 @@ export default function BiViewPage() {
     style.textContent = `@media print { body { -webkit-print-color-adjust: exact; } #bi-watermark { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%) rotate(-30deg); font-size: 80px; color: rgba(0,0,0,0.04); z-index: 9999; pointer-events: none; white-space: nowrap; } }`;
     document.head.appendChild(style);
     const wm = document.createElement("div");
-    wm.id = "bi-watermark"; wm.textContent = title || "明策BI";
+    wm.id = "bi-watermark"; wm.textContent = watermarkText;
     document.body.appendChild(wm);
     window.print();
     setTimeout(() => { document.head.removeChild(style); document.body.removeChild(wm); }, 1000);
@@ -394,7 +400,9 @@ export default function BiViewPage() {
         </IconButton>
         <Menu anchorEl={exportMenu} open={!!exportMenu} onClose={() => setExportMenu(null)}>
           <MenuItem onClick={handleExportImage}><ImageIcon sx={{ fontSize: 16, mr: 1 }} />导出图片 PNG</MenuItem>
-          <MenuItem onClick={handleExportExcel}><ExcelIcon sx={{ fontSize: 16, mr: 1 }} />导出 Excel</MenuItem>
+          {canExportDetail && (
+            <MenuItem onClick={handleExportExcel}><ExcelIcon sx={{ fontSize: 16, mr: 1 }} />导出 Excel</MenuItem>
+          )}
           <MenuItem onClick={handleExportPDF}><PdfIcon sx={{ fontSize: 16, mr: 1 }} />导出 PDF（含水印）</MenuItem>
         </Menu>
 
@@ -535,7 +543,7 @@ export default function BiViewPage() {
           <Button onClick={() => setAiAnalyzeOpen(false)} variant="contained" sx={{ borderRadius: 1.5, px: 4 }}>关闭</Button>
         </DialogActions>
       </Dialog>
-      <WatermarkOverlay />
+      <WatermarkOverlay text={watermarkText} />
     </Box>
   );
 }

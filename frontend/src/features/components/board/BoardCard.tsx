@@ -42,6 +42,10 @@ interface Props {
   filterFields?: FilterFieldSpec[];
   filterValues?: Record<string, unknown>;
   onFilterChange?: (id: string, value: unknown) => void;
+  /** 本页卡片读的数据集：给了就做「逐级筛选」（下游下拉随上游条件收窄） */
+  filterDatasets?: number[];
+  /** 指标卡右上角徽标被点（打开独立的 TOP N 榜单弹窗） */
+  onTopList?: (itemKey: string) => void;
   /** 当前编辑的页面 key：导航卡据此高亮「你在哪一页」 */
   currentPage?: string;
   /** 表格「查看更多」→ 拉全量行 */
@@ -123,10 +127,12 @@ function plainResize(base: Rect, edge: ResizeEdge, dx: number, dy: number, min: 
 export default function BoardCard({
   item, payload, error, selected, onSelect, onLayoutChange, onDelete, scale = 1,
   others = [], guideLines, designWidth = 1440, designHeight = 620, onGuides,
-  filterFields, filterValues, onFilterChange, onLoadAll, currentPage,
+  filterFields, filterValues, onFilterChange, filterDatasets, onTopList, onLoadAll, currentPage,
   registerNode, onDuplicateForDrag, onGhostStart, onGhost, onGhostEnd,
   followers, getCardNode,
 }: Props) {
+  /** 卡片级报错（数据源连不上等）：卡片高度有限，最多显示两行，完整原因放 title */
+  const cardError = error || (payload as { error?: string } | null)?.error || "";
   const [drag, setDrag] = useState<DragState | null>(null);
   const [hover, setHover] = useState(false);
   const nodeRef = useRef<HTMLDivElement | null>(null);
@@ -378,6 +384,7 @@ export default function BoardCard({
               fields={(item.spec?.filter?.fields?.length ? item.spec.filter.fields : filterFields) ?? []}
               fieldsMap={item.spec?.filter?.fields_map}
               values={filterValues ?? {}}
+              datasets={filterDatasets}
               onChange={(id, value) => onFilterChange?.(id, value)}
               surface={!!item.spec?.filter?.background}
             />
@@ -397,13 +404,20 @@ export default function BoardCard({
             ui={item.spec.ui as unknown as NavUi}
             currentPage={currentPage}
           />
-        ) : (error || (payload as { error?: string } | null)?.error) ? (
+        ) : cardError ? (
           <Box sx={{
             height: "100%", bgcolor: "#fff", border: "1px solid #EFF3FB", borderRadius: 2.5,
             display: "grid", placeItems: "center", px: 2,
           }}>
-            <Box sx={{ fontSize: 11.5, color: "error.main", textAlign: "center" }}>
-              {error || (payload as { error?: string } | null)?.error}
+            <Box
+              title={cardError}
+              sx={{
+                fontSize: 11.5, color: "error.main", textAlign: "center", lineHeight: 1.6,
+                display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical",
+                overflow: "hidden", overflowWrap: "anywhere",
+              }}
+            >
+              {cardError}
             </Box>
           </Box>
         ) : payload ? (
@@ -421,6 +435,7 @@ export default function BoardCard({
             }}
             ui={item.spec.ui}
             onLoadAll={onLoadAll as never}
+            onTopList={() => onTopList?.(item.key)}
           />
         ) : (
           <Box sx={{

@@ -5,6 +5,8 @@ import { Box } from "@mui/material";
 import { accentOf } from "../palette";
 import CardShell from "../skin/CardShell";
 import { AXIS, TOOLTIP } from "../skin/tokens";
+import { fitChart } from "../skin/CardFit";
+import { useBoxSize } from "../skin/useBoxSize";
 import { chartOf, formatAxis } from "../skin/format";
 import type { RenderPayload, ScatterPoint, UiSpec } from "../types";
 
@@ -25,6 +27,7 @@ const QUAD_LABEL: Record<string, string> = {
 export default function ScatterCard({ payload, ui, compact }: { payload: RenderPayload; ui: UiSpec; compact?: boolean }) {
   const token = accentOf(ui.accent);
   const opts = chartOf(payload.chart);
+  const [boxRef, box] = useBoxSize<HTMLDivElement>();
   const points = (payload.series ?? []) as unknown as ScatterPoint[];
 
   if (!points.length) {
@@ -180,8 +183,10 @@ export default function ScatterCard({ payload, ui, compact }: { payload: RenderP
           || (payload.quads ? Object.entries(payload.quads).map(([k, v]) => `${QUAD_LABEL[k] ?? k} ${v}`).join(" · ") : undefined))}
       note={compact ? undefined : payload.subtitle}
     >
-      <ReactEChartsCore option={option} notMerge
-        style={{ width: "100%", height: "100%" }} opts={{ renderer: "canvas" }} />
+      <Box ref={boxRef} sx={{ width: "100%", height: "100%" }}>
+        <ReactEChartsCore option={fitChart(option, box)} notMerge
+          style={{ width: "100%", height: "100%" }} opts={{ renderer: "canvas" }} />
+      </Box>
     </CardShell>
   );
 }

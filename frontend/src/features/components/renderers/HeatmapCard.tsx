@@ -4,6 +4,8 @@ import ReactEChartsCore from "echarts-for-react";
 import { Box } from "@mui/material";
 import { accentOf } from "../palette";
 import CardShell from "../skin/CardShell";
+import { fitChart } from "../skin/CardFit";
+import { useBoxSize } from "../skin/useBoxSize";
 import type { RenderPayload, UiSpec } from "../types";
 
 interface Props {
@@ -14,6 +16,7 @@ interface Props {
 export default function HeatmapCard({ payload, ui, compact }: Props & { compact?: boolean }) {
   const token = accentOf(ui.accent);
   const matrix = payload.matrix;
+  const [boxRef, box] = useBoxSize<HTMLDivElement>();
 
   if (!matrix || !matrix.cells.length) {
     return (
@@ -24,6 +27,11 @@ export default function HeatmapCard({ payload, ui, compact }: Props & { compact?
       </CardShell>
     );
   }
+
+  // 单元格尺寸决定「格内数值」要不要画：窄容器里 4-5 列挤在一起时会连成一串
+  const cellW = box.w > 0 ? (box.w - 50) / Math.max(1, matrix.xLabels.length) : 999;
+  const cellH = box.h > 0 ? (box.h - 54) / Math.max(1, matrix.yLabels.length) : 999;
+  const showCellLabels = !compact && cellW >= 34 && cellH >= 22;
 
   const option = {
     animation: ui.animate,
@@ -44,7 +52,8 @@ export default function HeatmapCard({ payload, ui, compact }: Props & { compact?
       splitArea: { show: true },
       axisTick: { show: false },
       axisLine: { lineStyle: { color: "#E5EAF3" } },
-      axisLabel: { show: !compact, fontSize: 11, color: "#64748B" },
+      // interval: auto + hideOverlap：列多了自动隔项显示，不让类目名互相压叠
+      axisLabel: { show: !compact, fontSize: 11, color: "#64748B", interval: "auto", hideOverlap: true },
     },
     yAxis: {
       type: "category",
@@ -52,9 +61,10 @@ export default function HeatmapCard({ payload, ui, compact }: Props & { compact?
       splitArea: { show: true },
       axisTick: { show: false },
       axisLine: { lineStyle: { color: "#E5EAF3" } },
-      axisLabel: { fontSize: 11, color: "#64748B" },
+      axisLabel: { show: !compact, fontSize: 11, color: "#64748B", interval: "auto", hideOverlap: true },
     },
     visualMap: {
+      show: !compact,
       min: 0,
       max: matrix.max || 1,
       calculable: false,
@@ -70,7 +80,7 @@ export default function HeatmapCard({ payload, ui, compact }: Props & { compact?
       {
         type: "heatmap",
         data: matrix.cells,
-        label: { show: true, fontSize: 10, color: "#334155" },
+        label: { show: showCellLabels, fontSize: 10, color: "#334155" },
         itemStyle: { borderColor: "#fff", borderWidth: 2, borderRadius: 4 },
         emphasis: { itemStyle: { shadowBlur: 8, shadowColor: "rgba(15,23,42,0.18)" } },
       },
@@ -79,7 +89,9 @@ export default function HeatmapCard({ payload, ui, compact }: Props & { compact?
 
   return (
     <CardShell compact={compact} title={payload.title || "矩阵"} accent={token.main}>
-      <ReactEChartsCore option={option} notMerge style={{ height: "100%", width: "100%" }} />
+      <Box ref={boxRef} sx={{ width: "100%", height: "100%" }}>
+        <ReactEChartsCore option={fitChart(option, box)} notMerge style={{ height: "100%", width: "100%" }} />
+      </Box>
     </CardShell>
   );
 }

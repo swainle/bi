@@ -29,7 +29,9 @@ PERMISSIONS = [
     ("bi:role:manage", "角色与权限", "管理后台"),
     ("bi:model:manage", "模型配置", "管理后台"),
     ("bi:error:view", "错误日志", "管理后台"),
+    ("bi:audit:view", "操作监控", "管理后台"),
     ("bi:ops:manage", "运维操作", "管理后台"),
+    ("bi:mcp:manage", "MCP 客户端", "管理后台"),
     ("bi:nav:datasets", "数据集入口", "业务入口"),
     ("bi:nav:datasources", "数据源入口", "业务入口"),
     ("bi:nav:sql", "SQL 查询入口", "业务入口"),
@@ -39,6 +41,13 @@ PERMISSIONS = [
     ("bi:ai:use", "AI 分析", "AI 能力"),
     ("bi:ai:sql", "AI 生成 SQL", "AI 能力"),
     ("bi:ai:export", "AI 导出", "AI 能力"),
+    # MCP / Agent 能力
+    ("bi:mcp:use", "Agent 代调用", "MCP 能力"),
+    ("bi:mcp:write", "Agent 写看板", "MCP 能力"),
+    # 数据能力
+    ("bi:data:export:summary", "汇总导出", "数据能力"),
+    ("bi:data:export:detail", "明细导出", "数据能力"),
+    ("bi:resource:delete", "删除资源", "数据能力"),
 ]
 
 DEFAULT_ROLES = {
@@ -48,6 +57,13 @@ DEFAULT_ROLES = {
         "permissions": [p[0] for p in PERMISSIONS],
         "data_scope": "all",
         "sort_order": 100,
+    },
+    "executive": {
+        "name": "高层",
+        "description": "股东 / 老板：全部部门只读 + 汇总导出；禁 SQL、明细导出与任何写操作",
+        "permissions": ["bi:ai:use", "bi:data:export:summary"],
+        "data_scope": "all",
+        "sort_order": 95,
     },
     "manager": {
         "name": "主管",

@@ -6,7 +6,7 @@
 
 全链路自研，企业级权限与审计；与旧平台解耦，独立仓库 / 数据库 / 部署。
 
-[![CI](https://github.com/cavan199/MingzeBI/actions/workflows/ci.yml/badge.svg)](https://github.com/cavan199/MingzeBI/actions/workflows/ci.yml)
+[![CI](https://github.com/cavan199/MingceBI/actions/workflows/ci.yml/badge.svg)](https://github.com/cavan199/MingceBI/actions/workflows/ci.yml)
 ![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
@@ -52,7 +52,7 @@
 ### 方式一：Docker（推荐）
 
 ```bash
-cd ~/MingzeBI
+cd ~/MingceBI
 export JWT_SECRET="$(openssl rand -base64 48)"
 docker compose up -d --build
 ```
@@ -67,8 +67,8 @@ docker compose up -d --build
 
 ```bash
 # 1. 建库
-createdb mingzebi
-psql mingzebi -c "CREATE EXTENSION IF NOT EXISTS vector;"
+createdb mingcebi
+psql mingcebi -c "CREATE EXTENSION IF NOT EXISTS vector;"
 
 # 2. 后端
 cd backend
@@ -91,17 +91,17 @@ python -m app.bootstrap --reset    # 清空重建（需 ALLOW_RESET=1）
 
 ### 方式三：Kubernetes（Helm）
 
-`deploy/helm/mingzebi` 起 API / 前端，可选独立 worker、Ingress、HPA；数据库与 Redis 走外部托管实例。
+`deploy/helm/mingcebi` 起 API / 前端，可选独立 worker、Ingress、HPA；数据库与 Redis 走外部托管实例。
 
 ```bash
 # 密钥建议放 Secret（键：DATABASE_URL / JWT_SECRET / LLM_API_KEY / ADMIN_PASSWORD）
-kubectl create secret generic mingzebi-secrets \
-  --from-literal=DATABASE_URL='postgresql://u:p@rds:5432/mingzebi' \
+kubectl create secret generic mingcebi-secrets \
+  --from-literal=DATABASE_URL='postgresql://u:p@rds:5432/mingcebi' \
   --from-literal=JWT_SECRET="$(openssl rand -base64 48)"
 
-helm upgrade --install mingzebi deploy/helm/mingzebi \
-  --namespace mingzebi --create-namespace \
-  --set backend.existingSecret=mingzebi-secrets \
+helm upgrade --install mingcebi deploy/helm/mingcebi \
+  --namespace mingcebi --create-namespace \
+  --set backend.existingSecret=mingcebi-secrets \
   --set backend.redisUrl=redis://redis:6379/0 \
   --set image.backend.tag=1.0.0 --set image.frontend.tag=1.0.0
 ```
@@ -109,7 +109,7 @@ helm upgrade --install mingzebi deploy/helm/mingzebi \
 - 探针分开：`/api/livez` 只看进程（不碰数据库），`/api/readyz` 数据库不可用返回 503（摘流量）；Redis 挂了只降级缓存，不影响就绪；
 - 开 worker：`--set worker.enabled=true`（API 侧自动切成 `BI_JOB_EXECUTOR=worker`，异步查询入队执行）；
 - 开 HPA：`--set autoscaling.enabled=true`（默认 2→6 副本，CPU 70%）；开 Ingress：`--set ingress.enabled=true`；
-- 校验：`helm lint deploy/helm/mingzebi`、`helm template t deploy/helm/mingzebi --set ...`。
+- 校验：`helm lint deploy/helm/mingcebi`、`helm template t deploy/helm/mingcebi --set ...`。
 
 ### 错误上报（可选：Sentry / 自建 GlitchTip）
 
@@ -456,7 +456,7 @@ cd backend && ./.venv/bin/python -m pytest     # 83 用例：SQL 网关 / 行级
 ### 目录结构
 
 ```
-MingzeBI/
+MingceBI/
 ├── backend/
 │   ├── app/
 │   │   ├── main.py                 # 应用入口（中间件 / 路由 / 健康检查）

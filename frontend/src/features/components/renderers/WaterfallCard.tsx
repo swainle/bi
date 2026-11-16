@@ -6,11 +6,14 @@ import { accentOf } from "../palette";
 import CardShell from "../skin/CardShell";
 import { AXIS, TEXT, TOOLTIP } from "../skin/tokens";
 import { chartOf, formatAxis, formatValue } from "../skin/format";
+import { fitChart } from "../skin/CardFit";
+import { useBoxSize } from "../skin/useBoxSize";
 import type { RenderPayload, UiSpec } from "../types";
 
 export default function WaterfallCard({ payload, ui, compact, onSliceClick }: { payload: RenderPayload; ui: UiSpec; compact?: boolean; onSliceClick?: (name: string) => void }) {
   const token = accentOf(ui.accent);
   const opts = chartOf(payload.chart);
+  const [boxRef, box] = useBoxSize<HTMLDivElement>();
   const rows = (payload.series ?? []).map((point) => ({
     name: String(point.name ?? ""),
     value: Number(point.value ?? 0),
@@ -39,6 +42,10 @@ export default function WaterfallCard({ payload, ui, compact, onSliceClick }: { 
     totals.push(end);
   });
 
+  // 每根柱子分到的宽度：够宽才画柱顶数值，否则「+50,693.53」这种会连成一片
+  const slot = box.w > 0 ? (box.w - 20) / Math.max(1, rows.length) : 999;
+  const showBarLabels = opts.show_labels !== false && !compact && slot >= 52;
+
   const option = {
     animation: ui.animate,
     animationDuration: 480,
@@ -66,7 +73,7 @@ export default function WaterfallCard({ payload, ui, compact, onSliceClick }: { 
       axisLabel: {
         ...AXIS.label,
         show: !compact,
-        interval: 0,
+        interval: slot >= 52 ? 0 : "auto",
         hideOverlap: true,
         formatter: (value: string) => (value.length > 6 ? `${value.slice(0, 6)}…` : value),
       },
@@ -97,7 +104,7 @@ export default function WaterfallCard({ payload, ui, compact, onSliceClick }: { 
         barMaxWidth: opts.bar_width,
         itemStyle: { borderRadius: [4, 4, 0, 0] },
         label: {
-          show: opts.show_labels !== false && !compact,
+          show: showBarLabels,
           position: "top",
           fontSize: 10.5,
           color: "#475569",
@@ -119,13 +126,15 @@ export default function WaterfallCard({ payload, ui, compact, onSliceClick }: { 
       hideTitle={opts.show_title === false}
       meta={opts.show_meta === false ? undefined : (payload.subtitle || undefined)}
     >
-      <ReactEChartsCore
-        option={option}
-        onEvents={{ click: (params: { name?: string }) => onSliceClick?.(String(params?.name ?? "")) }}
-        notMerge
-        style={{ width: "100%", height: "100%" }}
-        opts={{ renderer: "canvas" }}
-      />
+      <Box ref={boxRef} sx={{ width: "100%", height: "100%" }}>
+        <ReactEChartsCore
+          option={fitChart(option, box)}
+          onEvents={{ click: (params: { name?: string }) => onSliceClick?.(String(params?.name ?? "")) }}
+          notMerge
+          style={{ width: "100%", height: "100%" }}
+          opts={{ renderer: "canvas" }}
+        />
+      </Box>
     </CardShell>
   );
 }

@@ -1,0 +1,334 @@
+{
+  "kind": "map",
+  "rows": [
+    {
+      "name": "北京市",
+      "value": 18797
+    },
+    {
+      "name": "广东省",
+      "value": 18198
+    },
+    {
+      "name": "江苏省",
+      "value": 13399
+    },
+    {
+      "name": "上海市",
+      "value": 13099
+    },
+    {
+      "name": "河南省",
+      "value": 9700
+    },
+    {
+      "name": "浙江省",
+      "value": 9298
+    },
+    {
+      "name": "四川省",
+      "value": 7300
+    },
+    {
+      "name": "河北省",
+      "value": 6099
+    },
+    {
+      "name": "陕西省",
+      "value": 6099
+    },
+    {
+      "name": "山东省",
+      "value": 5699
+    },
+    {
+      "name": "福建省",
+      "value": 5599
+    },
+    {
+      "name": "海南省",
+      "value": 5300
+    },
+    {
+      "name": "湖南省",
+      "value": 5200
+    },
+    {
+      "name": "安徽省",
+      "value": 3899
+    },
+    {
+      "name": "黑龙江省",
+      "value": 3700
+    },
+    {
+      "name": "天津市",
+      "value": 3399
+    },
+    {
+      "name": "贵州省",
+      "value": 2200
+    },
+    {
+      "name": "重庆市",
+      "value": 2199
+    },
+    {
+      "name": "广西壮族自治区",
+      "value": 2000
+    },
+    {
+      "name": "辽宁省",
+      "value": 2000
+    },
+    {
+      "name": "新疆维吾尔自治区",
+      "value": 1299
+    },
+    {
+      "name": "云南省",
+      "value": 1299
+    },
+    {
+      "name": "山西省",
+      "value": 1000
+    },
+    {
+      "name": "湖北省",
+      "value": 999
+    },
+    {
+      "name": "青海省",
+      "value": 999
+    },
+    {
+      "name": "宁夏回族自治区",
+      "value": 800
+    },
+    {
+      "name": "吉林省",
+      "value": 800
+    },
+    {
+      "name": "内蒙古自治区",
+      "value": 700
+    },
+    {
+      "name": "江西省",
+      "value": 500
+    },
+    {
+      "name": "西藏自治区",
+      "value": 200
+    },
+    {
+      "name": "甘肃省",
+      "value": 100
+    }
+  ],
+  "series": [
+    {
+      "name": "北京市",
+      "value": 18797
+    },
+    {
+      "name": "广东省",
+      "value": 18198
+    },
+    {
+      "name": "江苏省",
+      "value": 13399
+    },
+    {
+      "name": "上海市",
+      "value": 13099
+    },
+    {
+      "name": "河南省",
+      "value": 9700
+    },
+    {
+      "name": "浙江省",
+      "value": 9298
+    },
+    {
+      "name": "四川省",
+      "value": 7300
+    },
+    {
+      "name": "河北省",
+      "value": 6099
+    },
+    {
+      "name": "陕西省",
+      "value": 6099
+    },
+    {
+      "name": "山东省",
+      "value": 5699
+    },
+    {
+      "name": "福建省",
+      "value": 5599
+    },
+    {
+      "name": "海南省",
+      "value": 5300
+    },
+    {
+      "name": "湖南省",
+      "value": 5200
+    },
+    {
+      "name": "安徽省",
+      "value": 3899
+    },
+    {
+      "name": "黑龙江省",
+      "value": 3700
+    },
+    {
+      "name": "天津市",
+      "value": 3399
+    },
+    {
+      "name": "贵州省",
+      "value": 2200
+    },
+    {
+      "name": "重庆市",
+      "value": 2199
+    },
+    {
+      "name": "广西壮族自治区",
+      "value": 2000
+    },
+    {
+      "name": "辽宁省",
+      "value": 2000
+    },
+    {
+      "name": "新疆维吾尔自治区",
+      "value": 1299
+    },
+    {
+      "name": "云南省",
+      "value": 1299
+    },
+    {
+      "name": "山西省",
+      "value": 1000
+    },
+    {
+      "name": "湖北省",
+      "value": 999
+    },
+    {
+      "name": "青海省",
+      "value": 999
+    },
+    {
+      "name": "宁夏回族自治区",
+      "value": 800
+    },
+    {
+      "name": "吉林省",
+      "value": 800
+    },
+    {
+      "name": "内蒙古自治区",
+      "value": 700
+    },
+    {
+      "name": "江西省",
+      "value": 500
+    },
+    {
+      "name": "西藏自治区",
+      "value": 200
+    },
+    {
+      "name": "甘肃省",
+      "value": 100
+    }
+  ],
+  "total": 151880.0,
+  "dimension_label": "省份",
+  "metric_label": "日销量",
+  "series_label": null,
+  "component_kind": "map",
+  "title": "省份分布",
+  "subtitle": "颜色越深，指标越高",
+  "unit": "",
+  "ui": {
+    "accent": "indigo",
+    "radius": 14,
+    "min_height": 260,
+    "show_unit": true,
+    "animate": true,
+    "align": "left",
+    "columns": 1,
+    "badge": "",
+    "edge": true,
+    "edge_px": 1.0,
+    "edge_alpha": 22,
+    "shadow_px": 16
+  },
+  "compute": {
+    "headline": "first",
+    "hint": "none",
+    "format": "int",
+    "bucket_size": null,
+    "bucket_start": null,
+    "bucket_count": 0,
+    "transform": "raw",
+    "scale": 1.0,
+    "offset": 0.0,
+    "decimals": 0,
+    "prefix": "",
+    "suffix": ""
+  },
+  "chart": {
+    "show_labels": false,
+    "show_legend": true,
+    "show_grid": true,
+    "show_title": true,
+    "show_meta": true,
+    "x_title": "",
+    "y_title": "",
+    "label_rotate": 0,
+    "y_min": null,
+    "y_max": null,
+    "bar_width": 26,
+    "hbar_threshold_key": "",
+    "hbar_threshold_gte": null,
+    "hbar_highlight": "violet",
+    "smooth": true,
+    "label_format": "auto",
+    "cloud_palette": "潮彩",
+    "scatter_mode": "point",
+    "trend_line": false,
+    "dot_size": 8,
+    "x_key": "",
+    "y_key": "",
+    "size_key": "",
+    "log_x": false,
+    "log_y": false,
+    "label_layout": "inside",
+    "single_slice": true,
+    "pie_inner": 46,
+    "pie_start": 90,
+    "pie_label": "name_pct",
+    "pie_gap": true,
+    "pie_rose": false
+  },
+  "combo": {
+    "bar_name": "",
+    "line_name": "",
+    "note": "",
+    "right_axis": true,
+    "smooth": true
+  },
+  "rls": false,
+  "top": null
+}

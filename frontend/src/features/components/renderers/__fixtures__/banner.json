@@ -1,0 +1,65 @@
+{
+  "kind": "banner",
+  "title": "四平台榜单",
+  "kicker": "2026 Q4 · 榜单采集 · 单期快照",
+  "accent": "市场分析看板",
+  "subtitle": "拼多多 · 天猫 · 京东 · 抖音 ｜ 示例数据（可直接替换为真实采集表）",
+  "stats": [
+    {
+      "value": "180",
+      "unit": "",
+      "label": "在榜 SKU",
+      "metric": "产品id",
+      "agg": "COUNT",
+      "format": "number",
+      "scale": 1.0,
+      "offset": 0.0,
+      "decimals": 0,
+      "prefix": "",
+      "suffix": ""
+    },
+    {
+      "value": "14",
+      "unit": "",
+      "label": "竞品品牌",
+      "metric": "品牌",
+      "agg": "COUNT_DISTINCT",
+      "format": "number",
+      "scale": 1.0,
+      "offset": 0.0,
+      "decimals": 0,
+      "prefix": "",
+      "suffix": ""
+    },
+    {
+      "value": "6",
+      "unit": "",
+      "label": "覆盖种类",
+      "metric": "种类",
+      "agg": "COUNT_DISTINCT",
+      "format": "number",
+      "scale": 1.0,
+      "offset": 0.0,
+      "decimals": 0,
+      "prefix": "",
+      "suffix": ""
+    }
+  ],
+  "tone": "sky",
+  "value": null,
+  "unit": "",
+  "ui": {
+    "accent": "sky",
+    "radius": 12,
+    "min_height": 200,
+    "show_unit": true,
+    "animate": true,
+    "align": "left",
+    "columns": 1,
+    "badge": "",
+    "edge": true,
+    "edge_px": 1.0,
+    "edge_alpha": 22,
+    "shadow_px": 16
+  }
+}

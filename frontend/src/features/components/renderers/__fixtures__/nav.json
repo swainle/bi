@@ -1,0 +1,60 @@
+{
+  "kind": "nav",
+  "title": "导航菜单卡",
+  "brand": "市场",
+  "brand_accent": "BI",
+  "brand_tone": "sky",
+  "items": [
+    {
+      "label": "市场总览",
+      "tone": "slate",
+      "active": false,
+      "page": ""
+    },
+    {
+      "label": "榜单端",
+      "tone": "indigo",
+      "active": false,
+      "page": ""
+    },
+    {
+      "label": "需求端",
+      "tone": "amber",
+      "active": false,
+      "page": ""
+    },
+    {
+      "label": "竞品端",
+      "tone": "amber",
+      "active": false,
+      "page": ""
+    }
+  ],
+  "meta": "数据同步 · 2026-11-03 09:30",
+  "badge": "构建 v166 · 22:04",
+  "actions": [
+    {
+      "label": "导出 CSV",
+      "kind": "primary"
+    }
+  ],
+  "global_nav": false,
+  "export_scope": "primary",
+  "export_dataset_id": null,
+  "value": null,
+  "unit": "",
+  "ui": {
+    "accent": "indigo",
+    "radius": 12,
+    "min_height": 64,
+    "show_unit": true,
+    "animate": true,
+    "align": "left",
+    "columns": 1,
+    "badge": "",
+    "edge": true,
+    "edge_px": 1.0,
+    "edge_alpha": 18,
+    "shadow_px": 16
+  }
+}

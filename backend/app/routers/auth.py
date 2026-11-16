@@ -96,10 +96,16 @@ def login(request: Request, data: UserLogin, db: Session = Depends(get_db)):
     Raises:
         401: 用户名或密码错误.
     """
+    ip = request.client.host if request.client else ""
     try:
         result = auth_service.login_user(db, data)
     except ValueError as e:
+        # 登录失败也留痕（账号可能被撞库；密码不落审计）
+        log_audit(None, "auth.login_failed", "user", 0,
+                  {"account": data.account[:80], "reason": str(e)[:80]}, ip=ip)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
+    log_audit(int(result["id"]), "auth.login", "user", int(result["id"]),
+              {"account": result.get("username") or data.account[:80]}, ip=ip)
     return ApiResponse(data=AuthResponse(**result))
 
 

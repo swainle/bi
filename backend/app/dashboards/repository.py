@@ -95,7 +95,8 @@ def list_dashboards(db: Session, owner_id: int | None = None, limit: int = 50,
 
 
 def save(db: Session, dashboard_id: int, doc: DashboardDoc | dict, name: str | None = None,
-         publish: bool = False) -> DashboardRow | None:
+         publish: bool = False, expected_updated_at: str | None = None) -> DashboardRow | None:
+    """保存文档；传 `expected_updated_at` 时做乐观锁（不一致返回 None，调用方按 409 处理）."""
     payload = doc.model_dump() if isinstance(doc, DashboardDoc) else validate_doc(doc).model_dump()
     if publish:
         from datetime import datetime
@@ -107,7 +108,13 @@ def save(db: Session, dashboard_id: int, doc: DashboardDoc | dict, name: str | N
         sql += ", name = :name"
         params["name"] = name[:120]
     sql += " WHERE id = :id AND deleted_at IS NULL"
-    db.execute(text(sql), params)
+    if expected_updated_at:
+        sql += " AND updated_at = CAST(:expected AS timestamptz)"
+        params["expected"] = str(expected_updated_at)
+    result = db.execute(text(sql), params)
+    if result.rowcount == 0:
+        db.rollback()
+        return None
     db.commit()
     return get(db, dashboard_id)
 

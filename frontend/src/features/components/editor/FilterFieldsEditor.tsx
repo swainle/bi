@@ -4,7 +4,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Menu, MenuItem, Stack, Switch, TextField, Typography } from "@mui/material";
-import { Add, Close, DeleteOutline, ExpandMore, KeyboardArrowDown } from "@mui/icons-material";
+import { Add, Check, Close, DeleteOutline, ExpandMore, KeyboardArrowDown } from "@mui/icons-material";
 import client from "../../../api/client";
 import type { FilterFieldSpec } from "../types";
 import { isSplitField } from "../split";
@@ -28,6 +28,8 @@ interface Props {
   fieldsMap?: Record<string, FilterFieldSpec[]>;
   /** 数据集列名（保留参数：面板已不再展示快捷填入 / 拖入绑定）；组件库里没有数据集时传空数组 */
   columns: string[];
+  /** 页面数据集的字段（带角色）："+ 添加" 直接挑字段、改成日期时能自动挂上时间列 */
+  fieldOptions?: { name: string; role?: string }[];
   datasetId: number | null;
   onChange: (fields: FilterFieldSpec[]) => void;
   onFieldsMapChange?: (map: Record<string, FilterFieldSpec[]>) => void;
@@ -88,6 +90,24 @@ function OptionRow({ option, onDelete }: {
 
 /** 头标色块：按字段顺序轮流取，一眼能分出是哪一组 */
 const CARD_ACCENTS = ["#4F46E5", "#2563EB", "#0D9488", "#7C3AED", "#DB2777"];
+
+/** 「+ 添加」菜单的分组：按字段角色归类（时间 / 维度 / 指标 / 标识 / 其它） */
+const ADD_GROUPS: [string, string[]][] = [
+  ["时间", ["time"]],
+  ["维度", ["dimension"]],
+  ["指标", ["measure", "metric"]],
+  ["标识", ["id"]],
+  ["其它", [""]],
+];
+
+/** 新字段的 id 不能和现有字段撞（按长度生成会在「删一个再加一个」时重复）——
+ *  同 id 的两个字段会互相覆盖参数，筛选看着选了值却不生效（2026-11-15 踩过）。 */
+function nextFieldId(list: { id: string }[]): string {
+  const used = new Set(list.map((field) => field.id));
+  let n = list.length + 1;
+  while (used.has(`f_${n}`)) n += 1;
+  return `f_${n}`;
+}
 
 const PLATFORM_HINTS = ["拼多多", "天猫", "抖音", "京东", "快手", "淘宝"];
 
@@ -185,7 +205,7 @@ function PlatformMap({ field, datasets, onChange }: {
 }
 
 /** 筛选字段编辑器 —— 画布中栏与组件库编辑页共用同一套参数（名称/控件/选项/默认值/宽度） */
-export default function FilterFieldsEditor({ fields, platform, fieldsMap, columns, datasetId, onChange, onFieldsMapChange, background, onBackgroundChange, onEmpty }: Props) {
+export default function FilterFieldsEditor({ fields, platform, fieldsMap, columns, fieldOptions = [], datasetId, onChange, onFieldsMapChange, background, onBackgroundChange, onEmpty }: Props) {
   /** 正在编辑哪一套字段："" = 通用，其它 = 该平台自己那套 */
   const [scope, setScope] = useState("");
   const map = fieldsMap ?? {};
@@ -231,6 +251,40 @@ export default function FilterFieldsEditor({ fields, platform, fieldsMap, column
     if (!onEmpty) return;
     if ((nextCommon ?? []).length) return;
     onEmpty();
+  };
+
+  /** 「+ 添加」的下拉：直接挑数据集里的字段，加进来就是绑好的 */
+  const [addMenu, setAddMenu] = useState<HTMLElement | null>(null);
+  /** 加一个「已经绑好列」的筛选字段：控件类型照字段角色给（时间 → 日期），候选值顺手拉好 */
+  const addBoundField = async (option: { name: string; role?: string }) => {
+    const name = String(option.name || "").trim();
+    if (!name) return;
+    if (fieldsSafe.some((field) => field.column === name)) { setAddMenu(null); return; }
+    const type = option.role === "time" ? "date" : "select";
+    let options: { v: string; t: string }[] = [];
+    if (type !== "date" && datasetId) {
+      try {
+        const res = await client.post(`/bi/semantic/datasets/${datasetId}/query`, { dimensions: [name], limit: 1000 });
+        const rows: Record<string, unknown>[] = res.data?.rows || [];
+        const seen = new Set<string>();
+        rows.forEach((row) => {
+          const value = row[name];
+          if (value === null || value === undefined || value === "") return;
+          seen.add(String(value));
+        });
+        options = [...seen].sort((a, b) => a.localeCompare(b, "zh-CN")).slice(0, 200)
+          .map((value) => ({ v: value, t: value }));
+      } catch {
+        /* 拉不到候选值也别挡着加字段：先把列绑上，值可以之后再取 */
+      }
+    }
+    const used = new Set(fieldsSafe.map((field) => field.id));
+    commit([...fieldsSafe, {
+      id: used.has(name) ? nextFieldId(fieldsSafe) : name,
+      label: name, type, column: name, default: "", options,
+      multiple: false, placeholder: "", width: type === "date" ? 160 : 140, note: "",
+    }]);
+    setAddMenu(null);
   };
 
   /** 写回：通用 → 直接改字段数组；某个平台 → 写进该平台那一套 */
@@ -469,6 +523,18 @@ export default function FilterFieldsEditor({ fields, platform, fieldsMap, column
     setOptionCount({});
   }, [datasetId]);
 
+  /* 已经是「日期」但没绑字段的老配置：数据集只有一个时间列就自动补上绑定。
+     否则这条筛选永远不会过滤任何卡片，而界面上它看起来是好的（2026-11-15 用户实测）。 */
+  useEffect(() => {
+    const timeColumns = fieldOptions.filter((field) => field.role === "time").map((field) => field.name);
+    if (timeColumns.length !== 1) return;
+    const index = panelFields.findIndex((field) =>
+      field.type === "date" && !String(field.column || "").trim() && !isGlobalCard(field));
+    if (index < 0) return;
+    void bindColumn(index, timeColumns[0], { type: "date" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [panelFields, fieldOptions]);
+
   const label = (text: string) => (
     <Typography sx={{ fontSize: 11, color: "#94A3B8", mb: 0.5 }}>{text}</Typography>
   );
@@ -543,12 +609,41 @@ export default function FilterFieldsEditor({ fields, platform, fieldsMap, column
               sx={{ fontSize: 12, color: "#4F46E5" }}>+ 添加平台</MenuItem>
           </TextField>
         )}
-        <Button size="small" onClick={() => commit([...fieldsSafe, {
-          id: `f_${fieldsSafe.length + 1}`, label: "新字段", type: "select",
-          default: "", options: [], multiple: false, placeholder: "", width: 120, note: "", column: "",
-        }])} sx={{ textTransform: "none", fontSize: 11.5, minWidth: 0 }}>
+        <Button size="small"
+          onClick={(e) => {
+            /* 有数据集字段就直接挑一个（挑完就是绑好的）；组件库编辑页没有数据集，退回加空字段 */
+            if (fieldOptions.length) { setAddMenu(e.currentTarget); return; }
+            commit([...fieldsSafe, {
+              id: nextFieldId(fieldsSafe), label: "新字段", type: "select",
+              default: "", options: [], multiple: false, placeholder: "", width: 120, note: "", column: "",
+            }]);
+          }}
+          sx={{ textTransform: "none", fontSize: 11.5, minWidth: 0 }}>
           + 添加
         </Button>
+        <Menu anchorEl={addMenu} open={Boolean(addMenu)} onClose={() => setAddMenu(null)}
+          slotProps={{ paper: { sx: { borderRadius: 2, maxHeight: 420, minWidth: 190 } } }}>
+          {(ADD_GROUPS.map(([groupLabel, roles]) => [
+            groupLabel,
+            fieldOptions.filter((f) => roles.includes(String(f.role || ""))),
+          ]) as [string, { name: string; role?: string }[]][]).map(([groupLabel, list]) => (
+            list.length ? (
+              <Box key={groupLabel}>
+                <Typography sx={{ px: 1.5, pt: 1, pb: 0.5, fontSize: 10.5, color: "#94A3B8" }}>{groupLabel}</Typography>
+                {list.map((option) => (
+                  <MenuItem key={option.name} disabled={fieldsSafe.some((field) => field.column === option.name)}
+                    onClick={() => { void addBoundField(option); }}
+                    sx={{ fontSize: 12.5, minHeight: 32 }}>
+                    <Box sx={{ flex: 1 }}>{option.name}</Box>
+                    {fieldsSafe.some((field) => field.column === option.name) && (
+                      <Check sx={{ fontSize: 14, color: "#4F46E5" }} />
+                    )}
+                  </MenuItem>
+                ))}
+              </Box>
+            ) : null
+          ))}
+        </Menu>
       </Box>
 
       {onBackgroundChange && (
@@ -649,6 +744,17 @@ export default function FilterFieldsEditor({ fields, platform, fieldsMap, column
                 通用
               </Box>
             )}
+            {/* 没绑字段 = 这一项选了值也不会过滤任何卡片（搜索框例外，它走关键词）。
+                不点开卡片看不出来，这里给个标记，别让人对着一条「选了没反应」的筛选栏猜。 */}
+            {!String(field.column || "").trim() && field.type !== "search" && (
+              <Box title="还没绑定字段：选了什么都不会过滤卡片。把「数据集」里的字段拖到卡片里就能绑上"
+                sx={{
+                  flexShrink: 0, px: 0.6, borderRadius: 999, lineHeight: "13px", fontSize: 10, fontWeight: 600,
+                  bgcolor: "rgba(245,158,11,0.14)", color: "#B45309",
+                }}>
+                未绑定
+              </Box>
+            )}
             <ExpandMore sx={{
               fontSize: 16, color: "#94A3B8", flexShrink: 0, transition: "transform .15s",
               transform: folded ? "rotate(-90deg)" : "none",
@@ -674,7 +780,17 @@ export default function FilterFieldsEditor({ fields, platform, fieldsMap, column
             <Box sx={{ width: 96 }}>
               {label("控件")}
               <TextField select size="small" fullWidth value={field.type}
-                onChange={(e) => { void bindColumn(index, field.column ?? "", { type: e.target.value }); }}
+                onChange={(e) => {
+                  const nextType = e.target.value;
+                  /* 改成「日期」但还没绑字段：这张数据集只有一个时间列就自动挂上，
+                     省得选完日期发现「怎么都不生效」（2026-11-15 用户实测）。
+                     两个以上时间列不猜，留给用户自己拖。 */
+                  const timeColumns = fieldOptions.filter((f) => f.role === "time").map((f) => f.name);
+                  const autoColumn = !String(field.column || "").trim() && nextType === "date" && timeColumns.length === 1
+                    ? timeColumns[0]
+                    : (field.column ?? "");
+                  void bindColumn(index, autoColumn, { type: nextType });
+                }}
                 sx={{ "& .MuiOutlinedInput-root": { borderRadius: 1.5, fontSize: 12 } }}>
                 {[
                   { v: "select", t: "下拉" },

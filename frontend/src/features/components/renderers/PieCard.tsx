@@ -5,6 +5,8 @@ import { Box } from "@mui/material";
 import { accentOf } from "../palette";
 import CardShell from "../skin/CardShell";
 import { TEXT } from "../skin/tokens";
+import { fitChart } from "../skin/CardFit";
+import { useBoxSize } from "../skin/useBoxSize";
 import { chartOf, computeOf } from "../skin/format";
 import { buildPieOption } from "../skin/pieOption";
 import type { RenderPayload, UiSpec } from "../types";
@@ -12,6 +14,7 @@ import type { RenderPayload, UiSpec } from "../types";
 export default function PieCard({ payload, ui, donut, compact, onSliceClick }: { payload: RenderPayload; ui: UiSpec; donut?: boolean; compact?: boolean; onSliceClick?: (name: string) => void }) {
   const token = accentOf(ui.accent);
   const opts = chartOf(payload.chart);
+  const [boxRef, box] = useBoxSize<HTMLDivElement>();
   const compute = computeOf(payload.compute);
   const series = payload.series ?? [];
   const isDonut = donut ?? opts.pie_inner > 0;
@@ -40,13 +43,15 @@ export default function PieCard({ payload, ui, donut, compact, onSliceClick }: {
         ? (payload.subtitle || (payload.top_share ? `TOP1 ${(payload.top_share * 100).toFixed(1)}%` : undefined))
         : undefined}
     >
-      <ReactEChartsCore
-        option={option}
-        onEvents={{ click: (params: { name?: string }) => onSliceClick?.(String(params?.name ?? "")) }}
-        notMerge
-        style={{ width: "100%", height: "100%" }}
-        opts={{ renderer: "canvas" }}
-      />
+      <Box ref={boxRef} sx={{ width: "100%", height: "100%" }}>
+        <ReactEChartsCore
+          option={fitChart(option, box)}
+          onEvents={{ click: (params: { name?: string }) => onSliceClick?.(String(params?.name ?? "")) }}
+          notMerge
+          style={{ width: "100%", height: "100%" }}
+          opts={{ renderer: "canvas" }}
+        />
+      </Box>
       <span style={{ display: "none" }}>{totalValue}</span>
     </CardShell>
   );

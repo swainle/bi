@@ -8,7 +8,7 @@ import {
   TableHead, TableRow, TextField, Tooltip, Typography,
 } from "@mui/material";
 import {
-  Add, DeleteOutline, FileUpload, Link as LinkIcon, Refresh,
+  Add, DeleteOutline, EditOutlined, FileUpload, Link as LinkIcon, Refresh,
   Rule, Search, Storage, TableChart, UploadFile,
 } from "@mui/icons-material";
 import client from "../../api/client";
@@ -17,6 +17,9 @@ interface Source {
   id: number; name: string; ds_type: string; host: string; port: number | null;
   db_name: string; username: string; uri: boolean; table_count: number;
   updated_at: string;
+  /** 归属部门；null = 全局 */
+  dept_id?: number | null;
+  dept_name?: string;
 }
 interface ColumnDrift { name: string; type?: string; from?: string; to?: string }
 interface Drift {
@@ -106,6 +109,7 @@ export default function DataSources() {
   const [error, setError] = useState("");
   const [ok, setOk] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
+  const [editFor, setEditFor] = useState<Source | null>(null);
   const [pickFor, setPickFor] = useState<Source | null>(null);
   const [testing, setTesting] = useState<number | null>(null);
   const [checking, setChecking] = useState<number | null>(null);
@@ -148,6 +152,25 @@ export default function DataSources() {
 
   useEffect(() => { load(); }, [load]);
 
+  /** 数据源连通性：{数据源 id: {ok, message, checked_at}}（后端 30 秒缓存，点圆点重测） */
+  const [status, setStatus] = useState<Record<string, { ok: boolean; message: string; checked_at?: number }>>({});
+  const [statusBusy, setStatusBusy] = useState(false);
+
+  const loadStatus = useCallback(async (refresh = false) => {
+    setStatusBusy(true);
+    try {
+      const res = await client.get(`/bi/sources/status${refresh ? "?refresh=1" : ""}`);
+      setStatus(res.data?.status || {});
+    } catch {
+      /* 探测接口失败不影响列表本身 */
+    } finally {
+      setStatusBusy(false);
+    }
+  }, []);
+
+  // 进页面探一次（30 秒内复用后端结果，不每次进来都连一遍源库）
+  useEffect(() => { void loadStatus(false); }, [loadStatus]);
+
   const testSource = async (s: Source) => {
     setTesting(s.id);
     try {
@@ -157,6 +180,7 @@ export default function DataSources() {
       setError(e?.response?.data?.detail || "连接失败");
     } finally {
       setTesting(null);
+      void loadStatus(false); // 刚测过，圆点跟着更新（后端已写缓存）
     }
   };
 
@@ -308,6 +332,46 @@ export default function DataSources() {
                           <Storage sx={{ fontSize: 15 }} />
                         </Box>
                         <Typography sx={{ fontSize: 13, fontWeight: 600 }}>{s.name}</Typography>
+                        {/* 连通性小圆点（绿=连得上 / 红=连不上 / 灰=正在检测），点一下重测 */}
+                        {(() => {
+                          const st = status[String(s.id)];
+                          const color = !st ? "#CBD5E1" : st.ok ? "#22C55E" : "#EF4444";
+                          const ring = !st ? "transparent" : st.ok ? "rgba(34,197,94,0.16)" : "rgba(239,68,68,0.16)";
+                          const at = st?.checked_at
+                            ? new Date(st.checked_at * 1000).toLocaleTimeString("zh-CN", { hour12: false })
+                            : "";
+                          const retest = () => { if (!statusBusy) void loadStatus(true); };
+                          return (
+                            <Tooltip
+                              placement="top"
+                              title={<span style={{ whiteSpace: "pre-line", fontSize: 11.5, display: "block", maxWidth: 300 }}>
+                                {st
+                                  ? `${st.ok ? "连接正常" : "连接失败"}\n${st.message || ""}${at ? `\n${at} 检测 · 点击重测` : ""}`
+                                  : "正在检测连接…"}
+                              </span>}
+                            >
+                              <Box
+                                role="button"
+                                tabIndex={0}
+                                aria-label="检测连接"
+                                onClick={(e) => { e.stopPropagation(); retest(); }}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter" || e.key === " ") { e.preventDefault(); retest(); }
+                                }}
+                                sx={{
+                                  display: "inline-block", width: 8, height: 8, borderRadius: "50%",
+                                  bgcolor: color, boxShadow: `0 0 0 3px ${ring}`, flexShrink: 0,
+                                  cursor: statusBusy ? "default" : "pointer",
+                                  transition: "background-color .15s, box-shadow .15s",
+                                }}
+                              />
+                            </Tooltip>
+                          );
+                        })()}
+                        {s.dept_name && (
+                          <Chip label={s.dept_name} size="small"
+                            sx={{ fontSize: 10, height: 18, bgcolor: "rgba(16,185,129,0.10)", color: "#047857" }} />
+                        )}
                       </Box>
                     </TableCell>
                     <TableCell sx={td}>
@@ -333,6 +397,11 @@ export default function DataSources() {
                       <Tooltip title="测连通">
                         <IconButton size="small" onClick={() => testSource(s)} disabled={testing === s.id} sx={{ p: 0.6 }}>
                           {testing === s.id ? <CircularProgress size={14} /> : <LinkIcon sx={{ fontSize: 16 }} />}
+                        </IconButton>
+                      </Tooltip>
+                      <Tooltip title="编辑">
+                        <IconButton size="small" aria-label="编辑数据源" onClick={() => setEditFor(s)} sx={{ p: 0.6 }}>
+                          <EditOutlined sx={{ fontSize: 16 }} />
                         </IconButton>
                       </Tooltip>
                       <Tooltip title="删除">
@@ -500,9 +569,15 @@ export default function DataSources() {
       )}
 
       {createOpen && (
-        <CreateSourceDialog types={dsTypes} typesError={typesError} onRetry={loadTypes}
+        <SourceFormDialog types={dsTypes} typesError={typesError} onRetry={loadTypes}
           onClose={() => setCreateOpen(false)}
-          onCreated={async () => { setCreateOpen(false); await load(); }}
+          onSaved={async () => { setCreateOpen(false); await load(); void loadStatus(false); }}
+          onError={setError} onOk={setOk} />
+      )}
+      {editFor && (
+        <SourceFormDialog types={dsTypes} typesError={typesError} onRetry={loadTypes} source={editFor}
+          onClose={() => setEditFor(null)}
+          onSaved={async (msg) => { setEditFor(null); await load(); void loadStatus(false); if (msg) setOk(msg); }}
           onError={setError} onOk={setOk} />
       )}
       {pickFor && (
@@ -523,42 +598,58 @@ export default function DataSources() {
   );
 }
 
-/* ── 新建数据源 ─────────────────────────────────────────── */
-function CreateSourceDialog({
-  types, typesError, onRetry, onClose, onCreated, onError, onOk,
+/* ── 新建 / 编辑数据源 ───────────────────────────────────── */
+function SourceFormDialog({
+  types, typesError, onRetry, source, onClose, onSaved, onError, onOk,
 }: {
   types: SourceType[];
   typesError: string;
   onRetry: () => Promise<void>;
+  /** 传了就是编辑模式：预填已存配置，只提交用户改过的字段 */
+  source?: Source;
   onClose: () => void;
-  onCreated: () => void;
+  onSaved: (msg: string) => void;
   onError: (m: string) => void;
   onOk: (m: string) => void;
 }) {
-  const [dsType, setDsType] = useState("");
-  const [name, setName] = useState("");
-  const [host, setHost] = useState("127.0.0.1");
-  const [port, setPort] = useState("");
-  const [dbName, setDbName] = useState("");
-  const [username, setUsername] = useState("");
+  const editing = !!source;
+  const [dsType, setDsType] = useState(source?.ds_type || "");
+  const [name, setName] = useState(source?.name || "");
+  const [host, setHost] = useState(source?.host || "127.0.0.1");
+  const [port, setPort] = useState(source?.port ? String(source.port) : "");
+  const [dbName, setDbName] = useState(source?.db_name || "");
+  const [username, setUsername] = useState(source?.username || "");
   const [password, setPassword] = useState("");
   const [uri, setUri] = useState("");
+  // 连接串模式：编辑时沿用原数据源的连接方式；点「改用主机连接」才切回主机 + 端口
+  const [uriMode, setUriMode] = useState(!!source?.uri);
+  const [deptId, setDeptId] = useState<number | "">(source?.dept_id ?? "");
+  const [departments, setDepartments] = useState<{ id: number; name: string }[]>([]);
   const [busy, setBusy] = useState(false);
 
-  const selected = types.find((t) => t.id === dsType);
-  const blocked = !dsType || selected?.available === false;
-  const unavailable = types.filter((t) => !t.available);
-  const notReady = !!typesError || types.length === 0;
-
-  // 类型是后端下发的，异步到达：默认选中第一个可用项
   useEffect(() => {
-    if (dsType) return;
+    client.get("/auth/departments")
+      .then((r) => setDepartments(r.data?.items || []))
+      .catch(() => setDepartments([]));
+  }, []);
+
+  const selected = types.find((t) => t.id === dsType);
+  // 编辑模式不靠类型目录兜底：驱动缺失 / 目录没加载也要能改地址
+  const blocked = !editing && (!dsType || selected?.available === false);
+  const unavailable = types.filter((t) => !t.available);
+  const notReady = !editing && (!!typesError || types.length === 0);
+  const showAddress = !editing || !uriMode;
+  const showUri = !editing || uriMode;
+
+  // 类型是后端下发的，异步到达：默认选中第一个可用项（编辑模式的类型不可改）
+  useEffect(() => {
+    if (editing || dsType) return;
     const first = types.find((t) => t.available);
     if (first) {
       setDsType(first.id);
       setPort(String(first.default_port || ""));
     }
-  }, [types, dsType]);
+  }, [types, dsType, editing]);
 
   const pickType = (id: string) => {
     setDsType(id);
@@ -566,17 +657,40 @@ function CreateSourceDialog({
     setPort(String(t?.default_port || ""));
   };
 
-  const payload = () => ({
-    name: name.trim(), ds_type: dsType, host: host.trim(),
-    port: port ? Number(port) : null, db_name: dbName.trim(),
-    username: username.trim(), password, uri: uri.trim(),
-  });
+  const payload = () => {
+    const body: Record<string, unknown> = {
+      name: name.trim(),
+      dept_id: deptId === "" ? null : Number(deptId),
+    };
+    // 连接串模式不改主机 / 端口 / 库名 / 账号：别把表单默认值写进库
+    if (showAddress) {
+      body.host = host.trim();
+      body.port = port ? Number(port) : null;
+      body.db_name = dbName.trim();
+      body.username = username.trim();
+      body.password = password;
+    }
+    if (editing) {
+      // 连接串模式留空 = 保持原连接串；主机模式显式清空连接串
+      if (uriMode) {
+        if (uri.trim()) body.uri = uri.trim();
+      } else {
+        body.uri = "";
+      }
+    } else {
+      body.ds_type = dsType;
+      body.uri = uri.trim();
+    }
+    return body;
+  };
 
   const test = async () => {
     if (blocked) return;
     setBusy(true);
     try {
-      const t = await client.post("/bi/sources/test", payload());
+      const t = editing
+        ? await client.post(`/bi/sources/${source!.id}/test`, payload())
+        : await client.post("/bi/sources/test", payload());
       onOk(t.data?.message || "连接成功");
     } catch (e: any) {
       onError(e?.response?.data?.detail || "连接失败");
@@ -589,8 +703,13 @@ function CreateSourceDialog({
     if (!name.trim() || blocked) return;
     setBusy(true);
     try {
-      await client.post("/bi/sources", payload());
-      onCreated();
+      if (editing) {
+        await client.patch(`/bi/sources/${source!.id}`, payload());
+        onSaved(`已更新「${name.trim()}」`);
+      } else {
+        await client.post("/bi/sources", payload());
+        onSaved("");
+      }
     } catch (e: any) {
       onError(e?.response?.data?.detail || "保存失败");
     } finally {
@@ -600,55 +719,94 @@ function CreateSourceDialog({
 
   return (
     <Dialog open onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle sx={{ fontSize: 16, fontWeight: 700 }}>新建数据源</DialogTitle>
+      <DialogTitle sx={{ fontSize: 16, fontWeight: 700 }}>
+        {editing ? "编辑数据源" : "新建数据源"}
+      </DialogTitle>
       <DialogContent sx={{ pt: 1 }}>
-        {typesError ? (
-          <Alert severity="error" sx={{ mt: 1, borderRadius: 1.5, fontSize: 12.5 }}
-            action={<Button color="inherit" size="small" onClick={() => void onRetry()}>重试</Button>}>
-            {typesError}
-          </Alert>
-        ) : types.length === 0 ? (
-          <Box sx={{ py: 5, textAlign: "center" }}><CircularProgress size={22} /></Box>
+        {notReady ? (
+          typesError ? (
+            <Alert severity="error" sx={{ mt: 1, borderRadius: 1.5, fontSize: 12.5 }}
+              action={<Button color="inherit" size="small" onClick={() => void onRetry()}>重试</Button>}>
+              {typesError}
+            </Alert>
+          ) : (
+            <Box sx={{ py: 5, textAlign: "center" }}><CircularProgress size={22} /></Box>
+          )
         ) : (
           <>
             <Box sx={{ display: "flex", gap: 1.5, mt: 1 }}>
-              <TextField select size="small" label="类型" value={dsType}
-                onChange={(e) => pickType(e.target.value)}
-                sx={{ width: 220, "& .MuiOutlinedInput-root": { borderRadius: 2 } }}>
-                {types.map((t) => (
-                  <MenuItem key={t.id} value={t.id} disabled={!t.available} sx={{ fontSize: 13 }}>
-                    {t.label}{t.available ? "" : " · 未装驱动"}
-                  </MenuItem>
-                ))}
-              </TextField>
+              {editing ? (
+                <TextField size="small" label="类型" value={typeLabelOf(types, dsType)} disabled
+                  sx={{ width: 220, "& .MuiOutlinedInput-root": { borderRadius: 2 } }} />
+              ) : (
+                <TextField select size="small" label="类型" value={dsType}
+                  onChange={(e) => pickType(e.target.value)}
+                  sx={{ width: 220, "& .MuiOutlinedInput-root": { borderRadius: 2 } }}>
+                  {types.map((t) => (
+                    <MenuItem key={t.id} value={t.id} disabled={!t.available} sx={{ fontSize: 13 }}>
+                      {t.label}{t.available ? "" : " · 未装驱动"}
+                    </MenuItem>
+                  ))}
+                </TextField>
+              )}
               <TextField size="small" label="名称" value={name} onChange={(e) => setName(e.target.value)}
                 sx={{ flex: 1, "& .MuiOutlinedInput-root": { borderRadius: 2 } }} />
             </Box>
-            {unavailable.length > 0 && (
+            {!editing && unavailable.length > 0 && (
               <Typography sx={{ mt: 0.75, fontSize: 11.5, color: "#94A3B8" }}>
                 置灰类型需先在服务器安装驱动，重启后端后自动可用。
               </Typography>
             )}
-            <TextField fullWidth size="small" label="连接串 URI（可选，填了优先用）" value={uri}
-              onChange={(e) => setUri(e.target.value)}
-              placeholder="postgresql://user:password@host:5432/dbname"
-              InputProps={{ sx: { fontFamily: "ui-monospace", fontSize: 12 } }}
-              sx={{ mt: 2, "& .MuiOutlinedInput-root": { borderRadius: 2 } }} />
-            <Box sx={{ display: "flex", gap: 1.5, mt: 2 }}>
-              <TextField size="small" label="主机" value={host} onChange={(e) => setHost(e.target.value)}
-                sx={{ flex: 2, "& .MuiOutlinedInput-root": { borderRadius: 2 } }} />
-              <TextField size="small" label="端口" value={port} onChange={(e) => setPort(e.target.value)}
-                sx={{ flex: 1, "& .MuiOutlinedInput-root": { borderRadius: 2 } }} />
-            </Box>
-            <TextField fullWidth size="small" label="数据库" value={dbName} onChange={(e) => setDbName(e.target.value)}
-              sx={{ mt: 2, "& .MuiOutlinedInput-root": { borderRadius: 2 } }} />
-            <Box sx={{ display: "flex", gap: 1.5, mt: 2 }}>
-              <TextField size="small" label="用户名" value={username} onChange={(e) => setUsername(e.target.value)}
-                sx={{ flex: 1, "& .MuiOutlinedInput-root": { borderRadius: 2 } }} />
-              <TextField size="small" label="密码" type="password" value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                sx={{ flex: 1, "& .MuiOutlinedInput-root": { borderRadius: 2 } }} />
-            </Box>
+            {showUri && (
+              <Box sx={{ display: "flex", alignItems: "center", gap: 1, mt: 2 }}>
+                <TextField fullWidth size="small" label={editing ? "新连接串" : "连接串 URI（可选，填了优先用）"}
+                  value={uri} onChange={(e) => setUri(e.target.value)}
+                  autoFocus={!!(editing && uriMode)}
+                  placeholder={editing ? "" : "postgresql://user:password@host:5432/dbname"}
+                  InputProps={{ sx: { fontFamily: "ui-monospace", fontSize: 12 } }}
+                  sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2 } }} />
+                {editing && source?.uri && (
+                  <Button size="small" onClick={() => { setUriMode(false); setUri(""); }}
+                    sx={{ textTransform: "none", fontSize: 11.5, whiteSpace: "nowrap", flexShrink: 0 }}>
+                    改用主机连接
+                  </Button>
+                )}
+              </Box>
+            )}
+            {showAddress && (
+              <>
+                <Box sx={{ display: "flex", gap: 1.5, mt: 2 }}>
+                  <TextField size="small" label="主机" value={host}
+                    onChange={(e) => setHost(e.target.value)}
+                    autoFocus={!!editing && !source?.uri}
+                    sx={{ flex: 2, "& .MuiOutlinedInput-root": { borderRadius: 2 } }} />
+                  <TextField size="small" label="端口" value={port} onChange={(e) => setPort(e.target.value)}
+                    sx={{ flex: 1, "& .MuiOutlinedInput-root": { borderRadius: 2 } }} />
+                </Box>
+                <TextField fullWidth size="small" label="数据库" value={dbName}
+                  onChange={(e) => setDbName(e.target.value)}
+                  sx={{ mt: 2, "& .MuiOutlinedInput-root": { borderRadius: 2 } }} />
+                <Box sx={{ display: "flex", gap: 1.5, mt: 2 }}>
+                  <TextField size="small" label="用户名" value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    sx={{ flex: 1, "& .MuiOutlinedInput-root": { borderRadius: 2 } }} />
+                  <TextField size="small" label={editing ? "新密码" : "密码"} type="password" value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    sx={{ flex: 1, "& .MuiOutlinedInput-root": { borderRadius: 2 } }} />
+                </Box>
+              </>
+            )}
+            <TextField fullWidth select size="small" label="归属部门（可选）" value={deptId}
+              onChange={(e) => setDeptId(e.target.value === "" ? "" : Number(e.target.value))}
+              sx={{ mt: 2, "& .MuiOutlinedInput-root": { borderRadius: 2 } }}>
+              <MenuItem value="" sx={{ fontSize: 13 }}>不归属部门</MenuItem>
+              {departments.map((d) => (
+                <MenuItem key={d.id} value={d.id} sx={{ fontSize: 13 }}>{d.name}</MenuItem>
+              ))}
+            </TextField>
+            <Typography sx={{ mt: 0.5, fontSize: 11, color: "#94A3B8" }}>
+              标记归属部门后，数据管理列表与 AI 取数会按部门判断权限
+            </Typography>
           </>
         )}
       </DialogContent>
@@ -658,10 +816,16 @@ function CreateSourceDialog({
         <Button onClick={onClose} sx={{ textTransform: "none" }}>取消</Button>
         <Button variant="contained" onClick={submit} disabled={busy || notReady || blocked || !name.trim()}
           startIcon={busy ? <CircularProgress size={13} color="inherit" /> : null}
-          sx={{ bgcolor: "#6366F1", textTransform: "none", borderRadius: 2 }}>保存</Button>
+          sx={{ bgcolor: "#6366F1", textTransform: "none", borderRadius: 2 }}>
+          保存
+        </Button>
       </DialogActions>
     </Dialog>
   );
+}
+
+function typeLabelOf(types: SourceType[], id: string) {
+  return types.find((t) => t.id === id)?.label || id || "—";
 }
 
 /* ── 选表接入 ───────────────────────────────────────────── */

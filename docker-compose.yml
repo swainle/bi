@@ -7,25 +7,25 @@
 services:
   db:
     image: pgvector/pgvector:pg16
-    container_name: mingzebi-db
+    container_name: mingcebi-db
     restart: unless-stopped
     environment:
-      POSTGRES_USER: mingzebi
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mingzebi}
-      POSTGRES_DB: mingzebi
+      POSTGRES_USER: mingcebi
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mingcebi}
+      POSTGRES_DB: mingcebi
     ports:
       - "5433:5432"
     volumes:
-      - mingzebi_pgdata:/var/lib/postgresql/data
+      - mingcebi_pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U mingzebi -d mingzebi"]
+      test: ["CMD-SHELL", "pg_isready -U mingcebi -d mingcebi"]
       interval: 5s
       timeout: 5s
       retries: 10
 
   redis:
     image: redis:7-alpine
-    container_name: mingzebi-redis
+    container_name: mingcebi-redis
     restart: unless-stopped
     # 只给后端用，不映射到宿主机；掉电只丢缓存，不影响数据
     command: ["redis-server", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru", "--save", ""]
@@ -38,7 +38,7 @@ services:
   backend:
     build:
       context: ./backend
-    container_name: mingzebi-backend
+    container_name: mingcebi-backend
     restart: unless-stopped
     depends_on:
       db:
@@ -46,7 +46,7 @@ services:
       redis:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://mingzebi:${POSTGRES_PASSWORD:-mingzebi}@db:5432/mingzebi
+      DATABASE_URL: postgresql://mingcebi:${POSTGRES_PASSWORD:-mingcebi}@db:5432/mingcebi
       JWT_SECRET: ${JWT_SECRET:?请先设置 JWT_SECRET（openssl rand -base64 48）}
       LLM_API_BASE: ${LLM_API_BASE:-https://api.deepseek.com}
       LLM_API_KEY: ${LLM_API_KEY:-}
@@ -65,6 +65,13 @@ services:
       # 错误上报（可选）：留空 = 不启用；填了 DSN 后接口异常自动上报
       SENTRY_DSN: ${SENTRY_DSN:-}
       SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
+      # 可信反代：只有来自这些 IP/CIDR 的请求才采信 X-Forwarded-For
+      # 默认包含 compose 固定子网（nginx 容器）与本机；直连公网/LAN 的伪造头会被忽略
+      BI_TRUSTED_PROXIES: ${BI_TRUSTED_PROXIES:-127.0.0.1,::1,172.28.0.0/16}
+      # 外发通道（报表 / 告警）：邮件域名与 Webhook 域名白名单；留空 = 普通用户只能发自己域名/站内
+      BI_OUTBOUND_EMAIL_DOMAINS: ${BI_OUTBOUND_EMAIL_DOMAINS:-}
+      BI_OUTBOUND_WEBHOOK_HOSTS: ${BI_OUTBOUND_WEBHOOK_HOSTS:-}
+      BI_OUTBOUND_ALLOW_PRIVATE_HOSTS: ${BI_OUTBOUND_ALLOW_PRIVATE_HOSTS:-}
       # 连接池（单 worker 默认 20 + 10；多 worker 部署见 docker-compose.prod.yml）
       DB_POOL_SIZE: ${DB_POOL_SIZE:-20}
       DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-10}
@@ -77,7 +84,7 @@ services:
       args:
         # 构建期注入（Vite 内联）：留空 = 产物不带错误上报 SDK
         VITE_SENTRY_DSN: ${VITE_SENTRY_DSN:-}
-    container_name: mingzebi-frontend
+    container_name: mingcebi-frontend
     restart: unless-stopped
     depends_on:
       - backend
@@ -85,4 +92,11 @@ services:
       - "5300:80"
 
 volumes:
-  mingzebi_pgdata:
+  mingcebi_pgdata:
+
+networks:
+  default:
+    ipam:
+      config:
+        # 固定子网：后端只信任该网段来的 X-Forwarded-For（见 BI_TRUSTED_PROXIES）
+        - subnet: 172.28.0.0/16
