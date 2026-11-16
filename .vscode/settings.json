@@ -4,7 +4,7 @@
   "remote.restoreForwardedPorts": true,
   "remote.portsAttributes": {
     "5300-5399": {
-      "label": "MingzeBI 前端",
+      "label": "MingceBI 前端",
       "onAutoForward": "openBrowser"
     }
   }
