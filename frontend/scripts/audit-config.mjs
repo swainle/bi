@@ -27,7 +27,7 @@ const consumerFiles = [
 ];
 const consumerCode = consumerFiles.map(read).join("\n");
 
-const SPEC_PY = "/Users/cavan-m4max/MingzeBI/backend/app/components/spec.py";
+const SPEC_PY = "/Users/cavan-m4max/MingceBI/backend/app/components/spec.py";
 const specPy = readFileSync(SPEC_PY, "utf8");
 
 function fieldsOf(className) {
