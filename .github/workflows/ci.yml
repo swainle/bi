@@ -30,6 +30,8 @@ jobs:
           DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/mingcebi_ci
           DEBUG: "true"
         run: pytest
+      - name: File size limit (300 lines, ratchet)
+        run: python ../scripts/check_file_limit.py
 
   frontend:
     name: Frontend typecheck, unit tests & build
