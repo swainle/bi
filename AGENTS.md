@@ -763,6 +763,16 @@ DATABASE_URL="..." backend/.venv/bin/python scripts/security_guard_v2_check.py
 
 ---
 
+## 11. 前端启动与端口（统一入口）
+
+- 启动前端只运行：`cd frontend && npm run dev`（内部自动按账号选端口）
+- 端口由 `frontend/dev.sh` 按 Unix 账号自动选择；需要临时指定时用 `npm run dev -- --port <端口>`
+- VS Code / TRAE 会自动转发 5300-5399，并在可用时打开 `http://localhost:<端口>`
+- 后端共享 `127.0.0.1:8300`，不要在本地或服务器重复启动后端
+- 新增人员时，同步在 `frontend/dev.sh` 的端口映射里加一行
+
+---
+
 ## 10. 更新本文件
 
 新出现的规矩（用户明确交代的偏好、踩过的坑、新加的链路）当天就补进对应小节，
