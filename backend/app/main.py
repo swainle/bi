@@ -317,3 +317,10 @@ async def global_exception_handler(request: Request, exc: Exception):
 # ── 静态资源（头像 / 导出文件）──────────────────────────────────
 if os.path.isdir(settings.upload_dir):
     app.mount("/uploads", StaticFiles(directory=settings.upload_dir), name="uploads")
+
+# 必须最后挂载，API 与上传文件路由优先。
+from pathlib import Path  # noqa: E402
+from app.frontend import mount_frontend  # noqa: E402
+
+if os.getenv("BI_SERVE_FRONTEND", "1") == "1":
+    mount_frontend(app, Path(settings.project_root) / "frontend")

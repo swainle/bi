@@ -117,12 +117,12 @@ echo "VITE_SENTRY_DSN='http://<public_key>@127.0.0.1:8070/1'" > frontend/.env.lo
 # 改完必须重启 npm run dev
 
 # 生产（Docker）
-VITE_SENTRY_DSN='https://<public_key>@你的域名/1' docker compose build frontend
+VITE_SENTRY_DSN='https://<public_key>@你的域名/1' docker compose build backend
 ```
 
 > 前端没配 DSN 时，上报 SDK 会被 Vite 摇掉（不进包、不发请求）。
 
-**Docker compose 部署明策BI**：`docker-compose.yml` 已透传 `SENTRY_DSN` / `SENTRY_ENVIRONMENT`，
+**Docker compose 部署明策BI**：`compose.yml` 已透传 `SENTRY_DSN` / `SENTRY_ENVIRONMENT`，
 `VITE_SENTRY_DSN` 走 `build.args`，直接给环境变量即可。
 
 ---

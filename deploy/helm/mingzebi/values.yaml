@@ -10,12 +10,8 @@ fullnameOverride: ""
 
 image:
   pullPolicy: IfNotPresent
-  backend:
-    repository: mingzebi/backend
-    tag: latest
-  frontend:
-    repository: mingzebi/frontend
-    tag: latest
+  repository: mingzebi/app
+  tag: latest
 
 imagePullSecrets: []
 
@@ -35,6 +31,7 @@ backend:
     BI_RENDER_CACHE_TTL: "15"
     BI_JOB_STORE: "auto"
     BI_ASYNC_WORKERS: "2"
+    BI_WORKER_POLL_SECONDS: "1"
     DB_POOL_SIZE: "12"
     DB_MAX_OVERFLOW: "6"
     RATE_LIMIT_DEFAULT: "300"
@@ -73,6 +70,7 @@ worker:
       cpu: "2"
       memory: 2Gi
 
+
 frontend:
   replicas: 1
   service:
@@ -94,6 +92,9 @@ ingress:
     - host: bi.example.com
       paths:
         - path: /api
+          pathType: Prefix
+          service: backend
+        - path: /uploads
           pathType: Prefix
           service: backend
         - path: /

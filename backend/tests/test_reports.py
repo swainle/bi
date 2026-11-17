@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import sys
 
 import pytest
 
@@ -64,6 +65,7 @@ def test_chrome_missing_returns_error(tmp_path, monkeypatch) -> None:
     assert "Chrome" in browser.print_pdf(str(tmp_path / "a.html"), str(tmp_path / "a.pdf"))
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX shell fixture; covered by Linux CI")
 def test_print_pdf_invokes_chrome(tmp_path, monkeypatch) -> None:
     """用一个假的浏览器脚本验证参数拼装与成功判定（不依赖本机 Chrome）."""
     fake = tmp_path / "fake-chrome"

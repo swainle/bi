@@ -2,7 +2,7 @@
 
 > 本文件依据 Apache-2.0 §4、MIT、BSD 等许可证的「保留版权声明 / 附许可声明」要求编制，
 > 应随本软件的每一份分发副本一同提供。
-> 机器可核验的完整清单见 `frontend/package-lock.json` 与 `backend/requirements.txt`。
+> 机器可核验的完整清单见 `frontend/package-lock.json` 与 `backend/uv.lock`。
 
 ---
 

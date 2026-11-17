@@ -157,7 +157,11 @@ def ensure_migrations() -> list[str]:
     """执行 schema/migrations 下未应用的增量迁移（幂等）."""
     try:
         from app.schema_migrations import run_all
+        from app.services.rbac_seed import seed_permissions
 
+        # 授权迁移依赖权限码，必须先补定义；角色种子仍在迁移后执行。
+        with SessionLocal() as db:
+            seed_permissions(db)
         executed = run_all()
         if executed:
             print(f"[bootstrap] 已应用迁移：{', '.join(executed)}")

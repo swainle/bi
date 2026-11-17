@@ -49,11 +49,10 @@
 
 ## 快速开始
 
-### 方式一：Docker（推荐）
+### 方式一：Docker 部署
 
 ```bash
 cd ~/MingceBI
-export JWT_SECRET="$(openssl rand -base64 48)"
 docker compose up -d --build
 ```
 
@@ -61,9 +60,11 @@ docker compose up -d --build
 - 后端健康检查：http://localhost:8300/api/health
 - 首次启动自动建表 + 导入示例数据 + 创建管理员（默认 `admin` / `Admin@123456`，用 `ADMIN_PASSWORD` 覆盖）
 
+生产使用 `docker compose up -d --build`，需要设置数据库、管理员密码与 JWT_SECRET。同一个镜像按角色独立部署前端、后端和 worker；详情见 [统一镜像部署](docs/统一镜像部署.md)。
+
 ### 方式二：本地开发
 
-前置：PostgreSQL 16（需安装 pgvector 扩展）、**Python 3.10+**（3.12 推荐；系统自带 3.9 会因运行时注解语法启动失败）、Node 20+。
+前置：PostgreSQL 16（需安装 pgvector 扩展）、**uv**（默认 Python 3.11，支持 3.11/3.12）、Node 20+。
 
 ```bash
 # 1. 建库
@@ -73,7 +74,7 @@ psql mingzebi -c "CREATE EXTENSION IF NOT EXISTS vector;"
 # 2. 后端
 cd backend
 cp .env.example .env          # 修改 DATABASE_URL / LLM_API_KEY
-./run.sh                      # 自动建 venv、装依赖、初始化库、启动 :8300
+uv run dev                    # 自动准备虚拟环境，启动 :8300 并热重载
 
 # 3. 前端（另开终端）
 cd frontend
@@ -85,13 +86,13 @@ npm run dev                   # http://localhost:5300
 
 ```bash
 cd backend
-python -m app.bootstrap            # 幂等：建表 / 种子 / 管理员
+uv run python -m app.bootstrap            # 幂等：建表 / 种子 / 管理员
 python -m app.bootstrap --reset    # 清空重建（需 ALLOW_RESET=1）
 ```
 
 ### 方式三：Kubernetes（Helm）
 
-`deploy/helm/mingzebi` 起 API / 前端，可选独立 worker、Ingress、HPA；数据库与 Redis 走外部托管实例。
+`deploy/helm/mingzebi` 使用统一应用镜像，可选独立 worker、Ingress、HPA；数据库与 Redis 走外部托管实例。
 
 ```bash
 # 密钥建议放 Secret（键：DATABASE_URL / JWT_SECRET / LLM_API_KEY / ADMIN_PASSWORD）
@@ -103,7 +104,7 @@ helm upgrade --install mingzebi deploy/helm/mingzebi \
   --namespace mingzebi --create-namespace \
   --set backend.existingSecret=mingzebi-secrets \
   --set backend.redisUrl=redis://redis:6379/0 \
-  --set image.backend.tag=1.0.0 --set image.frontend.tag=1.0.0
+  --set image.tag=1.0.0
 ```
 
 - 探针分开：`/api/livez` 只看进程（不碰数据库），`/api/readyz` 数据库不可用返回 503（摘流量）；Redis 挂了只降级缓存，不影响就绪；
@@ -127,14 +128,14 @@ cd deploy/glitchtip && docker compose up -d
 # 后端（运行期变量，为空 = 不启用）：写进 backend/.env 后普通启动即可
 #   SENTRY_DSN='https://key@127.0.0.1:8070/1'
 #   SENTRY_ENVIRONMENT=production
-# 也可以临时用环境变量：SENTRY_DSN='...' ./run.sh
+# 也可以临时用环境变量：SENTRY_DSN='...' uv run dev
 
 # 前端开发：写进 frontend/.env.local（不进 git），重启 npm run dev 生效
 echo "VITE_SENTRY_DSN='https://key@127.0.0.1:8070/1'" > frontend/.env.local
 
 # 前端生产（Vite 构建期内联：带 DSN 构建，产物里才会带上报 SDK；约 +117KB gzip）
 VITE_SENTRY_DSN='https://key@127.0.0.1:8070/1' npm run build
-# Docker：compose 已接 build args，直接 VITE_SENTRY_DSN=... docker compose build frontend
+# Docker：compose 已接 build args，直接 VITE_SENTRY_DSN=... docker compose build backend
 ```
 
 `GET /api/readyz` 会返回 `sentry: on/off`，一眼确认是否生效。
@@ -145,10 +146,14 @@ VITE_SENTRY_DSN='https://key@127.0.0.1:8070/1' npm run build
 
 | 文档 | 内容 |
 |:--|:--|
-| [更新日志](docs/更新日志.md) | 功能与界面改动日记，只追加、顶部最新 |
-| [底座优化方案](docs/底座优化方案.md) | 架构演进与待办拆解 |
-| [平台分套方案](docs/平台分套_需求与技术方案.md) | 需求端 / 榜单端分套设计 |
+| [更新日志](CHANGELOG.md) | 功能与界面改动日记，只追加、顶部最新 |
+| [底座优化方案](docs/plans/底座优化方案.md) | 架构演进与待办拆解 |
+| [平台分套方案](docs/plans/平台分套方案.md) | 需求端 / 榜单端分套设计 |
+| [统一镜像部署](docs/统一镜像部署.md) | Compose / Helm 部署、文件迁移与验证 |
 | [GlitchTip 部署指南](docs/GlitchTip部署指南.md) | 错误上报服务：源码 / 镜像 / 部署 / DSN 接入 / 中文化 / 排错 |
+| [MCP 与 Agent 权限接入方案](docs/plans/MCP与Agent权限接入方案.md) | 权限接入设计 |
+| [组件库缺口清单](docs/plans/组件库缺口清单-榜单端与需求端天猫.md) | 榜单端与需求端天猫的组件缺口 |
+| [测试占位记录](docs/测试占位记录.md) | 原 TEST.md 占位文件，尚无测试说明 |
 | [AGENTS.md](AGENTS.md) | 开发规则：视觉令牌 · 布局算式 · 组件链路 · 数据红线 · 已知的坑 |
 
 ---
@@ -160,11 +165,11 @@ VITE_SENTRY_DSN='https://key@127.0.0.1:8070/1' npm run build
 | [Issues](../../issues) | 需求 / 缺陷，走 `.github/ISSUE_TEMPLATE` 模板，自动带标签 |
 | [Pull Requests](../../pulls) | 变更说明，走 PR 模板（改动面 / 验证方式 / 回滚） |
 | [Actions](../../actions) | CI：后端 pytest + 前端构建与类型检查 |
-| [仓库操作规范](docs/仓库操作规范.md) | **发版必读**：脱敏、入库边界、版本号、禁用命令、八步发版流程、发布记录 |
-| [更新日志](docs/更新日志.md) | 逐条功能记录，只追加不改 |
+| [仓库操作规范](docs/仓库与发布规范.md) | **发版必读**：脱敏、入库边界、版本号、禁用命令、八步发版流程、发布记录 |
+| [更新日志](CHANGELOG.md) | 逐条功能记录，只追加不改 |
 
 **提交约定**：`feat:` / `fix:` / `refactor:` / `docs:` / `chore:`，一次提交只做一件事；
-界面改动必须在 `docs/更新日志.md` 追加一条；发版前按 `docs/仓库操作规范.md` 的八步流程走。
+界面改动必须在 `CHANGELOG.md` 追加一条；发版前按 `docs/仓库与发布规范.md` 的八步流程走。
 
 ---
 
@@ -173,12 +178,12 @@ VITE_SENTRY_DSN='https://key@127.0.0.1:8070/1' npm run build
 
 | 服务 | 端口 | 说明 |
 |---|---|---|
-| 前端（dev / docker） | **5300** | `npm run dev` 与 docker 前端同一口 |
+| 前端（dev）/ 生产统一入口 | **5300** | `npm run dev` 或统一应用镜像入口 |
 | 前端（preview） | **5301** | `npm run build && npm run preview` |
-| 后端 API | **8300** | `./run.sh` / docker 宿主侧 |
+| 后端 API | **8300** | `uv run dev` / Docker 后端宿主侧 |
 | 数据库（仅 docker） | **5433** | 宿主机映射，避开本机已占用的 5432 |
 
-改端口只需动三处：前端 `frontend/vite.config.ts`（`server`/`preview` 的 `port` 与 `proxy.target`）、后端 `backend/run.sh` 的 `PORT` 默认值（或临时 `PORT=9000 ./run.sh`）、`docker-compose.yml` 的宿主侧端口。
+改端口只需动三处：前端 `frontend/vite.config.ts`（`server`/`preview` 的 `port` 与 `proxy.target`）、后端 `backend/app/dev.py` 的 `PORT` 默认值（或临时 `PORT=9000 uv run dev`）、`compose.yml` 的宿主侧端口。
 
 局域网访问：前端 Vite 已监听 `0.0.0.0`，同一 WiFi / 网段内的设备用 `http://<本机局域网IP>:5300` 打开即可（后端仍只绑 `127.0.0.1:8300`，由 Vite 代理转发，无需暴露）。查本机 IP：`ipconfig getifaddr en0`。
 macOS 防火墙对未签名的 node 会拦外部连接 —— `scripts/dev.sh` 固定用 `/usr/local/bin/node`（已加入防火墙白名单）；若手动 `npm run dev` 后局域网打不开，在弹出「是否允许 node 接受传入连接」时点允许，或把该 node 路径加入防火墙。
@@ -193,7 +198,7 @@ macOS 防火墙对未签名的 node 会拦外部连接 —— `scripts/dev.sh` �
   - **关系型**：PostgreSQL / MySQL / MariaDB / TiDB / 人大金仓 / Oracle / Db2 / SQL Server；
   - **OLAP**：ClickHouse / Doris / StarRocks / Presto / Impala / Hive；
   - **云数仓**：AWS RedShift（PostgreSQL 协议）；
-  - 驱动随 `requirements.txt` 安装，可用性由后端 `find_spec` 实时探测；缺驱动时界面置灰并标「未装驱动」。
+  - 驱动随 `pyproject.toml` 安装，可用性由后端 `find_spec` 实时探测；缺驱动时界面置灰并标「未装驱动」。
   - 时间粒度暂只适配 PG / MySQL / ClickHouse / SQL Server / Oracle / Presto / Redshift；
     Hive / Impala / Db2 选粒度会明确报错（不静默生成错 SQL）。
   - 新增类型 = 目录加一条 + `TYPE_DIALECT` 加方言 + requirements 加驱动 + 真机验证，缺一不可。
@@ -289,9 +294,9 @@ macOS 防火墙对未签名的 node 会拦外部连接 —— `scripts/dev.sh` �
 **榜单端数据**来自模板的 3 份 CSV（62 条 SKU），导入命令：
 
 ```bash
-cd backend && ./.venv/bin/python -m scripts.import_rank_board        # 幂等 upsert
-./.venv/bin/python -m scripts.import_rank_board --dry-run            # 只看数量
-RANK_TEMPLATE_DIR=/path/to/template ./.venv/bin/python -m scripts.import_rank_board
+cd backend && uv run python -m scripts.import_rank_board        # 幂等 upsert
+uv run python -m scripts.import_rank_board --dry-run            # 只看数量
+RANK_TEMPLATE_DIR=/path/to/template uv run python -m scripts.import_rank_board
 ```
 
 启动时 `bootstrap.ensure_components()` 会自动建「榜单端·SKU」语义数据集并写入内置组件
@@ -359,9 +364,9 @@ RANK_TEMPLATE_DIR=/path/to/template ./.venv/bin/python -m scripts.import_rank_bo
 
 ```bash
 cd backend
-./.venv/bin/python -m scripts.verify_metrics        # 模板数 vs BI 数（需求端 6 卡逐项对）
-./.venv/bin/python -m scripts.audit_dashboards      # 每个页面元素 → 基础组件，未注册/失配即失败
-./.venv/bin/python -m scripts.smoke_dashboards      # 全部视图渲染 + 参数切换 + 浮层动作
+uv run python -m scripts.verify_metrics        # 模板数 vs BI 数（需求端 6 卡逐项对）
+uv run python -m scripts.audit_dashboards      # 每个页面元素 → 基础组件，未注册/失配即失败
+uv run python -m scripts.smoke_dashboards      # 全部视图渲染 + 参数切换 + 浮层动作
 ```
 
 </details>
@@ -416,7 +421,7 @@ backend/schema/migrations/002_xxx.sql
 ### 测试
 
 ```bash
-cd backend && ./.venv/bin/python -m pytest     # 83 用例：SQL 网关 / 行级权限 / 粒度 / 契约 / 语义层 / 异步
+cd backend && uv run pytest     # 83 用例：SQL 网关 / 行级权限 / 粒度 / 契约 / 语义层 / 异步
 ```
 
 </details>
@@ -431,8 +436,8 @@ cd backend && ./.venv/bin/python -m pytest     # 83 用例：SQL 网关 / 行级
 |:--|:--|
 | [LICENSE](LICENSE) | 专有许可协议：未经书面许可不得复制、分发、转授权或商用 |
 | [COPYRIGHT.md](COPYRIGHT.md) | 著作权与自主研发范围说明（模块清单、原创实现特征、举证材料） |
-| [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) | 第三方组件与许可证，含 Apache-2.0 / LGPL 的履行方式 |
-| [DATA-POLICY.md](DATA-POLICY.md) | 数据与素材边界：仓库不含真实平台数据与个人信息 |
+| [THIRD-PARTY-NOTICES.md](docs/THIRD-PARTY-NOTICES.md) | 第三方组件与许可证，含 Apache-2.0 / LGPL 的履行方式 |
+| [DATA-POLICY.md](docs/DATA-POLICY.md) | 数据与素材边界：仓库不含真实平台数据与个人信息 |
 
 ---
 
@@ -510,9 +515,8 @@ MingceBI/
 │   │   ├── migrations/             # 增量迁移 001–045（启动时幂等执行）
 │   │   └── seed.sql                # 电商示例数据（拼多多 / 天猫 / 抖音）
 │   ├── tests/                      # pytest（83 用例）
-│   ├── requirements.txt
+│   ├── pyproject.toml / uv.lock     # uv 项目依赖和锁文件
 │   ├── pytest.ini
-│   ├── Dockerfile
 │   ├── run.sh
 │   └── .env.example
 ├── frontend/
@@ -537,15 +541,22 @@ MingceBI/
 │   │   ├── contexts/               # AuthContext / ThemeContext
 │   │   └── api/                    # axios 客户端（JWT + CSRF + 自动刷新）
 │   ├── packages/mylayout/          # @mylayout/core 布局引擎
-│   ├── package.json
-│   ├── Dockerfile
-│   └── nginx.conf
-├── docker-compose.yml
+│   └── package.json
+├── Dockerfile                      # 前后端统一生产镜像
+├── compose.yml                    # 前端 / 后端 / worker 分角色部署
 ├── docs/
-│   ├── 更新日志.md                  # 功能与界面改动的日记（只追加，顶部最新）
+│   ├── DATA-POLICY.md / THIRD-PARTY-NOTICES.md
+│   ├── 统一镜像部署.md               # 构建、部署、旧文件迁移
+│   ├── 仓库与发布规范.md             # 仓库操作与发布流程
+│   ├── GlitchTip部署指南.md           # 错误监控部署与排障
+│   ├── 测试占位记录.md               # 原 TEST.md 占位内容
+│   ├── plans/                      # 技术方案与缺口清单
 │   ├── images/                     # README 用图（压缩后入库）
 │   ├── _selfcheck/                 # 交付前逐屏截图自检（不入库）
 │   └── 看板截图/                    # 过程截图（不入库）
+├── CHANGELOG.md                    # 更新日志（只追加，顶部最新）
+├── COPYRIGHT.md                    # 著作权说明
+├── LICENSE                         # 软件许可
 ├── AGENTS.md                       # 开发规则（视觉令牌 / 布局算式 / 组件链路 / 数据红线 / 已知的坑）
 └── README.md
 ```

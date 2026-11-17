@@ -18,7 +18,7 @@
 
 ```bash
 # 后端
-cd backend && ./.venv/bin/python -m pytest
+cd backend && uv run pytest
 
 # 前端
 cd frontend && npm run build
@@ -33,7 +33,7 @@ cd frontend && npm run build
 
 ## 检查项
 
-- [ ] 界面改动已追加 `docs/更新日志.md`
+- [ ] 界面改动已追加 `CHANGELOG.md`
 - [ ] 沿用了既有设计令牌，没有临时造新样式
 - [ ] 没有把 `.env` / 密钥 / 业务数据带进提交
 - [ ] 一次提交只做一件事

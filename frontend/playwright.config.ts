@@ -1,7 +1,7 @@
 // 视觉回归（本地）：对关键页面截图，和基线逐像素比对。
 //
 // 用法（先确保前端 :5300、后端 :8300 都在跑）：
-//   backend/.venv/bin/python scripts/visual_tokens.py        # 生成 /tmp/mzbi_tokens.json（不会踢掉浏览器会话）
+//   uv run --project backend python scripts/visual_tokens.py        # 生成 /tmp/mzbi_tokens.json（不会踢掉浏览器会话）
 //   cd frontend && npm run visual                            # 比对（基线不存在时先 update）
 //   cd frontend && npm run visual:update                     # 更新基线（确认改动是有意的再执行）
 //

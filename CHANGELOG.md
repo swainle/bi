@@ -8,6 +8,34 @@
 
 ---
 
+## 2026-11-17 · 优化：部署配置收敛为单一 compose.yml
+
+- **改了什么**：保留分角色部署配置为根目录 compose.yml，移除 compose.prod.yml 和单独的开发 Compose；同步 README、AGENTS 和部署指南。
+- **为什么**：减少环境入口，本机开发统一使用 uv run dev / npm run dev。
+- **涉及文件**：compose.yml、README、AGENTS、docs/统一镜像部署.md、docs/GlitchTip部署指南.md。
+- **怎么验证**：Compose 配置解析、前后端与 worker 共用镜像/不同角色/持久化卷核对，文档旧路径扫描与 diff 检查；本次未改应用代码和 Dockerfile。
+
+## 2026-11-17 · 优化：uv 项目管理与生产镜像分角色启动
+
+- **改了什么**：后端改用 pyproject.toml / uv.lock，开发入口 uv run dev（热重载），pytest 独立开发依赖；同一镜像支持 frontend（Nginx 静态资源和代理）、backend、worker、app；开发 compose.yml 与独立生产 compose.prod.yml 分开；同步 CI、Helm、脚本和文档；数据政策与第三方声明移入 docs。
+- **为什么**：统一依赖环境，同时保留前后端独立部署与扩容能力。
+- **涉及文件**：backend 项目配置、开发入口与测试、根 Dockerfile/Compose、deploy、CI、Vite 代理配置、README、AGENTS 与 docs。
+- **怎么验证**：Windows uv 安装与 dev 命令通过，270 条测试通过 / 12 条跳过；Linux 271 条通过 / 11 条跳过。生产/开发镜像实构建、类型检查、构建预算、两份 Compose 独立配置、Helm lint 与两种渲染通过。真实 Nginx 页面/API 代理、Vite 代理、双进程后端登录、uv 热重载、worker COUNT=180 均跑通；断后端页面=200/API=502。截图 docs/_selfcheck/2026-11-17-nginx-role-login.png。修复 bcrypt 4.1.0 Windows 打包问题（最小更新 4.1.1，已验证原密码哈希），兼容 Windows 静态路径；POSIX 假浏览器测试仅在 Windows 跳过，worker 用现有 1 秒轮询避免客户端空闲超时。
+
+## 2026-11-17 · 优化：生产前后端统一镜像
+
+- **改了什么**：根目录多阶段 Dockerfile 构建前端与后端；FastAPI 提供页面与静态文件，保留 API/上传文件 404；Compose、Helm、查询 worker 与 CI 统一镜像配置，Compose 新增上传/报表共享持久化卷。移除旧的分离镜像和 Nginx 配置。
+- **为什么**：统一生产版本和部署入口，减少独立服务配置；空库实测发现授权迁移先于权限码初始化，已在共享迁移入口先补权限定义，角色种子仍在迁移后执行。
+- **涉及文件**：Dockerfile、.dockerignore、backend/app/frontend.py、main.py、bootstrap.py、tests/test_frontend.py、Compose、Helm、CI、README、AGENTS 与 docs/统一镜像部署.md。
+- **怎么验证**：统一镜像实构建成功；页面服务与探针 7 条测试通过；UI 规范/类型检查、前端构建与预算通过（JS gzip 970KB）；Compose 默认/生产配置及 Helm lint、两种渲染通过；真实空库 44 条迁移完成、重启保留手工授权调整；断库 readyz=503、livez/登录页=200；登录页截图存 docs/_selfcheck/2026-11-17-unified-image-login.png。CI 已补空库启动门禁。
+
+## 2026-11-17 · 优化：统一文档名称与存放路径
+
+- **改了什么**：更新日志移至根目录 `CHANGELOG.md`；仓库规范更名为 `docs/仓库与发布规范.md`；方案与缺口清单归入 `docs/plans/`；原 `TEST.md` 移为 `docs/测试占位记录.md`，保留占位原文。
+- **为什么**：简化 docs 层级，统一文档入口，不按功能拆目录。
+- **涉及文件**：README、AGENTS、COPYRIGHT 及迁移文档；同步更新当前路径引用，历史更新记录不改。
+- **怎么验证**：核对迁移前后正文、根目录保留文件、README 本地文件链接及旧路径引用；仅文档调整，不涉及应用界面与代码。
+
 ## 2026-11-16 · 优化：`npm run dev` 默认按账号选端口
 
 - **改了什么**：`frontend/package.json` 的 `dev` 改为 `bash dev.sh`；无参数时自动按 Unix 账号选端口，带参数时仍可手动覆盖；保留 `dev:me` 别名与 `dev:base` 原始入口。

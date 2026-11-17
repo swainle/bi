@@ -23,8 +23,7 @@ status() {
 }
 start() {
   cd "$ROOT/backend"
-  DATABASE_URL="$DB_URL" DEBUG=true nohup ./.venv/bin/python -m uvicorn \
-    app.main:app --port $API_PORT --host 127.0.0.1 > /tmp/mzbi_api.log 2>&1 &
+  DATABASE_URL="$DB_URL" DEBUG=true nohup uv run dev --port $API_PORT --host 127.0.0.1 > /tmp/mzbi_api.log 2>&1 &
   sleep 6
   cd "$ROOT/frontend"
   nohup "$NODE_BIN" ./node_modules/vite/bin/vite.js > /tmp/mzbi_web.log 2>&1 &
@@ -32,7 +31,7 @@ start() {
   status
 }
 stop() {
-  pkill -f "uvicorn app.main:app --port $API_PORT" 2>/dev/null
+  lsof -nP -iTCP:$API_PORT -sTCP:LISTEN -t 2>/dev/null | xargs -r kill 2>/dev/null 2>/dev/null
   pkill -f "vite.*--port $WEB_PORT" 2>/dev/null
   lsof -nP -iTCP:$WEB_PORT -sTCP:LISTEN -t 2>/dev/null | xargs -r kill 2>/dev/null
   echo "已停止"
