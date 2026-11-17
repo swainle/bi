@@ -15,18 +15,18 @@ import {
   PictureAsPdf as PdfIcon, SmartToy as AIIcon,
   Upload as UploadIcon,
 } from "@mui/icons-material";
-import client from "../api/client";
-import ChartPanelView from "../features/bi-dashboard/ChartPanel";
-import ChartConfigPanel, { type ChartStyle } from "../features/bi-dashboard/ChartConfigPanel";
-import BigScreen from "../features/bi-dashboard/BigScreen";
-import BoardViewer from "../features/components/board/BoardViewer";
-import PddCockpitView from "../features/bi-dashboard/PddCockpitView";
-import PddProfitDashboard from "../features/bi-dashboard/PddProfitDashboard";
-import WatermarkOverlay from "../components/WatermarkOverlay";
-import { useWatermarkText } from "../hooks/useWatermarkText";
-import { useAuth } from "../hooks/useAuth";
-import ImportWizard from "../features/bi-dashboard/ImportWizard";
-import type { DataRow, ChartPanel } from "../features/bi-dashboard/constants";
+import client from "../../api/client";
+import ChartPanelView from "../bi-dashboard/ChartPanel";
+import ChartConfigPanel, { type ChartStyle } from "../bi-dashboard/ChartConfigPanel";
+import BigScreen from "../bi-dashboard/BigScreen";
+import BoardViewer from "../components/board/BoardViewer";
+import PddCockpitView from "../bi-dashboard/PddCockpitView";
+import PddProfitDashboard from "../bi-dashboard/PddProfitDashboard";
+import WatermarkOverlay from "../../components/WatermarkOverlay";
+import { useWatermarkText } from "../../hooks/useWatermarkText";
+import { useAuth } from "../auth/useAuth";
+import ImportWizard from "../bi-dashboard/ImportWizard";
+import type { DataRow, ChartPanel } from "../bi-dashboard/constants";
 
 interface TemplateDef {
   id: string; type: string; title: string;

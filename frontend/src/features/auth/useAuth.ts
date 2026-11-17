@@ -1,7 +1,7 @@
 /** useAuth hook —— 快捷访问认证上下文 */
 
 import { useContext } from "react";
-import { AuthContext } from "../contexts/AuthContext";
+import { AuthContext } from "./AuthContext";
 
 export function useAuth() {
   const ctx = useContext(AuthContext);

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { getLastRequestId } from "../api/client";
-import { useAuth } from "./useAuth";
+import { useAuth } from "../features/auth/useAuth";
 
 function stamp(): string {
   const d = new Date();

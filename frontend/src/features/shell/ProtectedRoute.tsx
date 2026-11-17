@@ -1,8 +1,8 @@
 /** 路由守卫 —— 未登录跳转登录页，无权限显示提示 */
 
 import { Navigate, useLocation } from "react-router-dom";
-import { useAuth } from "../../hooks/useAuth";
-import Loading from "./Loading";
+import { useAuth } from "../auth/useAuth";
+import Loading from "../../components/common/Loading";
 import { Box, Typography, Button } from "@mui/material";
 import { LockOutlined } from "@mui/icons-material";
 

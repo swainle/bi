@@ -5,12 +5,12 @@ import {
   Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, Tooltip, Typography,
 } from "@mui/material";
 import { ContentCopyOutlined, VpnKeyOutlined } from "@mui/icons-material";
-import client from "../api/client";
-import { buildConnectorText } from "../features/mcp/connector";
+import client from "../../api/client";
+import { buildConnectorText } from "./connector";
 import {
   BORDER, ConfirmDialog, EmptyState, INK, LINE, Loading, MUTED, PanelCard, PrimaryButton,
   SectionHead, TD, TH, dialogPaperSx, dialogTitleSx, fmtTime, friendlyError, useToast,
-} from "../features/admin/shared";
+} from "../admin/shared";
 
 interface AvailableClient {
   id: number; name: string; description: string; client_id: string;

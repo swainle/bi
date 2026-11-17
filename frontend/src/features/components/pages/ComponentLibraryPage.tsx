@@ -6,13 +6,13 @@ import {
   Box, Button, Chip, InputAdornment, Snackbar, Alert, TextField, Typography,
 } from "@mui/material";
 import { Add, Search } from "@mui/icons-material";
-import client from "../api/client";
-import PreviewThumb from "../features/components/board/PreviewThumb";
-import ComponentPreviewDialog from "../features/components/board/ComponentPreviewDialog";
-import type { RenderPayload } from "../features/components/types";
-import { KIND_LABEL } from "../features/components/registry";
-import { accentOf } from "../features/components/palette";
-import type { ComponentItem } from "../features/components/types";
+import client from "../../../api/client";
+import PreviewThumb from "../board/PreviewThumb";
+import ComponentPreviewDialog from "../board/ComponentPreviewDialog";
+import type { RenderPayload } from "../types";
+import { KIND_LABEL } from "../registry";
+import { accentOf } from "../palette";
+import type { ComponentItem } from "../types";
 
 export default function ComponentLibraryPage() {
   const nav = useNavigate();

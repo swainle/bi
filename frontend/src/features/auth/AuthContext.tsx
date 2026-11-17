@@ -8,8 +8,8 @@ import {
   useRef,
   type ReactNode,
 } from "react";
-import type { User } from "../types";
-import * as authApi from "../api/auth";
+import type { User } from "../../types";
+import * as authApi from "../../api/auth";
 
 const TOKEN_KEY = "access_token";
 const REFRESH_KEY = "refresh_token";

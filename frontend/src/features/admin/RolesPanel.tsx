@@ -10,7 +10,7 @@ import {
   Add as AddIcon, ExpandMore as ExpandIcon,
 } from "@mui/icons-material";
 import client, { extractErrorMessage } from "../../api/client";
-import { useAuth } from "../../hooks/useAuth";
+import { useAuth } from "../auth/useAuth";
 import {
   BORDER, ConfirmDialog, INK, LINE, Loading, MUTED, PrimaryButton, SectionHead,
   dialogPaperSx, dialogTitleSx, useToast,

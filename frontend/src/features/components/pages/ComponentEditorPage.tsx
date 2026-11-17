@@ -6,11 +6,11 @@ import {
   Alert, Box, Button, Chip, IconButton, MenuItem, Select, Snackbar, Stack, TextField, Typography,
 } from "@mui/material";
 import { Add, ArrowBack, Delete, Save } from "@mui/icons-material";
-import client from "../api/client";
-import SharedFilterFieldsEditor from "../features/components/editor/FilterFieldsEditor";
-import { filterWithFields } from "../features/components/split";
-import type { ComponentItem, FilterFieldSpec, ComponentSpec } from "../features/components/types";
-import { KIND_LABEL, KIND_ROLE } from "../features/components/registry";
+import client from "../../../api/client";
+import SharedFilterFieldsEditor from "../editor/FilterFieldsEditor";
+import { filterWithFields } from "../split";
+import type { ComponentItem, FilterFieldSpec, ComponentSpec } from "../types";
+import { KIND_LABEL, KIND_ROLE } from "../registry";
 
 const ICONS = ["grid", "chart", "pie", "table", "cloud", "tag", "bulb"];
 const FIELD_TYPES: FilterFieldSpec["type"][] = ["select", "segment", "chips", "search"];

@@ -37,8 +37,8 @@ import {
   DoneAll as DoneAllIcon,
   HowToReg as HowToRegIcon,
 } from "@mui/icons-material";
-import { useAuth } from "../../hooks/useAuth";
-import { useThemeMode } from "../../contexts/ThemeContext";
+import { useAuth } from "../../features/auth/useAuth";
+import { useThemeMode } from "./ThemeContext";
 import client from "../../api/client";
 
 interface AlertEvent {

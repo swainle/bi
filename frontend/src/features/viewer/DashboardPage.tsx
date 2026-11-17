@@ -11,96 +11,31 @@ import {
   ArrowDownward, ArrowUpward, BookmarkBorder, Close, Delete, Edit, FileDownload, HorizontalRule,
   Save, TextFields, Title as TitleIcon, Tune, ViewQuilt,
 } from "@mui/icons-material";
-import client from "../api/client";
-import { useAuth } from "../hooks/useAuth";
-import { useWatermarkText } from "../hooks/useWatermarkText";
-import WatermarkOverlay from "../components/WatermarkOverlay";
-import { CanvasDetailContext, asCanvasItem, boardOf, type BoardArea } from "../features/components/board/canvasDetail";
-import { ACCENTS } from "../features/components/palette";
-import { RENDERERS, KIND_LABEL, KIND_ROLE, ROLE_LABEL } from "../features/components/registry";
-import ShapeView, { shapeOf } from "../features/components/shapes";
-import { navHomePage } from "../features/components/navHome";
-import FilterBar from "../features/components/renderers/FilterBar";
-import NavCard, { type NavPayload, type NavUi } from "../features/components/renderers/NavCard";
-import { useDatasetFields } from "../features/components/board/useDatasetFields";
-import TopListDialog from "../features/components/board/TopListDialog";
+import client from "../../api/client";
+import { useAuth } from "../auth/useAuth";
+import { useWatermarkText } from "../../hooks/useWatermarkText";
+import WatermarkOverlay from "../../components/WatermarkOverlay";
+import { CanvasDetailContext, asCanvasItem, boardOf, type BoardArea } from "../components/board/canvasDetail";
+import { ACCENTS } from "../components/palette";
+import { RENDERERS, KIND_LABEL, KIND_ROLE, ROLE_LABEL } from "../components/registry";
+import ShapeView, { shapeOf } from "../components/shapes";
+import { navHomePage } from "../components/navHome";
+import FilterBar from "../components/renderers/FilterBar";
+import NavCard, { type NavPayload, type NavUi } from "../components/renderers/NavCard";
+import { useDatasetFields } from "../components/board/useDatasetFields";
+import TopListDialog from "../components/board/TopListDialog";
 import type {
   Accent, ComponentItem, ComponentSpec, DashboardDoc, DashboardRender, DashboardSummary,
   DatasetBrief, DocAction, DocItem, FilterFieldSpec, RenderPayload, UiSpec,
-} from "../features/components/types";
+} from "../components/types";
 
-const GRID_GAP = 16;
-const DESIGN_W = 1440;
-/** 网页出血：1920 设计稿左右各留 60px */
-/** 把二维数据拼成 CSV（带 BOM，Excel 打开不乱码） */
-function toCsvText(columns: string[], rows: unknown[][]): string {
-  const esc = (value: unknown) => {
-    const text = value == null ? "" : typeof value === "object" ? JSON.stringify(value) : String(value);
-    return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
-  };
-  return [columns.map(esc).join(","), ...rows.map((row) => row.map(esc).join(","))].join("\r\n");
-}
-
-function downloadCsv(filename: string, columns: string[], rows: unknown[][]) {
-  const blob = new Blob(["\ufeff" + toCsvText(columns, rows)], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 2000);
-}
-
-const PAGE_X = { xs: 3, md: "60px" } as const;
-
-const DEFAULT_UI = {
-  accent: "indigo", radius: 14, min_height: 260, show_unit: true,
-  animate: true, align: "left", columns: 1,
-} as UiSpec;
-
-/** 预览页右上角浮层按钮（编辑 / 导出同一套样式） */
-const FLOAT_BTN_SX = {
-  position: "fixed", top: 68, zIndex: 40,
-  textTransform: "none", fontSize: 12.5, borderRadius: 2, px: 1.5,
-  bgcolor: "rgba(255,255,255,0.94)", border: "1px solid #E8EEF8",
-  boxShadow: "0 2px 10px rgba(15,23,42,0.07)", color: "#334155",
-  opacity: 0.8, transition: "opacity .15s, border-color .15s, box-shadow .15s",
-  "&:hover": { bgcolor: "#fff", opacity: 1, borderColor: "#D8E2F5", boxShadow: "0 4px 14px rgba(15,23,42,0.1)" },
-} as const;
-
-function cellText(value: unknown): string {
-  if (value === null || value === undefined) return "";
-  return typeof value === "object" ? JSON.stringify(value) : String(value);
-}
-
-const NUMERAL: Record<string, string> = { "一": "1", "二": "2", "三": "3", "四": "4", "五": "5", "六": "6" };
-const ICONS = ["grid", "chart", "pie", "table", "cloud", "tag", "bulb"];
-const ACCENT_KEYS = Object.keys(ACCENTS) as Accent[];
-
-function readParamQuery(search: URLSearchParams): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  search.forEach((value, key) => {
-    if (key.startsWith("p_")) out[key.slice(2)] = value;
-  });
-  return out;
-}
-
-function buildSearch(view: string, params: Record<string, unknown>): string {
-  const search = new URLSearchParams();
-  if (view) search.set("view", view);
-  Object.entries(params).forEach(([key, value]) => {
-    if (value === undefined || value === null || value === "" || value === "all") return;
-    if (Array.isArray(value)) {
-      if (value.length) search.set(`p_${key}`, value.join(","));
-    } else {
-      search.set(`p_${key}`, String(value));
-    }
-  });
-  const query = search.toString();
-  return `${window.location.pathname}${query ? `?${query}` : ""}`;
-}
+import { GRID_GAP, DESIGN_W, toCsvText, downloadCsv, PAGE_X, DEFAULT_UI, FLOAT_BTN_SX, cellText, NUMERAL, ICONS, ACCENT_KEYS, readParamQuery, buildSearch } from "./utils";
+import { LayersPanel } from "./LayersPanel";
+import { ToolbarButton } from "./ToolbarButton";
+import { HeadingElement } from "./HeadingElement";
+import { TextElement } from "./TextElement";
+import { Inspector } from "./Inspector";
+import { OverlayHost } from "./OverlayHost";
 
 export default function DashboardPage() {
   const { id } = useParams();
@@ -322,7 +257,7 @@ export default function DashboardPage() {
 
   /** 按 key 找画板（含其它页面：弹窗画板可以放在别的页） */
   const findBoard = useCallback((key: string | undefined): BoardArea | null => {
-    const local = boardOf(canvasItems as unknown as import("../features/components/boardTypes").CanvasItem[], key);
+    const local = boardOf(canvasItems as unknown as import("../components/boardTypes").CanvasItem[], key);
     if (local) return local;
     for (const v of doc?.views ?? []) {
       const lists: unknown[][] = [
@@ -930,7 +865,7 @@ export default function DashboardPage() {
       {/* 自由画布（只读，位置与画布编辑器一致） */}
       <Box ref={surfaceRef} sx={{ px: PAGE_X, pb: 6 }}>
         <Box sx={{ position: "relative", width: "100%", height: surfaceHeight * surfaceScale }}>
-          <CanvasDetailContext.Provider value={{ items: canvasItems as unknown as import("../features/components/boardTypes").CanvasItem[], findBoard }}>
+          <CanvasDetailContext.Provider value={{ items: canvasItems as unknown as import("../components/boardTypes").CanvasItem[], findBoard }}>
           <Box sx={{
             position: "absolute", top: 0, left: surfaceOffsetX, width: DESIGN_W, height: surfaceHeight,
             transform: `scale(${surfaceScale})`, transformOrigin: "top left",
@@ -1192,353 +1127,3 @@ export default function DashboardPage() {
 }
 
 /** 左侧图层面板 —— 元素列表，点击选中、上下移动 */
-function LayersPanel({ items, selected, onSelect, viewTitle }: {
-  items: DocItem[];
-  selected: string | null;
-  onSelect: (key: string) => void;
-  viewTitle: string;
-}) {
-  const label = (item: DocItem) => {
-    if ((item.type || "chart") === "heading") return item.text || "标题";
-    if (item.type === "text") return item.text?.slice(0, 16) || "文字";
-    if (item.type === "divider") return "分割线";
-    return item.spec?.title || item.title || item.component || "组件";
-  };
-  const glyph = (item: DocItem) => {
-    if ((item.type || "chart") === "heading") return "H";
-    if (item.type === "text") return "T";
-    if (item.type === "divider") return "—";
-    if (item.type === "filter") return "F";
-    return "▦";
-  };
-
-  return (
-    <Box sx={{
-      width: 196, flexShrink: 0, borderRight: "1px solid #EEF3FB", bgcolor: "#fff",
-      position: "sticky", top: 56, height: "calc(100vh - 56px)", overflowY: "auto",
-      px: 1, py: 1.25,
-    }}>
-      <Typography sx={{ fontSize: 10.5, color: "#94A3B8", fontWeight: 600, px: 1, mb: 0.75, letterSpacing: 0.6 }}>
-        图层 {viewTitle ? `· ${viewTitle}` : ""}
-      </Typography>
-      {items.map((item) => {
-        const active = selected === item.key;
-        return (
-          <Box
-            key={item.key}
-            onClick={() => onSelect(item.key)}
-            sx={{
-              display: "flex", alignItems: "center", gap: 0.75, px: 1, py: 0.55,
-              borderRadius: 1.25, cursor: "pointer", mb: 0.25,
-              bgcolor: active ? "rgba(79,70,229,0.08)" : "transparent",
-              "&:hover": { bgcolor: active ? "rgba(79,70,229,0.08)" : "rgba(15,23,42,0.03)" },
-            }}
-          >
-            <Box sx={{
-              width: 18, height: 18, borderRadius: 0.75, flexShrink: 0,
-              display: "grid", placeItems: "center", fontSize: 9.5,
-              bgcolor: active ? "#4F46E5" : "#F1F5F9",
-              color: active ? "#fff" : "#64748B",
-            }}>
-              {glyph(item)}
-            </Box>
-            <Typography sx={{
-              fontSize: 11.5, color: active ? "#4F46E5" : "#475569",
-              fontWeight: active ? 600 : 400, whiteSpace: "nowrap",
-              overflow: "hidden", textOverflow: "ellipsis",
-            }}>
-              {label(item)}
-            </Typography>
-          </Box>
-        );
-      })}
-      <Typography sx={{ fontSize: 10.5, color: "#B6C2D2", px: 1, mt: 1 }}>
-        {items.length} 个元素
-      </Typography>
-    </Box>
-  );
-}
-
-function ToolbarButton({ icon, label, onClick }: { icon: ReactNode; label: string; onClick: () => void }) {
-  return (
-    <Button size="small" startIcon={icon} onClick={onClick}
-      sx={{ textTransform: "none", fontSize: 12, borderRadius: 1.75, px: 1.1, color: "#334155" }}>
-      {label}
-    </Button>
-  );
-}
-
-function HeadingElement({ item }: { item: DocItem }) {
-  return (
-    <Box sx={{
-      height: "100%", display: "flex", alignItems: "center", gap: 1.25,
-      pr: 26,
-    }}>
-      <Box sx={{
-        width: 26, height: 26, borderRadius: "9px", flexShrink: 0,
-        background: "linear-gradient(135deg, #6366F1, #818CF8)", color: "#fff",
-        display: "grid", placeItems: "center", fontSize: 12, fontWeight: 700,
-      }}>
-        {NUMERAL[item.index || ""] || item.index || "·"}
-      </Box>
-      <Typography sx={{ fontSize: 15, fontWeight: 700, color: "#0F172A", letterSpacing: -0.2 }} noWrap>
-        {item.text}
-      </Typography>
-      {item.note ? (
-        <Typography sx={{ fontSize: 11.5, color: "#94A3B8" }} noWrap>{item.note}</Typography>
-      ) : null}
-    </Box>
-  );
-}
-
-function TextElement({ item }: { item: DocItem }) {
-  return (
-    <Typography sx={{
-      fontSize: item.size ?? 13,
-      fontWeight: item.weight ?? 400,
-      color: "#334155",
-      textAlign: item.align ?? "left",
-      whiteSpace: "pre-wrap",
-      lineHeight: 1.75,
-      px: 0.25,
-    }}>
-      {item.text}
-    </Typography>
-  );
-}
-
-/** 属性面板：文本元素 / 数据组件的配置 */
-function Inspector({ open, item, datasets, onClose, onChange, onSpecChange, onDelete }: {
-  open: boolean;
-  item: DocItem | null;
-  datasets: DatasetBrief[];
-  onClose: () => void;
-  onChange: (patch: Partial<DocItem>, debounce?: boolean) => void;
-  onSpecChange: (spec: ComponentSpec, debounce?: boolean) => void;
-  onDelete: () => void;
-}) {
-  const spec = item?.spec;
-  const { groups } = useDatasetFields(spec?.binding?.dataset_id ?? null);
-  if (!item) return null;
-  const type = item.type || "chart";
-  const kind = ((item.component || "").replace("base.", "") || "") as keyof typeof KIND_LABEL;
-
-  const patchSpec = (patch: Partial<ComponentSpec>) => {
-    if (!spec) return;
-    onSpecChange({ ...spec, ...patch });
-  };
-  const patchBinding = (patch: Partial<ComponentSpec["binding"]>) => {
-    if (!spec) return;
-    onSpecChange({ ...spec, binding: { ...spec.binding, ...patch } });
-  };
-  const patchCompute = (patch: Partial<ComponentSpec["compute"]>) => {
-    if (!spec) return;
-    onSpecChange({ ...spec, compute: { ...spec.compute, ...patch } });
-  };
-  const patchUi = (patch: Partial<ComponentSpec["ui"]>) => {
-    if (!spec) return;
-    onSpecChange({ ...spec, ui: { ...spec.ui, ...patch } });
-  };
-
-  if (!open) return null;
-
-  return (
-    <Box
-      role="complementary"
-      aria-label="元素属性"
-      sx={{
-        position: "fixed", top: 56, right: 0, bottom: 0, width: 344, maxWidth: "94vw",
-        bgcolor: "#fff", borderLeft: "1px solid #EEF3FB", zIndex: 1200,
-        boxShadow: "-12px 0 30px -26px rgba(15,23,42,0.5)",
-        display: "flex", flexDirection: "column", overflowY: "auto",
-      }}>
-      <Box sx={{ px: 2, py: 1.5, display: "flex", alignItems: "center", gap: 1, borderBottom: "1px solid #EEF3FB", position: "sticky", top: 0, bgcolor: "#fff", zIndex: 1 }}>
-        <Typography sx={{ fontSize: 13, fontWeight: 700, color: "#0F172A", flex: 1 }}>
-          {type === "heading" ? "标题元素" : type === "text" ? "文字元素"
-            : type === "divider" ? "分割线" : (KIND_LABEL[kind] || "组件")}
-        </Typography>
-        <IconButton size="small" onClick={onDelete}><Delete sx={{ fontSize: 15 }} /></IconButton>
-        <IconButton size="small" onClick={onClose}><Close sx={{ fontSize: 16 }} /></IconButton>
-      </Box>
-
-      <Box sx={{ p: 2, display: "flex", flexDirection: "column", gap: 1.25 }}>
-        {type === "heading" && (
-          <>
-            <TextField size="small" label="标题" value={item.text || ""}
-              onChange={(e) => onChange({ text: e.target.value }, true)} />
-            <TextField size="small" label="说明" value={item.note || ""}
-              onChange={(e) => onChange({ note: e.target.value }, true)} />
-            <Box sx={{ display: "flex", gap: 1 }}>
-              <TextField size="small" label="编号" value={item.index || ""}
-                onChange={(e) => onChange({ index: e.target.value.slice(0, 4) }, true)} sx={{ width: 100 }} />
-              <Select size="small" value={item.icon || "grid"}
-                onChange={(e) => onChange({ icon: e.target.value })} sx={{ flex: 1, fontSize: 12.5 }}>
-                {ICONS.map((icon) => <MenuItem key={icon} value={icon} sx={{ fontSize: 12.5 }}>{icon}</MenuItem>)}
-              </Select>
-            </Box>
-          </>
-        )}
-
-        {type === "text" && (
-          <>
-            <TextField size="small" label="文字" value={item.text || ""} multiline minRows={4}
-              onChange={(e) => onChange({ text: e.target.value }, true)} />
-            <Box sx={{ display: "flex", gap: 1 }}>
-              <TextField size="small" type="number" label="字号" value={item.size ?? 13}
-                onChange={(e) => onChange({ size: Number(e.target.value) }, true)} sx={{ width: 96 }} />
-              <Select size="small" value={item.weight ?? 400}
-                onChange={(e) => onChange({ weight: Number(e.target.value) })} sx={{ width: 110, fontSize: 12.5 }}>
-                {[400, 500, 600, 700].map((weight) => (
-                  <MenuItem key={weight} value={weight} sx={{ fontSize: 12.5 }}>{weight}</MenuItem>
-                ))}
-              </Select>
-            </Box>
-            <ToggleButtonGroup exclusive size="small" value={item.align || "left"}
-              onChange={(_, next) => next && onChange({ align: next })}>
-              {(["left", "center", "right"] as const).map((align) => (
-                <ToggleButton key={align} value={align} sx={{ px: 1.5, fontSize: 11.5 }}>{align}</ToggleButton>
-              ))}
-            </ToggleButtonGroup>
-          </>
-        )}
-
-        {type === "divider" && (
-          <Typography sx={{ fontSize: 12, color: "#94A3B8" }}>分割线只影响布局，没有可配置项。</Typography>
-        )}
-
-        {(type === "chart" || type === "filter") && spec && (
-          <>
-            <TextField size="small" label="标题" value={spec.title}
-              onChange={(e) => patchSpec({ title: e.target.value })} />
-            <TextField size="small" label="副标题" value={spec.subtitle}
-              onChange={(e) => patchSpec({ subtitle: e.target.value })} />
-
-            {type === "chart" && (
-              <>
-                <Typography sx={{ fontSize: 11.5, fontWeight: 600, color: "#64748B", mt: 0.5 }}>数据</Typography>
-                <Select size="small" displayEmpty value={spec.binding.dataset_id ?? ""}
-                  onChange={(e) => patchBinding({ dataset_id: e.target.value ? Number(e.target.value) : null })}
-                  sx={{ fontSize: 12.5 }}>
-                  <MenuItem value="" sx={{ fontSize: 12.5 }}>选择数据集</MenuItem>
-                  {datasets.map((dataset) => (
-                    <MenuItem key={dataset.id} value={dataset.id} sx={{ fontSize: 12.5 }}>{dataset.name}</MenuItem>
-                  ))}
-                </Select>
-                <Box sx={{ display: "flex", gap: 1 }}>
-                  <Select size="small" displayEmpty value={spec.binding.dimension ?? ""}
-                    onChange={(e) => patchBinding({ dimension: e.target.value || null })} sx={{ flex: 1, fontSize: 12.5 }}>
-                    <MenuItem value="" sx={{ fontSize: 12.5 }}>维度</MenuItem>
-                    {groups.dimensions.map((field) => (
-                      <MenuItem key={field.name} value={field.name} sx={{ fontSize: 12.5 }}>{field.name}</MenuItem>
-                    ))}
-                  </Select>
-                  <Select size="small" displayEmpty value={spec.binding.metric ?? ""}
-                    onChange={(e) => patchBinding({ metric: e.target.value || null })} sx={{ flex: 1, fontSize: 12.5 }}>
-                    <MenuItem value="" sx={{ fontSize: 12.5 }}>指标</MenuItem>
-                    {groups.metrics.map((field) => (
-                      <MenuItem key={field.name} value={field.name} sx={{ fontSize: 12.5 }}>{field.name}</MenuItem>
-                    ))}
-                  </Select>
-                </Box>
-                <Box sx={{ display: "flex", gap: 1 }}>
-                  <Select size="small" value={spec.binding.agg}
-                    onChange={(e) => patchBinding({ agg: e.target.value })} sx={{ width: 104, fontSize: 12.5 }}>
-                    {["SUM", "AVG", "MAX", "MIN", "COUNT", "COUNT_DISTINCT"].map((agg) => (
-                      <MenuItem key={agg} value={agg} sx={{ fontSize: 12.5 }}>{agg}</MenuItem>
-                    ))}
-                  </Select>
-                  <TextField size="small" type="number" label="前 N" value={spec.binding.top_n}
-                    onChange={(e) => patchBinding({ top_n: Number(e.target.value) })} sx={{ width: 90 }} />
-                  <Select size="small" value={spec.binding.sort}
-                    onChange={(e) => patchBinding({ sort: e.target.value as "desc" | "asc" })} sx={{ flex: 1, fontSize: 12.5 }}>
-                    <MenuItem value="desc" sx={{ fontSize: 12.5 }}>降序</MenuItem>
-                    <MenuItem value="asc" sx={{ fontSize: 12.5 }}>升序</MenuItem>
-                  </Select>
-                </Box>
-                <Box sx={{ display: "flex", gap: 1 }}>
-                  <Select size="small" value={spec.compute.format}
-                    onChange={(e) => patchCompute({ format: e.target.value as ComponentSpec["compute"]["format"] })}
-                    sx={{ flex: 1, fontSize: 12.5 }}>
-                    {[["int", "整数"], ["w", "万"], ["pct", "百分比"], ["money", "金额"], ["date", "日期"], ["text", "文本"]].map(([value, label]) => (
-                      <MenuItem key={value} value={value} sx={{ fontSize: 12.5 }}>{label}</MenuItem>
-                    ))}
-                  </Select>
-                  <TextField size="small" type="number" label="小数位" value={spec.compute.decimals}
-                    onChange={(e) => patchCompute({ decimals: Number(e.target.value) })} sx={{ width: 94 }} />
-                </Box>
-                <Box sx={{ display: "flex", gap: 0.75, flexWrap: "wrap", mt: 0.5 }}>
-                  {ACCENT_KEYS.map((key) => (
-                    <Box key={key} onClick={() => patchUi({ accent: key })}
-                      sx={{
-                        width: 20, height: 20, borderRadius: "50%", cursor: "pointer",
-                        bgcolor: ACCENTS[key].main,
-                        outline: spec.ui.accent === key ? `2px solid ${ACCENTS[key].main}` : "none",
-                        outlineOffset: 2,
-                      }} />
-                  ))}
-                </Box>
-              </>
-            )}
-
-            {type === "filter" && (
-              <Typography sx={{ fontSize: 11, color: "#94A3B8", lineHeight: 1.7 }}>
-                筛选字段在「组件库 → 筛选栏」里维护；这里只控制实例的标题与位置。
-              </Typography>
-            )}
-
-            <Typography sx={{ fontSize: 10.5, color: "#94A3B8" }}>
-              组件类型：{KIND_LABEL[kind] || "—"}
-            </Typography>
-          </>
-        )}
-
-        {type === "chart" && !spec && (
-          <Typography sx={{ fontSize: 12, color: "#94A3B8" }}>这个元素还没有配置组件</Typography>
-        )}
-      </Box>
-    </Box>
-  );
-}
-
-/** 浮层宿主 —— 弹窗 / 抽屉复用同一套渲染器 */
-function OverlayHost({ overlay, onClose }: {
-  overlay: { type: "modal" | "drawer"; title: string; kind: string; payload: RenderPayload } | null;
-  onClose: () => void;
-}) {
-  const content = overlay ? (() => {
-    const kind = overlay.payload.kind;
-    const Renderer = kind ? RENDERERS[kind] : null;
-    if (!Renderer) return <Typography sx={{ p: 2, fontSize: 12, color: "#94A3B8" }}>无法渲染</Typography>;
-    return <Box sx={{ height: "100%" }}><Renderer payload={overlay.payload} ui={overlay.payload.ui ?? DEFAULT_UI} /></Box>;
-  })() : null;
-
-  if (!overlay) return null;
-
-  const bodyHeight = overlay.kind === "rank_list"
-    ? Math.min(560, 110 + (overlay.payload.items?.length ?? 10) * 52)
-    : overlay.kind === "table" ? "64vh" : 460;
-
-  if (overlay.type === "drawer") {
-    return (
-      <Drawer anchor="right" open onClose={onClose}
-        PaperProps={{ sx: { width: 780, maxWidth: "96vw" } }} aria-label={overlay.title}>
-        <Box sx={{ px: 1.5, py: 1, display: "flex", alignItems: "center", justifyContent: "flex-end" }}>
-          <IconButton size="small" onClick={onClose}><Close sx={{ fontSize: 16 }} /></IconButton>
-        </Box>
-        <Box sx={{ p: 2, height: "calc(100% - 48px)" }}>{content}</Box>
-      </Drawer>
-    );
-  }
-
-  return (
-    <Dialog open onClose={onClose} maxWidth="lg" fullWidth
-      PaperProps={{ sx: { borderRadius: 3 } }} aria-label={overlay.title}>
-      <Box sx={{ px: 1.5, pt: 1, display: "flex", alignItems: "center", justifyContent: "flex-end" }}>
-        <IconButton size="small" onClick={onClose}><Close sx={{ fontSize: 16 }} /></IconButton>
-      </Box>
-      <DialogContent sx={{ p: 2, pt: 0.5 }}>
-        <Box sx={{ height: bodyHeight }}>{content}</Box>
-      </DialogContent>
-    </Dialog>
-  );
-}

@@ -11,8 +11,8 @@ import {
   AdminPanelSettings, ArrowBack, BugReport, HowToReg, HubOutlined, MonitorHeart, People,
   SmartToy, SpaceDashboard, Timeline,
 } from "@mui/icons-material";
-import { useAuth } from "../hooks/useAuth";
-import BiSideNav, { type SideNavItem } from "../features/bi-dashboard/BiSideNav";
+import { useAuth } from "../features/auth/useAuth";
+import BiSideNav, { type SideNavItem } from "../features/shell/BiSideNav";
 import OverviewPanel from "../features/admin/OverviewPanel";
 import UsersPanel from "../features/admin/UsersPanel";
 import RegistrationsPanel from "../features/admin/RegistrationsPanel";

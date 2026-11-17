@@ -6,25 +6,25 @@ import {
   Box,
   CircularProgress,
 } from "@mui/material";
-import { buildTheme } from "./theme";
-import { AuthProvider } from "./contexts/AuthContext";
-import { ThemeModeProvider, useThemeMode } from "./contexts/ThemeContext";
-import ProtectedRoute from "./components/common/ProtectedRoute";
-import { SnackbarProvider } from "./components/common/SnackbarProvider";
-import ErrorBoundary from "./components/common/ErrorBoundary";
-import TopBar from "./components/layout/TopBar";
+import { buildTheme } from "../../theme";
+import { AuthProvider } from "../auth/AuthContext";
+import { ThemeModeProvider, useThemeMode } from "./ThemeContext";
+import ProtectedRoute from "./ProtectedRoute";
+import { SnackbarProvider } from "../../components/common/SnackbarProvider";
+import ErrorBoundary from "../../components/common/ErrorBoundary";
+import TopBar from "./TopBar";
 
-const LoginPage = lazy(() => import("./pages/LoginPage"));
-const BiDashboardPage = lazy(() => import("./pages/BiDashboardPage"));
-const BiViewPage = lazy(() => import("./pages/BiViewPage"));
-const AuditLogPage = lazy(() => import("./pages/AuditLogPage"));
-const ComponentLibraryPage = lazy(() => import("./pages/ComponentLibraryPage"));
-const ComponentEditorPage = lazy(() => import("./pages/ComponentEditorPage"));
-const CanvasBoardPage = lazy(() => import("./pages/CanvasBoardPage"));
-const ProjectsPage = lazy(() => import("./pages/ProjectsPage"));
-const DashboardPage = lazy(() => import("./pages/DashboardPage"));
-const AdminPage = lazy(() => import("./pages/AdminPage"));
-const McpAccessPage = lazy(() => import("./pages/McpAccessPage"));
+const LoginPage = lazy(() => import("../../pages/LoginPage"));
+const BiDashboardPage = lazy(() => import("../../pages/BiDashboardPage"));
+const BiViewPage = lazy(() => import("../viewer/BiViewPage"));
+const AuditLogPage = lazy(() => import("../../pages/AuditLogPage"));
+const ComponentLibraryPage = lazy(() => import("../components/pages/ComponentLibraryPage"));
+const ComponentEditorPage = lazy(() => import("../components/pages/ComponentEditorPage"));
+const CanvasBoardPage = lazy(() => import("../../pages/CanvasBoardPage"));
+const ProjectsPage = lazy(() => import("../../pages/ProjectsPage"));
+const DashboardPage = lazy(() => import("../viewer/DashboardPage"));
+const AdminPage = lazy(() => import("../../pages/AdminPage"));
+const McpAccessPage = lazy(() => import("../mcp/McpAccessPage"));
 
 function PageLoader() {
   return (

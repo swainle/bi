@@ -18,7 +18,7 @@ import {
   VisibilityOff,
   LogoDev as LogoIcon,
 } from "@mui/icons-material";
-import { useAuth } from "../hooks/useAuth";
+import { useAuth } from "../features/auth/useAuth";
 import { extractErrorMessage } from "../api/client";
 import { getDepartments, type DepartmentOption } from "../api/auth";
 

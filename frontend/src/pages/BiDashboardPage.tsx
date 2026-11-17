@@ -14,7 +14,7 @@ import {
 } from "@mui/icons-material";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import client from "../api/client";
-import { useAuth } from "../hooks/useAuth";
+import { useAuth } from "../features/auth/useAuth";
 import DataSources from "../features/bi-dashboard/DataSources";
 import SqlQueryPanel from "../features/bi-dashboard/SqlQueryPanel";
 import DatasetPanel from "../features/bi-dashboard/DatasetPanel";
@@ -23,7 +23,7 @@ import TeamBoardsPanel from "../features/bi-dashboard/TeamBoardsPanel";
 import TeamShareDialog from "../features/bi-dashboard/TeamShareDialog";
 import AlertRulesDialog from "../features/bi-dashboard/AlertRulesDialog";
 import ReportSubscriptionsDialog from "../features/bi-dashboard/ReportSubscriptionsDialog";
-import BiSideNav, { BI_NAV_ITEMS, type SideNavItem } from "../features/bi-dashboard/BiSideNav";
+import BiSideNav, { BI_NAV_ITEMS, type SideNavItem } from "../features/shell/BiSideNav";
 import BoardThumb from "../features/bi-dashboard/BoardThumb";
 import type { DashboardDoc } from "../features/components/types";
 
