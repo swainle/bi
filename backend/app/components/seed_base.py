@@ -86,7 +86,7 @@ BASE = [
          "agg": "SUM", "top_n": 40, "sort": "desc", "metrics": [], "limit": 500}}),
     ("base.wordcloud", "词云", "wordcloud", "词频", "标签按权重，支持分隔符拆词",
      {**_spec("词云", dim="痛点", metric="热销指数", agg="SUM"),
-      # 词云词 = 痛点（「颗粒碎末多 / 分量不足」这种，按 / 拆成一个个词），权重 = 热销指数：
+      # 词云词 = 痛点（「粉末偏多 / 分量不足」这种，按 / 拆成一个个词），权重 = 热销指数：
       # 一眼看出「热销品最常被吐槽什么」。不写死成「自动挑一列」（那样只会蹦出 平台A/B/C 三个词）
       "binding": {"dataset_id": None, "dimension": "痛点", "metric": "热销指数", "agg": "SUM",
                   "split": "/", "top_n": 30, "sort": "desc", "metrics": [], "limit": 500},
