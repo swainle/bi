@@ -2,6 +2,8 @@
 
 > 给在本仓库工作的开发者 / AI：**动手前先读完这一份**。里面的规矩都是踩过坑之后定下来的，不是建议。
 > 规矩有更新就改这个文件（见最后一节），不要只写在对话里。
+> 架构地图（44 个板块 · 依赖方向 · 新增板块的标准动作）见 `docs/BI架构与板块化扩展说明.md`：本文讲「必须怎么做」，那份讲「东西在哪、新块怎么加」。
+> 商用开发规范（开源许可分级 / 模块化 / 500+ 人工程质量 / 单文件 ≤300 行 / 故障隔离）见 `docs/开发规范.md`，新增依赖前先过 §1 检查清单。
 
 ---
 
@@ -477,7 +479,7 @@ DATABASE_URL="postgresql://cavan-m4max@127.0.0.1:5432/mingcebi_dev" DEBUG=true \
 - 模型配置唯一解析入口 `backend/app/services/ai_models.py::candidate_configs()`，顺序：
   **库默认 → 库其它启用（按 id）→ `data/ai_models.json` → 环境变量**（按 `chat_url + model + key` 去重）。
   调用方必须**逐个真实请求**：超时 / HTTP 非 2xx / 空回复就换下一个（`bi_ai_engine._call_llm` 已实现；
-  `routers/bi_engine._call_llm` 只是委托，不要恢复成第二套）。新增 AI 调用点时直接调 `bi_ai_engine._call_llm`，
+  `routers/bi_engine/common.py::_call_llm` 只是委托，不要恢复成第二套）。新增 AI 调用点时直接调 `bi_ai_engine._call_llm`，
   不要各自读 env / 只取默认模型。Key 加密存（`services/crypto`）、接口只回掩码，
   「测试连接」必须是真实请求，不许写死成功。
 - **管理边界（基本逻辑，2026-11-14）**：**管理员管系统级**（模型配置 / 错误日志 / 运维 / 部门树 / 全部部门数据）；

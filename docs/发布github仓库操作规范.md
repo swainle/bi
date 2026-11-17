@@ -5,11 +5,11 @@
 
 | 项 | 值 |
 |---|---|
-| 仓库 | `github.com/cavan199/MingceBI`（私有） |
+| 仓库 | `github.com/cavan199/MingceBI`（私有）· 平台镜像 `gitea`=`cbb888/mingcebi` |
 | 默认分支 | `main` |
-| 当前版本 | `v0.1.1` |
+| 当前版本 | `v0.3.0` |
 | 规范建立 | 2026-11-14 |
-| 最后更新 | 2026-11-14 |
+| 最后更新 | 2026-11-17（文件更名为 `发布github仓库操作规范.md`） |
 
 ---
 
@@ -217,6 +217,7 @@ chore:          ...
 
 ```bash
 git push origin main
+git push gitea HEAD:main     # 平台镜像仓库（ssh://git@gitea/cbb888/mingcebi.git）
 ```
 
 本机到 GitHub 有间歇性 TLS 握手超时，失败时用 HTTP/1.1 重试：
