@@ -489,7 +489,7 @@ def rpc(
         return {"jsonrpc": "2.0", "id": req_id, "result": {
             "protocolVersion": "2025-06-18",
             "capabilities": {"tools": {"listChanged": False}},
-            "serverInfo": {"name": "mingcebi-mcp", "version": "0.2.0"},
+            "serverInfo": {"name": "mingcebi-mcp", "version": "0.3.0"},
             "instructions": _SAFETY_INSTRUCTIONS,
         }}
 

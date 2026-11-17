@@ -303,6 +303,8 @@ scripts/**                           组件样式/
 | `docs` | 2026-11-14 | — | 规范补充 1.2 密钥与凭据脱敏；新增 `scripts/scan_secrets.sh` 发布前门禁 | 脚本双向验证（干净=0 / 假 key=1）、全历史扫描无命中 |
 | `fix` | 2026-11-14 | `81311d1` | 移除数据库默认弱口令：缺 `DATABASE_URL` 即报错；query_router / doris_sync 统一复用 settings | pytest 278；缺配置场景实测抛错；正常配置行为不变 |
 | `feat` | 2026-11-14 | `8aedfb4` | AI 接口鉴权（MCP 方案 S0）：`bi:ai:use/sql/export` 权限码、迁移 046、角色回填、QA 矩阵 | pytest 278 |
+| `v0.2.0` | 2026-11-16 | `ad529fe` | MCP 网关与生产化（迁移 047-062）、安全管控（出网通道 / 注入防护 / 敏感字段 / 水印 / RLS 兜底 / 安全事件）、AI 配额与用量监控、项目英文名统一 MingceBI（迁移 063） | pytest 344 · vitest 58 · tsc + build |
+| `v0.3.0` | 2026-11-17 | `73bc7ed`+`525336a` | 板块化收敛（B05/B09/B10/B14/B19/B22/B32/B34/B37/B38 归位、旧路径垫片）、前端千行文件拆分（B24/B27/B28/B31）、架构与板块化说明、商用开发规范、依赖许可台账、单文件 ≤300 行棘轮门禁、源码域脱敏收口 | pytest 344 · vitest 58 · tsc + build · `check_file_limit` 528/82 无新增 · `scan_secrets` 0 |
 
 ---
 
