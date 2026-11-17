@@ -6,7 +6,7 @@ import json
 
 import requests
 
-from app.services import ai_models
+from app.ai.engine import models as ai_models
 
 
 class _FakeResponse:

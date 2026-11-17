@@ -16,7 +16,7 @@ from app.dashboards import render_cache
 from app.dashboards import repository as repo
 from app.dashboards import sources
 from app.dashboards import render as renderer
-from app.dashboards.models import validate_doc
+from app.dashboards.models import DashboardDoc, validate_doc
 from app.database import get_db
 from app.middleware.audit import log_audit
 from app.middleware.auth import get_current_user

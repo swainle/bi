@@ -12,7 +12,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.errors import repository as repo
+from app.observability.errors import repository as repo
 from app.middleware.auth import get_current_user, get_optional_user
 from app.models.user import User
 

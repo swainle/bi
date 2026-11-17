@@ -12,7 +12,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.query import executor, redis_bus, running, slowlog
+from app.observability import slowlog
+from app.query import executor, redis_bus, running
 
 
 @pytest.fixture(autouse=True)
