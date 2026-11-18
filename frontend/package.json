@@ -5,9 +5,9 @@
   "type": "module",
   "description": "明策BI 前端 — 自研 BI 画布引擎 / 看板设计器 / AI 生成",
   "scripts": {
-    "dev": "bash dev.sh",
+    "dev": "vite",
     "dev:base": "vite",
-    "dev:me": "bash dev.sh",
+    "dev:me": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",

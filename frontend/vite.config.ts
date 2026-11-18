@@ -1,15 +1,22 @@
 /// <reference types="vite/client" />
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 
-const apiTarget = process.env.VITE_API_TARGET || "http://127.0.0.1:8300";
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, ".", ["FRONTEND_", "VITE_API_TARGET"]);
+  const host = env.FRONTEND_HOST || "0.0.0.0";
+  const port = Number(env.FRONTEND_PORT || "5300");
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error("FRONTEND_PORT 必须是 1–65535 之间的整数");
+  }
+  const apiTarget = env.VITE_API_TARGET || "http://127.0.0.1:8300";
 
-export default defineConfig({
+  return {
   plugins: [react()],
   server: {
     // 0.0.0.0 = 局域网可访问（手机/其他电脑用 http://<本机IP>:5300 打开）
-    host: "0.0.0.0",
-    port: 5300,
+    host,
+    port,
     strictPort: true,
     proxy: {
       "/api": { target: apiTarget, changeOrigin: true },
@@ -42,4 +49,5 @@ export default defineConfig({
     },
     chunkSizeWarningLimit: 900,
   },
+  };
 });
