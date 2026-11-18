@@ -10,6 +10,8 @@
 
 from __future__ import annotations
 
+from app.timezone import time_text
+
 import os
 import threading
 import time
@@ -144,7 +146,7 @@ def recent(limit: int = 50, user_id: int | None = None) -> list[dict]:
         rows = db.execute(text(sql), params).fetchall()
         return [
             {
-                "created_at": str(r[0] or ""),
+                "created_at": time_text(r[0] or ""),
                 "user_id": r[1],
                 "table": r[2],
                 "elapsed_ms": float(r[3] or 0),

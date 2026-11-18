@@ -2,7 +2,7 @@
 
 设计目标：
     1. 前端只描述「要什么」（维度 / 指标 / 粒度 / 筛选），不拼 SQL
-    2. 服务端统一负责：白名单、行级权限、参数绑定、LIMIT
+    2. 服务端统一负责：系统表保护、行级权限、参数绑定、LIMIT
     3. 旧接口（扁平 payload）可以通过 from_legacy() 无损转换过来
 
 这个文件只放数据结构与校验，不碰数据库。
@@ -174,6 +174,7 @@ class QueryObject(BaseModel):
     table: str
     # 虚拟数据集（自定义 SQL）：FROM (subquery) AS __ds，此时 table 只作标识
     subquery: str | None = None
+    calculated_columns: dict[str, str] = Field(default_factory=dict)
     dimensions: list[DimensionSpec] = Field(default_factory=list)
     # 明细列：原样 SELECT，不参与分组（榜单明细 / 导出这类场景）
     columns: list[DimensionSpec] = Field(default_factory=list)

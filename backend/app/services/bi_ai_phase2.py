@@ -4,10 +4,11 @@
 """
 from __future__ import annotations
 
+from app.timezone import china_now
+
 import json, re, time, uuid, io, traceback
 from typing import Optional
 from dataclasses import dataclass, field
-from datetime import datetime
 
 import pandas as pd
 import numpy as np
@@ -25,7 +26,7 @@ class AITask:
     progress: int = 0
     message: str = ""
     result: dict = field(default_factory=dict)
-    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    created_at: str = field(default_factory=lambda: china_now().isoformat())
 
     def to_dict(self):
         return {

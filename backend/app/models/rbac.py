@@ -1,5 +1,6 @@
 """RBAC 权限模型 — 部门 / 角色 / 权限"""
-from datetime import datetime, timezone
+
+from app.timezone import utc_now
 
 from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, ForeignKey, Table
 from sqlalchemy.orm import relationship
@@ -34,7 +35,7 @@ class Department(Base):
     is_global_admin = Column(Boolean, default=False, server_default="false")
     # 该部门主管级以上可审批所有部门的注册（股东高层）
     approves_all_registrations = Column(Boolean, default=False, server_default="false")
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=utc_now)
 
     parent = relationship("Department", remote_side=[id], backref="children")
 
@@ -53,7 +54,7 @@ class Role(Base):
     data_scope = Column(Text, nullable=False, default="dept", server_default="dept")
     # 职级排序（越大越高）
     sort_order = Column(Integer, nullable=False, default=0, server_default="0")
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=utc_now)
 
     # 该角色拥有的权限码列表（从 role_permission 表加载）
     permissions = relationship("Permission", secondary=role_permission, back_populates="roles", lazy="selectin")

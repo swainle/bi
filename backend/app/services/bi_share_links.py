@@ -1,7 +1,9 @@
 """明策BI分享链接服务 — 生成带过期的只读访问链接."""
+
+from app.timezone import china_now
 import hashlib
 import secrets
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
@@ -18,7 +20,7 @@ def generate_share_link(db: "Session", dashboard_id: int, user_id: int,
         expires_hours: 过期时间（默认 7 天 = 168 小时）
     """
     token = secrets.token_urlsafe(32)
-    expires_at = datetime.now(timezone.utc) + timedelta(hours=expires_hours)
+    expires_at = china_now() + timedelta(hours=expires_hours)
 
     # 存储分享记录（可复用 bi_team 表的 share 机制）
     share_data = {
@@ -38,7 +40,7 @@ def validate_share_token(token: str, share_data: dict) -> bool:
         return False
 
     expires_at = datetime.fromisoformat(share_data["expires_at"])
-    if datetime.now(timezone.utc) > expires_at:
+    if china_now() > expires_at:
         return False
 
     return share_data["token"] == token

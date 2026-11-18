@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from app.timezone import china_now, time_text
+
+
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Body, File, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy import text
@@ -23,14 +27,12 @@ from app.models.user import User
 # ═══════ 安全内核（独立模块，改这里不会牵连路由逻辑）═══════
 from app.security.errors import RlsBlockedError, SecurityError
 from app.security.rls import apply_to_sql, decide as rls_decide, where_sql as rls_where
-from app.security.rls.injector import inject_conditions
 from app.admin.permissions import require
 
 # AI 端点统一鉴权（S0）：登录 + 权限码；此前多数端点匿名可调用
 _AI_USE = [Depends(require("bi:ai:use", "没有 AI 使用权限，请联系管理员开通"))]
 _AI_SQL = [Depends(require("bi:ai:sql", "没有 AI 生成 SQL 的权限，请联系管理员开通"))]
 from app.security.rls.models import RlsDecision
-from app.security.sql_guard import guard_readonly, referenced_tables
 
 # ═══════ 分布式读写分离 ═══════
 import os as _os
@@ -133,8 +135,8 @@ def compute_analysis(
     metric_col = payload.get("metric_col", "")
     func_type = payload.get("func", "")
 
-    if table not in ALLOWED_TABLES and not table.startswith("bi_ai_"):
-        raise HTTPException(404, f"表 {table} 不在白名单中")
+    if not is_queryable(table):
+        raise HTTPException(404, f"表 {table} 不是可访问的业务表")
     if not func_type or func_type not in FUNC_META:
         raise HTTPException(400, f"无效函数类型，支持: {list(FUNC_META)}")
 
@@ -277,11 +279,11 @@ def _refresh_once() -> dict:
     db = SessionLocal()
     try:
         incremental = _incremental_tables(db)
-        # 只刷新真实存在的物化视图：ACCEL_MAP 是按白名单拼的 <table>_agg，多数并没有建
+        # 只刷新真实存在的物化视图：ACCEL_MAP 是按内置演示表拼的 <table>_agg，多数并没有建
         existing_mv = {r[0] for r in db.execute(text(
             "SELECT matviewname FROM pg_matviews WHERE schemaname = current_schema()"
         )).fetchall()}
-        for tbl in ALLOWED_TABLES:
+        for tbl in BUILTIN_TABLES:
             if tbl not in incremental:
                 skipped.append(tbl)
                 continue
@@ -296,7 +298,7 @@ def _refresh_once() -> dict:
                         "INSERT INTO bi_sync_logs (table_name, sync_type, rows_synced, duration_ms, status, started_at, finished_at) "
                         "VALUES (:t, 'incremental', :r, 0, 'success', NOW(), NOW())"
                     ), {"t": tbl, "r": rows})
-                    SYNC_STATE[tbl] = time.strftime("%Y-%m-%d %H:%M:%S")
+                    SYNC_STATE[tbl] = china_now().strftime("%Y-%m-%d %H:%M:%S")
                 db.commit()
                 synced.append(tbl)
             except Exception as exc:
@@ -365,8 +367,8 @@ def _cache_key(table: str, limit: int = 500, offset: int = 0, func: str = "", rl
     raw = f"{table}:{limit}:{offset}:{func}:{rls}"
     return hashlib.md5(raw.encode()).hexdigest()
 
-# 白名单：允许查询的业务表（唯一事实来源在 app/query/whitelist.py）
-from app.query.whitelist import ALLOWED_TABLES  # noqa: E402,F401
+# 内置演示表目录：仅用于默认加速和演示，不限制业务表访问
+from app.query.table_catalog import BUILTIN_TABLES, is_queryable  # noqa: E402,F401
 
 # 模板名称 → 表名
 TEMPLATE_MAP = {
@@ -391,8 +393,10 @@ def list_tables(
     db: Session = Depends(get_db),
 ):
     """返回所有可用 BI 表及其列信息"""
+    names = db.execute(text("SELECT table_name FROM information_schema.tables "
+                            "WHERE table_schema = 'public' AND table_type IN ('BASE TABLE','VIEW')")).fetchall()
     tables = []
-    for tbl in sorted(ALLOWED_TABLES):
+    for tbl in sorted(row[0] for row in names if is_queryable(row[0])):
         try:
             cols = db.execute(text(f"""
                 SELECT column_name, data_type
@@ -411,7 +415,7 @@ def list_tables(
 
 # ═══════ 加速引擎（物化视图路由 + 刷新）═══════
 
-ACCEL_MAP = {tbl: f"{tbl}_agg" for tbl in ALLOWED_TABLES}
+ACCEL_MAP = {tbl: f"{tbl}_agg" for tbl in BUILTIN_TABLES}
 
 def _use_accel(table: str, db: Session) -> tuple[str, bool]:
     """判断是否使用加速表。存在物化视图则返回(mv_name, True)。"""
@@ -434,7 +438,7 @@ def refresh_materialized_views(
 ):
     """刷新物化视图。table 为空则刷新全部。"""
     refreshed = []
-    targets = [table] if table else [t for t in ALLOWED_TABLES]
+    targets = [table] if table else [t for t in BUILTIN_TABLES]
     for t in targets:
         mv = ACCEL_MAP.get(t, "")
         if not mv:
@@ -490,8 +494,8 @@ def get_table_data(
     precomputed: bool = Query(default=True),
 ):
     """查询 BI 业务表数据。precomputed=true 自动走物化视图加速。"""
-    if table not in ALLOWED_TABLES and not table.startswith("bi_ai_"):
-        raise HTTPException(status_code=404, detail=f"表 {table} 不在白名单中")
+    if not is_queryable(table):
+        raise HTTPException(status_code=404, detail=f"表 {table} 不是可访问的业务表")
 
     # 行级权限：先算结论（fail-closed）
     try:
@@ -575,8 +579,8 @@ def export_excel(
     db: Session = Depends(get_db),
 ):
     """导出 BI 表数据为 Excel"""
-    if table not in ALLOWED_TABLES:
-        raise HTTPException(status_code=404, detail=f"表 {table} 不在白名单中")
+    if not is_queryable(table):
+        raise HTTPException(status_code=404, detail=f"表 {table} 不是可访问的业务表")
 
     # 行级权限：导出与查询必须同口径，否则「查不到但导出得到」就是漏洞
     try:
@@ -933,8 +937,8 @@ def query_builder(
     自动生成 SQL 并执行。
     """
     table = payload["table"]
-    if table not in ALLOWED_TABLES and not table.startswith("bi_ai_"):
-        raise HTTPException(404, f"表 {table} 不在白名单中")
+    if not is_queryable(table):
+        raise HTTPException(404, f"表 {table} 不是可访问的业务表")
 
     # 多表 JOIN 支持
     joins = payload.get("joins", [])
@@ -944,8 +948,8 @@ def query_builder(
             jt = str(j["table"])
             j_on = str(j["on"])
             j_type = str(j.get("type", "INNER"))
-            if jt not in ALLOWED_TABLES:
-                raise HTTPException(404, f"JOIN 表 {jt} 不在白名单中")
+            if not is_queryable(jt):
+                raise HTTPException(404, f"JOIN 表 {jt} 不是可访问的业务表")
             from_clause += f" {j_type} JOIN {jt} ON {j_on}"
 
     metrics = payload.get("metrics", [])
@@ -1111,8 +1115,8 @@ def set_row_permission(
         raise HTTPException(403, "仅管理员可设置行权限")
 
     table_name = str(payload.get("table_name", "")).strip()
-    if table_name not in ALLOWED_TABLES:
-        raise HTTPException(404, f"表 {table_name} 不在白名单中")
+    if not is_queryable(table_name):
+        raise HTTPException(404, f"表 {table_name} 不是可访问的业务表")
 
     # 存库前把关：非法规则直接拒绝，避免把坏规则留到查询期（那时只能 fail-closed）
     from app.security.rls import compile_rule_text
@@ -1147,7 +1151,7 @@ def list_dataset_versions(
     rows = db.execute(text(
         "SELECT id, version_name, row_count, created_at FROM bi_dataset_versions WHERE table_name=:t ORDER BY id DESC LIMIT 20"
     ), {"t": table}).fetchall()
-    return {"versions": [{"id": r[0], "name": r[1], "rows": r[2], "created_at": str(r[3])} for r in rows]}
+    return {"versions": [{"id": r[0], "name": r[1], "rows": r[2], "created_at": time_text(r[3])} for r in rows]}
 
 
 @router.post("/datasets/snapshot/{table}")
@@ -1157,7 +1161,7 @@ def create_dataset_snapshot(
     db: Session = Depends(get_db),
 ):
     """创建数据集快照"""
-    if table not in ALLOWED_TABLES:
+    if not is_queryable(table):
         raise HTTPException(404)
     count = db.execute(text(f"SELECT count(*) FROM {table}")).scalar()
     db.execute(text(
@@ -1327,7 +1331,7 @@ def execute_metric(metric_id: int, payload: dict = Body(...), db: Session = Depe
     if not row: raise HTTPException(404, "指标不存在")
     formula = row[0]
     table = payload.get("table", "")
-    if table not in ALLOWED_TABLES: raise HTTPException(404, f"表 {table} 不在白名单中")
+    if not is_queryable(table): raise HTTPException(404, f"表 {table} 不是可访问的业务表")
     try:
         result = db.execute(text(f"SELECT {formula} AS result FROM {table}")).scalar()
         return {"metric_id": metric_id, "formula": formula, "table": table, "result": result}
@@ -1368,8 +1372,8 @@ def sync_table(
     db: Session = Depends(get_db),
 ):
     """执行数据同步：full=全量 / incremental=增量（基于 updated_at）"""
-    if table not in ALLOWED_TABLES and not table.startswith("bi_ai_"):
-        raise HTTPException(404, f"表 {table} 不在白名单中")
+    if not is_queryable(table):
+        raise HTTPException(404, f"表 {table} 不是可访问的业务表")
 
     t0 = _time.time()
     if sync_type == "full":
@@ -1394,7 +1398,7 @@ def sync_table(
             "INSERT INTO bi_sync_logs (table_name, sync_type, rows_synced, duration_ms, status, started_at, finished_at) VALUES (:t,:st,:r,:d,'success',NOW(),NOW())"),
             {"t": table, "st": sync_type, "r": rows, "d": int((_time.time()-t0)*1000)})
         db.commit()
-        SYNC_STATE[table] = _time.strftime("%Y-%m-%d %H:%M:%S")
+        SYNC_STATE[table] = china_now().strftime("%Y-%m-%d %H:%M:%S")
         # 增量同步后自动刷物化视图
         try:
             mv = ACCEL_MAP.get(table, "")
@@ -1513,8 +1517,8 @@ def nl_to_sql(payload: dict = Body(...), db: Session = Depends(get_db)):
     table = payload.get("table", "").strip()
     if not question or not table:
         raise HTTPException(400, "question 和 table 不能为空")
-    if table not in ALLOWED_TABLES and not table.startswith("bi_ai_"):
-        raise HTTPException(404, f"表 {table} 不在白名单中")
+    if not is_queryable(table):
+        raise HTTPException(404, f"表 {table} 不是可访问的业务表")
 
     # 获取表结构
     cols = db.execute(text(f"SELECT column_name, data_type FROM information_schema.columns WHERE table_name='{table}' AND table_schema='public' ORDER BY ordinal_position")).fetchall()
@@ -1579,7 +1583,7 @@ def nl_to_sql(payload: dict = Body(...), db: Session = Depends(get_db)):
 @router.get("/ai/diagnose/{table}", dependencies=_AI_USE)
 def ai_diagnose(table: str, db: Session = Depends(get_db)):
     """AI 数据诊断：检测空值/异常/重复"""
-    if table not in ALLOWED_TABLES: raise HTTPException(404)
+    if not is_queryable(table): raise HTTPException(404)
     issues = []
     cols = db.execute(text(f"SELECT column_name, data_type FROM information_schema.columns WHERE table_name='{table}' AND table_schema='public' ORDER BY ordinal_position")).fetchall()
     total = db.execute(text(f"SELECT count(*) FROM {table}")).scalar() or 0
@@ -1606,7 +1610,7 @@ def ai_diagnose(table: str, db: Session = Depends(get_db)):
 @router.get("/ai/recommend/{table}", dependencies=_AI_USE)
 def ai_recommend(table: str, db: Session = Depends(get_db)):
     """智能推荐：根据表结构推荐维度×指标组合 + 图表类型"""
-    if table not in ALLOWED_TABLES: raise HTTPException(404)
+    if not is_queryable(table): raise HTTPException(404)
     cols = db.execute(text(f"SELECT column_name, data_type FROM information_schema.columns WHERE table_name='{table}' AND table_schema='public' ORDER BY ordinal_position")).fetchall()
     dims = [c[0] for c in cols if c[1] in ("text","character varying","date")]
     metrics = [c[0] for c in cols if c[1] in ("integer","bigint","numeric","double precision","real")]
@@ -1670,7 +1674,7 @@ def auto_model(payload: dict = Body(...), db: Session = Depends(get_db)):
     if not tables: raise HTTPException(400, "至少提供一张表")
     relations = []
     for t in tables[:5]:
-        if t not in ALLOWED_TABLES: continue
+        if not is_queryable(t): continue
         # 检测外键模式（列名包含 _id 或与另一表名匹配）
         cols = db.execute(text(f"SELECT column_name FROM information_schema.columns WHERE table_name='{t}' AND table_schema='public'")).fetchall()
         for c in cols:
@@ -1730,7 +1734,7 @@ def smart_alert(payload: dict = Body(...), db: Session = Depends(get_db)):
     """时序智能预警：移动平均检测环比异常"""
     table = payload.get("table", "")
     metric_col = payload.get("metric_col", "")
-    if table not in ALLOWED_TABLES or not metric_col: raise HTTPException(400)
+    if not is_queryable(table) or not metric_col: raise HTTPException(400)
 
     rows = db.execute(text(f"SELECT {metric_col} FROM {table} ORDER BY updated_at DESC LIMIT 30")).fetchall()
     if len(rows) < 7: return {"status": "insufficient_data", "message": "至少需要7期数据"}
@@ -1774,7 +1778,7 @@ def search_knowledge(q: str = Query(default=""), db: Session = Depends(get_db)):
 def ai_pre_aggregate(payload: dict = Body(...), db: Session = Depends(get_db)):
     """AI 预聚合调度：分析慢查询模式，自动创建物化视图"""
     table = payload.get("table", "")
-    if table and table not in ALLOWED_TABLES: raise HTTPException(404)
+    if table and not is_queryable(table): raise HTTPException(404)
     # 统计最近SQL缓存中的高频查询模式
     where = f"WHERE table_name='{table}'" if table else ""
     patterns = db.execute(text(
@@ -1783,7 +1787,7 @@ def ai_pre_aggregate(payload: dict = Body(...), db: Session = Depends(get_db)):
     suggestions = []
     seen = set()
     for t, sql in patterns:
-        if t not in ALLOWED_TABLES: continue
+        if not is_queryable(t): continue
         key = f"{t}_monthly"
         if key not in seen:
             seen.add(key)
@@ -1803,7 +1807,7 @@ def ai_root_cause(payload: dict = Body(...), db: Session = Depends(get_db)):
     metric = payload.get("metric", "")
     dims = payload.get("dimensions", [])
     limit = payload.get("limit", 5)
-    if table not in ALLOWED_TABLES: raise HTTPException(404)
+    if not is_queryable(table): raise HTTPException(404)
     if not metric: raise HTTPException(400, "metric 不能为空")
 
     drill_results = []
@@ -1858,7 +1862,7 @@ def ai_generate_screen(payload: dict = Body(...)):
 def ai_interpret(payload: dict = Body(...), db: Session = Depends(get_db)):
     """AI 报表解读：输入看板数据→输出经营分析报告"""
     table = payload.get("table", "")
-    if table not in ALLOWED_TABLES: raise HTTPException(404)
+    if not is_queryable(table): raise HTTPException(404)
     cols = db.execute(text(f"SELECT column_name, data_type FROM information_schema.columns WHERE table_name='{table}' AND table_schema='public'")).fetchall()
     numeric = [c[0] for c in cols if c[0] != "id" and c[1] in ("integer","bigint","numeric","double precision","real")]
     if not numeric: raise HTTPException(400, "无可用数值列")
@@ -1901,7 +1905,7 @@ def ai_security_scan(db: Session = Depends(get_db)):
         alerts.append({"type": "sensitive_access", "table": t, "column": c, "severity": "info",
                        "message": f"敏感列 {t}.{c} 已配置脱敏规则"})
 
-    return {"scan_time": _time.strftime("%Y-%m-%d %H:%M:%S"), "alerts": alerts, "total": len(alerts)}
+    return {"scan_time": china_now().strftime("%Y-%m-%d %H:%M:%S"), "alerts": alerts, "total": len(alerts)}
 
 
 @router.get("/dashboards")
@@ -1922,8 +1926,8 @@ def list_dashboards(
     ).fetchall()
     return {
         "dashboards": [
-            {"id": r[0], "name": r[1], "panels": r[2], "table_map": r[3], "created_at": str(r[4]),
-             "updated_at": str(r[5]), "owner_id": r[6]}
+            {"id": r[0], "name": r[1], "panels": r[2], "table_map": r[3], "created_at": time_text(r[4]),
+             "updated_at": time_text(r[5]), "owner_id": r[6]}
             for r in rows
         ]
     }
@@ -2004,71 +2008,27 @@ def delete_dashboard(
     return {"deleted": True}
 
 
-# ═══════ SQL 自服务查询 ═══════
-
-import re as _re
-
-
-
-def _validate_sql(sql: str):
-    """只读校验 —— 交给安全内核（sqlglot AST），不再用正则黑名单。
-
-    返回 AST 供调用方复用（表白名单 + 行级权限都要用它）。
-    兼容旧口径：至少引用一张受管辖表（白名单 或 bi_ai_* 前缀）。
-    """
-    try:
-        root = guard_readonly(sql)
-    except SecurityError as exc:
-        raise HTTPException(status_code=exc.http_status, detail=exc.message) from exc
-
-    tables = referenced_tables(root)
-    if not (tables & ALLOWED_TABLES) and not any(
-        t.startswith("bi_ai_") for t in tables
-    ):
-        raise HTTPException(
-            400, f"查询表必须在白名单内: {', '.join(sorted(ALLOWED_TABLES))}"
-        )
-    return root
-
-
-def _query_rls_conditions(db: Session, tables: set[str], user: User) -> list[str]:
-    """把多张表的行级规则合并（用于手拼 SQL 的查询入口）."""
-    conditions: list[str] = []
-    for table in sorted(tables):
-        if table not in ALLOWED_TABLES and not table.startswith("bi_ai_"):
-            continue
-        decision = rls_decide(db, table, user)
-        conditions.extend(decision.conditions)
-    return conditions
-
-
+# ═══════ SQL Lab ═══════
 @router.post("/query", dependencies=[Depends(require_nav("bi:nav:sql"))])
 def execute_sql(
     payload: dict = Body(...),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """执行 SQL 查询（仅限 SELECT，白名单表）"""
-    sql = payload.get("sql", "").strip()
-    if not sql:
+    """SQL Lab：有限预览，仅允许本地受管辖表的只读查询。"""
+    from app.query.sql_lab import preview
+
+    sql = payload.get("sql")
+    if not isinstance(sql, str) or not sql.strip():
         raise HTTPException(400, "SQL 不能为空")
-    root = _validate_sql(sql)
-
-    # 行级权限：把受管辖表的规则 AND 进 WHERE（fail-closed）
     try:
-        conditions = _query_rls_conditions(db, referenced_tables(root), current_user)
-    except RlsBlockedError as exc:
+        return preview(db, sql, current_user, payload.get("limit", 500))
+    except SecurityError as exc:
         raise HTTPException(exc.http_status, exc.message) from exc
-    if conditions:
-        sql = inject_conditions(sql, conditions)
-
-    try:
-        rows = db.execute(text(sql), {"uid": current_user.id}).fetchall()
-        if not rows:
-            return {"columns": [], "rows": [], "count": 0}
-        columns = list(rows[0]._mapping.keys())
-        return {"columns": columns, "rows": [dict(r._mapping) for r in rows], "count": len(rows)}
     except Exception as e:
+        db.rollback()
+        if "statement timeout" in str(e).lower():
+            raise HTTPException(408, "查询超时，请缩小范围或增加筛选条件") from e
         raise HTTPException(status_code=400, detail=f"SQL 错误: {str(e)}")
 
 

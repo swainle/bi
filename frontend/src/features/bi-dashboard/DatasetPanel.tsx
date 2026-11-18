@@ -1,10 +1,11 @@
+import { formatChinaTime } from "../../utils/time";
 /** 数据集 —— 语义层建模（物理表 → 字段 / 指标，参考 Superset 的 Datasets） */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions,
   DialogContent, DialogTitle, Drawer, FormControlLabel, IconButton,
-  InputAdornment, MenuItem, Paper, Snackbar, Switch, Tab, Table, TableBody,
+  InputAdornment, Link, MenuItem, Paper, Snackbar, Switch, Tab, Table, TableBody,
   TableCell, TableContainer, TableHead, TableRow, Tabs, TextField, Tooltip,
   Typography,
 } from "@mui/material";
@@ -13,7 +14,7 @@ import {
   TableChart, UploadFileOutlined, VerifiedUser, VerifiedUserOutlined, VisibilityOutlined,
 } from "@mui/icons-material";
 import client from "../../api/client";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import ModelImportDialog from "./ModelImportDialog";
 
 const ROLES = [
@@ -33,6 +34,7 @@ interface Field {
   id: number; name: string; source_column: string; role: string;
   data_type: string; is_filterable: boolean; is_groupable: boolean;
   default_grain: string | null; description: string;
+  expression?: string;
 }
 interface Metric {
   id: number; name: string; expression: string; format: string; description: string;
@@ -60,7 +62,7 @@ interface Dataset {
   /** 「测试数据集」页自建的公共测试数据集：同样不进「数据集」页 */
   is_sandbox?: boolean;
 }
-interface PhysTable {
+export interface PhysTable {
   table: string; rows: number; columns: { name: string; type: string }[];
   origin?: string;
 }
@@ -200,12 +202,16 @@ function InlineRename({
 }
 
 export default function DatasetPanel() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [items, setItems] = useState<Dataset[]>([]);
   const [tables, setTables] = useState<PhysTable[]>([]);
   const [loading, setLoading] = useState(true);
   const [keyword, setKeyword] = useState("");
   const [error, setError] = useState("");
-  const [editing, setEditing] = useState<number | null>(null);
+  const [editing, setEditing] = useState<number | null>(() => {
+    const id = Number(searchParams.get("edit"));
+    return Number.isSafeInteger(id) && id > 0 ? id : null;
+  });
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Dataset | null>(null);
   /** 直连数据集的源库连通性：{数据集 id: {ok, message, checked_at}} */
@@ -323,6 +329,12 @@ export default function DatasetPanel() {
             测试数据集
           </Button>
         </Tooltip>
+        <Button variant="outlined" size="small"
+          onClick={() => nav("/bi/projects")}
+          sx={{ textTransform: "none", fontSize: 12.5, borderRadius: 2, px: 1.75, height: 36,
+            borderColor: "#D8E2F5", color: "#475569" }}>
+          进入项目
+        </Button>
       </Box>
 
       {loading ? (
@@ -373,7 +385,7 @@ export default function DatasetPanel() {
                         const color = !st ? "#CBD5E1" : st.ok ? "#22C55E" : "#EF4444";
                         const ring = !st ? "transparent" : st.ok ? "rgba(34,197,94,0.16)" : "rgba(239,68,68,0.16)";
                         const at = st?.checked_at
-                          ? new Date(st.checked_at * 1000).toLocaleTimeString("zh-CN", { hour12: false })
+                          ? formatChinaTime(st.checked_at * 1000).slice(11)
                           : "";
                         return (
                           <Tooltip
@@ -403,7 +415,7 @@ export default function DatasetPanel() {
                   <TableCell sx={{ ...td, textAlign: "right", color: "#475569" }}>{d.field_count}</TableCell>
                   <TableCell sx={{ ...td, textAlign: "right", color: "#475569" }}>{d.metric_count}</TableCell>
                   <TableCell sx={{ ...td, color: "text.secondary" }}>
-                    {d.updated_at?.slice(0, 16) || ""}
+                    {formatChinaTime(d.updated_at).slice(0, 16) || ""}
                   </TableCell>
                   <TableCell sx={{ ...td, pr: 2, textAlign: "right" }} onClick={(e) => e.stopPropagation()}>
                     <Tooltip title="只读预览这个数据集的数据">
@@ -441,7 +453,12 @@ export default function DatasetPanel() {
 
       {editing !== null && (
         <DatasetEditor datasetId={editing}
-          onClose={() => setEditing(null)}
+          onClose={() => {
+            setEditing(null);
+            const next = new URLSearchParams(searchParams);
+            next.delete("edit");
+            setSearchParams(next, { replace: true });
+          }}
           onChanged={load}
           onRenamed={(id, saved) => setItems((list) => list.map((d) => (d.id === id
             ? { ...d, name: saved.name, updated_at: saved.updated_at || d.updated_at }
@@ -468,17 +485,19 @@ export default function DatasetPanel() {
 }
 
 /* ── 新建数据集 ─────────────────────────────────────────── */
-function CreateDatasetDialog({
-  tables, onClose, onCreated, onError,
+export function CreateDatasetDialog({
+  tables, initialTable = "", initialName = "", onClose, onCreated, onError,
 }: {
   tables: PhysTable[];
+  initialTable?: string;
+  initialName?: string;
   onClose: () => void;
   onCreated: (id: number) => void;
   onError: (msg: string) => void;
 }) {
   const [mode, setMode] = useState<"extract" | "live" | "sql">("extract");
-  const [name, setName] = useState("");
-  const [table, setTable] = useState("");
+  const [name, setName] = useState(initialName);
+  const [table, setTable] = useState(initialTable);
   const [sqlText, setSqlText] = useState("");
   const [description, setDescription] = useState("");
   const [importColumns, setImportColumns] = useState(true);
@@ -492,12 +511,13 @@ function CreateDatasetDialog({
   const [loadingTables, setLoadingTables] = useState(false);
 
   useEffect(() => {
+    if (initialTable) return;
     client.get("/bi/sources").then((r) => {
       const list: SourceBrief[] = r.data?.sources || [];
       setSources(list);
       setSourceId(list.length ? list[0].id : "");
     }).catch(() => setSources([]));
-  }, []);
+  }, [initialTable]);
 
   useEffect(() => {
     if (mode !== "live" || sourceId === "") { setRemoteTables([]); return; }
@@ -555,12 +575,12 @@ function CreateDatasetDialog({
     <Dialog open onClose={onClose} maxWidth="sm" fullWidth>
       <DialogTitle sx={{ fontSize: 16, fontWeight: 700 }}>新建数据集</DialogTitle>
       <DialogContent sx={{ pt: 1 }}>
-        <Tabs value={mode} onChange={(_, v) => setMode(v)} sx={{ mt: 1, minHeight: 32 }}
+        {!initialTable && <Tabs value={mode} onChange={(_, v) => setMode(v)} sx={{ mt: 1, minHeight: 32 }}
           TabIndicatorProps={{ sx: { height: 2, borderRadius: 1 } }}>
           <Tab value="extract" label="抽取 · 物理表" sx={{ textTransform: "none", fontSize: 12.5, minHeight: 32, fontWeight: 600 }} />
           <Tab value="live" label="直连 · 源库" sx={{ textTransform: "none", fontSize: 12.5, minHeight: 32, fontWeight: 600 }} />
           <Tab value="sql" label="自定义 SQL" sx={{ textTransform: "none", fontSize: 12.5, minHeight: 32, fontWeight: 600 }} />
-        </Tabs>
+        </Tabs>}
         <TextField fullWidth size="small" label="数据集名称" value={name} autoFocus
           onChange={(e) => setName(e.target.value)}
           sx={{ mt: 2, "& .MuiOutlinedInput-root": { borderRadius: 2 } }} />
@@ -568,6 +588,7 @@ function CreateDatasetDialog({
         {mode === "extract" && (
           <>
             <TextField fullWidth select size="small" label="物理表" value={table}
+              disabled={!!initialTable}
               onChange={(e) => setTable(e.target.value)}
               sx={{ mt: 2, "& .MuiOutlinedInput-root": { borderRadius: 2 } }}>
               {tables.map((t) => (
@@ -691,6 +712,11 @@ function DatasetEditor({
   // 物理表的列（添加字段时直接挑，不用手打列名）
   useEffect(() => {
     if (!data?.physical_table) return;
+    if (data.is_virtual) {
+      setPhysColumns(data.fields.filter((f) => !f.expression)
+        .map((f) => ({ name: f.source_column, type: f.data_type })));
+      return;
+    }
     if (data.conn_mode === "live" && data.source_id) {
       // 直连：物理列来自源库，不是本地 information_schema
       client.get(`/bi/sources/${data.source_id}/tables`).then((res) => {
@@ -706,7 +732,7 @@ function DatasetEditor({
       const hit = (res.data?.tables || []).find((t: PhysTable) => t.table === data.physical_table);
       setPhysColumns(hit?.columns || []);
     }).catch(() => setPhysColumns([]));
-  }, [data?.physical_table, data?.conn_mode, data?.source_id]);
+  }, [data?.physical_table, data?.conn_mode, data?.source_id, data?.fields, data?.is_virtual]);
 
   const toast = (msg: string, good = false) => { if (good) setOk(msg); else setError(msg); };
 
@@ -844,15 +870,15 @@ function DatasetEditor({
                   sx={{ textTransform: "none", fontSize: 12, color: "#475569" }}>同步物理列</Button>
                 <Button size="small" variant="outlined" startIcon={<Add sx={{ fontSize: 15 }} />}
                   onClick={() => setFieldDialog("new")}
-                  sx={{ textTransform: "none", fontSize: 12, borderRadius: 1.5 }}>添加字段</Button>
+                  sx={{ textTransform: "none", fontSize: 12, borderRadius: 1.5 }}>添加公式字段</Button>
               </Box>
               <MiniTable
-                head={["字段名", "来源列", "角色", "类型", "筛选", "分组", "使用", ""]}
+                head={["字段名", "来源列 / 公式", "角色", "类型", "筛选", "分组", "使用", ""]}
                 rows={data.fields.map((f) => {
                   const count = fieldUsage?.counts?.[f.name] || 0;
                   return [
                     <span key="n" style={{ fontWeight: 600 }}>{f.name}</span>,
-                    <code key="c" style={{ fontSize: 11.5, color: "#64748B" }}>{f.source_column}</code>,
+                    <code key="c" style={{ fontSize: 11.5, color: "#64748B" }}>{f.expression || f.source_column}</code>,
                     ROLES.find((r) => r.v === f.role)?.l || f.role,
                     f.data_type,
                     f.is_filterable ? "✓" : "—",
@@ -892,7 +918,7 @@ function DatasetEditor({
                 <Box sx={{ flex: 1 }} />
                 <Button size="small" variant="outlined" startIcon={<UploadFileOutlined sx={{ fontSize: 15 }} />}
                   onClick={() => setModelImportOpen(true)}
-                  sx={{ textTransform: "none", fontSize: 12, borderRadius: 1.5 }}>导入模型</Button>
+                  sx={{ textTransform: "none", fontSize: 12, borderRadius: 1.5 }}>导入 / 导出配置</Button>
                 <Button size="small" variant="outlined" startIcon={<Add sx={{ fontSize: 15 }} />}
                   onClick={() => setMetricDialog("new")}
                   sx={{ textTransform: "none", fontSize: 12, borderRadius: 1.5 }}>添加指标</Button>
@@ -1081,14 +1107,44 @@ function FieldDialog({
 }) {
   const isNew = source === "new";
   const base = isNew ? null : source;
+  const isFormula = isNew || !!base?.expression;
   const [name, setName] = useState(base?.name || "");
   const [column, setColumn] = useState(base?.source_column || "");
-  const [role, setRole] = useState(base?.role || "dimension");
-  const [dataType, setDataType] = useState(base?.data_type || "text");
+  const [expression, setExpression] = useState(base?.expression || "");
+  const expressionRef = useRef<HTMLTextAreaElement>(null);
+  const [formulaColumns, setFormulaColumns] = useState<{ name: string; identifier: string }[]>([]);
+  const [testMessage, setTestMessage] = useState("");
+  const [role, setRole] = useState(base?.role || "measure");
+  const [dataType, setDataType] = useState(base?.data_type || "numeric");
   const [filterable, setFilterable] = useState(base?.is_filterable ?? true);
   const [groupable, setGroupable] = useState(base?.is_groupable ?? true);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+
+  useEffect(() => {
+    if (!isFormula) return;
+    let alive = true;
+    client.get(`/bi/semantic/datasets/${datasetId}/formula-columns`)
+      .then((res) => { if (alive) setFormulaColumns(res.data?.columns || []); })
+      .catch((e) => { if (alive) setErr(e?.response?.data?.detail || "读取可用列失败"); });
+    return () => { alive = false; };
+  }, [datasetId, isFormula]);
+
+  const changeExpression = (value: string) => {
+    setExpression(value);
+    setTestMessage("");
+    setErr("");
+  };
+
+  const testFormula = async () => {
+    setBusy(true); setErr(""); setTestMessage("");
+    try {
+      const res = await client.post(`/bi/semantic/datasets/${datasetId}/formula-test`, { expression });
+      setTestMessage(res.data.message);
+    } catch (e: any) {
+      setErr(e?.response?.data?.detail || "测试失败");
+    } finally { setBusy(false); }
+  };
 
   const pickColumn = (col: string) => {
     setColumn(col);
@@ -1102,11 +1158,13 @@ function FieldDialog({
   };
 
   const submit = async () => {
-    if (!name.trim() || !column.trim()) return;
+    if (!name.trim() || !(isFormula ? expression.trim() : column.trim())) return;
     setBusy(true);
+    setErr(""); setTestMessage("");
     try {
       const payload = {
-        name: name.trim(), source_column: column.trim(), role,
+        name: name.trim(), source_column: isFormula ? name.trim() : column.trim(), role,
+        ...(isFormula ? { expression: expression.trim() } : {}),
         data_type: dataType, is_filterable: filterable, is_groupable: groupable,
       };
       if (isNew) await client.post(`/bi/semantic/datasets/${datasetId}/fields`, payload);
@@ -1121,9 +1179,9 @@ function FieldDialog({
 
   return (
     <Dialog open onClose={onClose} maxWidth="xs" fullWidth>
-      <DialogTitle sx={{ fontSize: 15.5, fontWeight: 700 }}>{isNew ? "添加字段" : "编辑字段"}</DialogTitle>
+      <DialogTitle sx={{ fontSize: 15.5, fontWeight: 700 }}>{isFormula ? (isNew ? "添加公式字段" : "编辑公式字段") : "编辑字段"}</DialogTitle>
       <DialogContent sx={{ pt: 1 }}>
-        <TextField fullWidth select size="small" label="物理列" value={column}
+        {!isFormula && <TextField fullWidth select size="small" label="来源列" value={column}
           onChange={(e) => pickColumn(e.target.value)}
           sx={{ mt: 1, "& .MuiOutlinedInput-root": { borderRadius: 2 } }}>
           {columns.length === 0 && (
@@ -1134,10 +1192,32 @@ function FieldDialog({
               {c.name} · {c.type}
             </MenuItem>
           ))}
-        </TextField>
-        <TextField fullWidth size="small" label="字段名（图表里显示的名字）" value={name}
+        </TextField>}
+        <TextField fullWidth size="small" label="字段名" value={name}
           onChange={(e) => setName(e.target.value)}
           sx={{ mt: 2, "& .MuiOutlinedInput-root": { borderRadius: 2 } }} />
+        {isFormula && <>
+          <TextField fullWidth size="small" label="SQL 表达式" multiline minRows={4}
+            value={expression} disabled={busy} inputRef={expressionRef} onChange={(e) => changeExpression(e.target.value)}
+            placeholder="revenue - COALESCE(cost, 0)"
+            InputProps={{ sx: { fontFamily: "ui-monospace", fontSize: 12.5 } }} sx={{ mt: 2 }} />
+          <Box sx={{ mt: 1, textAlign: "right" }}>
+            <Link href="/help/formula-fields#formula-fields" target="_blank" rel="noopener noreferrer" sx={{ fontSize: 12 }}>
+              公式字段使用说明 ↗
+            </Link>
+          </Box>
+          <Typography sx={{ mt: 1, mb: 0.5, fontSize: 12, color: "text.secondary" }}>可用列（点击插入）</Typography>
+          <Box sx={{ display: "flex", gap: 0.5, flexWrap: "wrap", maxHeight: 120, overflow: "auto" }}>
+            {formulaColumns.map((col) => <Chip key={col.name} label={col.name} disabled={busy} size="small" onClick={() => {
+              const input = expressionRef.current;
+              const start = input?.selectionStart ?? expression.length;
+              const end = input?.selectionEnd ?? start;
+              const identifier = col.identifier;
+              changeExpression(expression.slice(0, start) + identifier + expression.slice(end));
+              requestAnimationFrame(() => { input?.focus(); input?.setSelectionRange(start + identifier.length, start + identifier.length); });
+            }} />)}
+          </Box>
+        </>}
         <Box sx={{ display: "flex", gap: 1.5, mt: 1.5 }}>
           <TextField select size="small" label="角色" value={role} onChange={(e) => setRole(e.target.value)}
             sx={{ flex: 1, "& .MuiOutlinedInput-root": { borderRadius: 2 } }}>
@@ -1157,11 +1237,14 @@ function FieldDialog({
             onChange={(e) => setGroupable(e.target.checked)} />}
             label={<Typography sx={{ fontSize: 12 }}>可分组</Typography>} />
         </Box>
+        {testMessage && <Alert severity="success" sx={{ mt: 1, fontSize: 12 }}>{testMessage}</Alert>}
         {err && <Alert severity="error" sx={{ mt: 1, fontSize: 12 }}>{err}</Alert>}
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2.5 }}>
         <Button onClick={onClose} sx={{ textTransform: "none" }}>取消</Button>
-        <Button variant="contained" onClick={submit} disabled={busy || !name.trim() || !column.trim()}
+        {isFormula && <Button variant="outlined" onClick={testFormula} disabled={busy || !expression.trim()}
+          sx={{ textTransform: "none", borderRadius: 2 }}>测试</Button>}
+        <Button variant="contained" onClick={submit} disabled={busy || !name.trim() || !(isFormula ? expression.trim() : column.trim())}
           sx={{ bgcolor: "#6366F1", textTransform: "none", borderRadius: 2 }}>保存</Button>
       </DialogActions>
     </Dialog>
@@ -1658,7 +1741,13 @@ function PreviewPane({ dataset }: { dataset: Dataset & { fields: Field[]; metric
                 {result.rows.map((row, i) => (
                   <TableRow key={i} hover>
                     {result.columns.map((c) => (
-                      <TableCell key={c} sx={td}>{String(row[c] ?? "—")}</TableCell>
+                      <TableCell key={c} sx={td}>
+                        {row[c] == null || row[c] === "" ? (
+                          <Box component="span" sx={{ color: "text.secondary", fontStyle: "italic" }}>
+                            {row[c] == null ? "NULL" : "（空字符串）"}
+                          </Box>
+                        ) : String(row[c])}
+                      </TableCell>
                     ))}
                   </TableRow>
                 ))}

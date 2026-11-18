@@ -1,3 +1,4 @@
+import { formatChinaTime } from "../../utils/time";
 /** 定时报表 —— 按天/周生成看板报表（HTML 可打印为 PDF + Excel），站内通知 / Webhook 交付 */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -105,7 +106,7 @@ function scheduleText(sub: Subscription): string {
 }
 
 function fmtTime(value: string): string {
-  return value ? value.slice(5, 16) : "";
+  return formatChinaTime(value).slice(5, 16);
 }
 
 export default function ReportSubscriptionsDialog({ board, onClose }: Props) {

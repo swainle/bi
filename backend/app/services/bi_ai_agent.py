@@ -5,6 +5,8 @@
 """
 from __future__ import annotations
 
+from app.timezone import china_now
+
 import json, io, re, time, traceback
 import pandas as pd
 import numpy as np
@@ -273,8 +275,7 @@ def run_agent_pipeline(db: Session, user_id: int, file_bytes: bytes, filename: s
         stages.append({"stage": "生成", "error": str(e)[:100]})
 
     # Stage 5: 数据落表 PostgreSQL（关键——卡片数据来源）
-    import datetime as _dt
-    table_name = f"bi_ai_{user_id}_{_dt.datetime.now().strftime('%H%M%S')}"
+    table_name = f"bi_ai_{user_id}_{china_now().strftime('%H%M%S')}"
     try:
         # Sanitize column names: keep only safe chars, replace others
         col_map = {}  # original → safe

@@ -13,6 +13,7 @@ import ProtectedRoute from "./components/common/ProtectedRoute";
 import { SnackbarProvider } from "./components/common/SnackbarProvider";
 import ErrorBoundary from "./components/common/ErrorBoundary";
 import TopBar from "./components/layout/TopBar";
+import BiEntryLayout from "./components/layout/BiEntryLayout";
 
 const LoginPage = lazy(() => import("./pages/LoginPage"));
 const BiDashboardPage = lazy(() => import("./pages/BiDashboardPage"));
@@ -24,6 +25,7 @@ const CanvasBoardPage = lazy(() => import("./pages/CanvasBoardPage"));
 const ProjectsPage = lazy(() => import("./pages/ProjectsPage"));
 const DashboardPage = lazy(() => import("./pages/DashboardPage"));
 const AdminPage = lazy(() => import("./pages/AdminPage"));
+const HelpPage = lazy(() => import("./pages/HelpPage"));
 
 function PageLoader() {
   return (
@@ -43,6 +45,7 @@ function PageLoader() {
 /** 应用外壳：顶栏 + 内容区 */
 function Shell({ children }: { children?: ReactNode }) {
   const { pathname } = useLocation();
+  const hasSideNav = ["/bi", "/bi/components", "/bi/projects", "/bi/admin"].includes(pathname);
   // 满宽页：编辑画布 / 组件库 / 卡片编辑 / 主页看板 / 看板查看（大屏观感）
   const fullBleed =
     pathname.startsWith("/bi/components") ||
@@ -54,7 +57,7 @@ function Shell({ children }: { children?: ReactNode }) {
     pathname.startsWith("/bi/view");
   return (
     <Box sx={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden" }}>
-      <TopBar />
+      {!hasSideNav && <TopBar />}
       <Box
         component="main"
         sx={{
@@ -99,6 +102,8 @@ function ThemedApp() {
                     }
                   >
                     <Route index element={<Navigate to="/bi" replace />} />
+                    <Route path="help" element={<HelpPage />} />
+                    <Route path="help/:slug" element={<HelpPage />} />
                     <Route path="bi" element={<BiDashboardPage />} />
                     <Route path="bi/view/:id" element={<BiViewPage />} />
                     <Route path="bi/editor" element={<Navigate to="/bi/canvas" replace />} />
@@ -108,7 +113,7 @@ function ThemedApp() {
                       path="bi/components"
                       element={
                         <ProtectedRoute permKey="bi:nav:components">
-                          <ComponentLibraryPage />
+                          <BiEntryLayout activeKey="components"><ComponentLibraryPage /></BiEntryLayout>
                         </ProtectedRoute>
                       }
                     />
@@ -125,7 +130,7 @@ function ThemedApp() {
                       path="bi/projects"
                       element={
                         <ProtectedRoute permKey="bi:nav:editor">
-                          <ProjectsPage />
+                          <BiEntryLayout activeKey="editor"><ProjectsPage /></BiEntryLayout>
                         </ProtectedRoute>
                       }
                     />

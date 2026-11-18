@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.timezone import time_text
+
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -22,6 +24,7 @@ class DatasetField:
     is_groupable: bool = True
     default_grain: str | None = None
     description: str = ""
+    expression: str = ""
 
     @classmethod
     def from_row(cls, row: Any) -> "DatasetField":
@@ -32,6 +35,7 @@ class DatasetField:
             data_type=m["data_type"], is_filterable=m["is_filterable"],
             is_groupable=m["is_groupable"], default_grain=m["default_grain"],
             description=m["description"] or "",
+            expression=m.get("expression") or "",
         )
 
     def to_dict(self) -> dict:
@@ -40,6 +44,7 @@ class DatasetField:
             "role": self.role, "data_type": self.data_type,
             "is_filterable": self.is_filterable, "is_groupable": self.is_groupable,
             "default_grain": self.default_grain, "description": self.description,
+            "expression": self.expression,
         }
 
 
@@ -75,7 +80,7 @@ class DatasetMetric:
             "format": self.format, "description": self.description,
             "certified": self.certified,
             "certified_by": self.certified_by,
-            "certified_at": str(self.certified_at or ""),
+            "certified_at": time_text(self.certified_at or ""),
             "version": self.version,
         }
 
@@ -131,7 +136,7 @@ class Dataset:
             "conn_mode": self.conn_mode or "extract",
             "source_id": self.source_id,
             "is_sandbox": bool(self.is_sandbox),
-            "updated_at": str(self.updated_at or ""),
+            "updated_at": time_text(self.updated_at or ""),
             "field_count": self.field_count or len(self.fields),
             "metric_count": self.metric_count or len(self.metrics),
         }

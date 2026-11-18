@@ -31,7 +31,6 @@ from app.components.compute import (
 from app.components.spec import ComponentSpec, ComponentSpecError
 from app.query.executor import run as execute_query
 from app.query.live import LiveQueryError, run_live
-from app.query.whitelist import ALLOWED_TABLES
 from app.semantic.compiler import compile_query
 from app.security.errors import SecurityError
 from app.semantic.repository import get_dataset, list_fields
@@ -52,7 +51,7 @@ def _execute_dataset(db: Session, dataset, query, user):
             return run_live(db, query, user, src, dataset_id=dataset.id)
         except LiveQueryError as exc:
             raise ComponentSpecError(f"{dataset.name}：{exc}") from exc
-    return execute_query(db, query, user, allowed_tables=ALLOWED_TABLES, dataset_id=dataset.id)
+    return execute_query(db, query, user, dataset_id=dataset.id)
 
 
 def _metric_items(spec: ComponentSpec) -> list[dict]:

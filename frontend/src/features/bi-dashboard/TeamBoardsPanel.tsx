@@ -1,3 +1,4 @@
+import { formatChinaTime } from "../../utils/time";
 /** 我的团队 —— 协同看板（看板本体 + 数据集都是同一份，不复制） */
 
 import { useCallback, useEffect, useState } from "react";
@@ -83,7 +84,7 @@ function BoardCard({ board, mode, onOpen, onEdit, onShare }: {
           </Button>
         )}
         <Box sx={{ flex: 1 }} />
-        <Typography sx={{ fontSize: 10.5, color: "#A8B7CC" }}>{board.updated_at.slice(0, 16)}</Typography>
+        <Typography sx={{ fontSize: 10.5, color: "#A8B7CC" }}>{formatChinaTime(board.updated_at).slice(0, 16)}</Typography>
       </Box>
     </Paper>
   );

@@ -1,17 +1,19 @@
+import { formatChinaTime } from "../../utils/time";
 /** 数据源 —— Superset 的 Database 层：连接配置 / 源库选表 / 同步接入 / 文件导入 */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert, Box, Button, Checkbox, Chip, CircularProgress, Dialog,
-  DialogActions, DialogContent, DialogTitle, IconButton, InputAdornment,
-  MenuItem, Paper, Select, Snackbar, Table, TableBody, TableCell, TableContainer,
+  DialogActions, DialogContent, DialogTitle, FormControlLabel, IconButton, InputAdornment,
+  LinearProgress, MenuItem, Paper, Select, Snackbar, Table, TableBody, TableCell, TableContainer,
   TableHead, TableRow, TextField, Tooltip, Typography,
 } from "@mui/material";
 import {
-  Add, DeleteOutline, FileUpload, Link as LinkIcon, Refresh,
+  Add, DeleteOutline, ExpandLess, ExpandMore, FileUpload, Link as LinkIcon, Refresh,
   Rule, Search, Storage, TableChart, UploadFile,
 } from "@mui/icons-material";
 import client from "../../api/client";
+import { CreateDatasetDialog, type PhysTable } from "./DatasetPanel";
 
 interface Source {
   id: number; name: string; ds_type: string; host: string; port: number | null;
@@ -45,6 +47,18 @@ interface RemoteTable {
   schema?: string;
   kind?: "table" | "view";
 }
+type ImportState = "queued" | "reading" | "writing" | "done" | "failed";
+interface ImportTable {
+  source_table: string; state: ImportState; rows_read: number; rows_written: number; error: string;
+}
+interface ImportJob {
+  id: string; source_id: number; source_name: string; created_at: string; tables: ImportTable[];
+}
+interface ImportLock { source_id: number; source_table: string; state: ImportState }
+const IMPORT_LABEL: Record<ImportState, string> = {
+  queued: "等待导入", reading: "正在读取", writing: "正在写入", done: "已接入", failed: "导入失败",
+};
+const isImportActive = (state: ImportState) => state === "queued" || state === "reading" || state === "writing";
 interface SourceType {
   id: string; label: string; desc: string; category: string;
   default_port: number; available: boolean; reason: string; install: string;
@@ -107,6 +121,8 @@ export default function DataSources() {
   const [ok, setOk] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [pickFor, setPickFor] = useState<Source | null>(null);
+  const [datasetFor, setDatasetFor] = useState<{ source: SyncedTable; table: PhysTable } | null>(null);
+  const [loadingDataset, setLoadingDataset] = useState<number | null>(null);
   const [testing, setTesting] = useState<number | null>(null);
   const [checking, setChecking] = useState<number | null>(null);
   const [resyncing, setResyncing] = useState<number | null>(null);
@@ -115,6 +131,12 @@ export default function DataSources() {
   const [keyword, setKeyword] = useState("");
   const [dsTypes, setDsTypes] = useState<SourceType[]>([]);
   const [typesError, setTypesError] = useState("");
+  const [jobs, setJobs] = useState<ImportJob[]>([]);
+  const [importLocks, setImportLocks] = useState<ImportLock[]>([]);
+  const [jobsOpen, setJobsOpen] = useState(false);
+  const [jobsError, setJobsError] = useState("");
+  const [jobsReady, setJobsReady] = useState(false);
+  const [jobsRevision, setJobsRevision] = useState(0);
 
   const loadTypes = useCallback(async () => {
     try {
@@ -130,8 +152,8 @@ export default function DataSources() {
 
   const typeLabel = (id: string) => dsTypes.find((t) => t.id === id)?.label || id;
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const [s, t] = await Promise.all([
         client.get("/bi/sources"),
@@ -139,14 +161,69 @@ export default function DataSources() {
       ]);
       setSources(s.data?.sources || []);
       setSynced(t.data?.tables || []);
+      return true;
     } catch (e: any) {
       setError(e?.response?.data?.detail || "数据源加载失败");
+      return false;
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    let alive = true, inFlight = false, previous = "";
+    let timer: ReturnType<typeof setTimeout>;
+    const controller = new AbortController();
+    const poll = async () => {
+      if (!alive || inFlight) return;
+      clearTimeout(timer);
+      if (document.hidden) { timer = setTimeout(poll, 2000); return; }
+      inFlight = true;
+      let delay = 2000;
+      try {
+        const res = await client.get("/bi/sources/import-jobs", { signal: controller.signal });
+        if (!alive) return;
+        const nextJobs: ImportJob[] = res.data?.jobs || [];
+        const nextLocks: ImportLock[] = res.data?.active_tables || [];
+        const signature = JSON.stringify([nextLocks, nextJobs.map((job) => job.tables.map((t) => t.state))]);
+        if (signature !== previous) {
+          if (!await load(true)) throw new Error("已接入表刷新失败");
+          previous = signature;
+        }
+        if (!alive) return;
+        setJobs(nextJobs); setImportLocks(nextLocks); setJobsReady(true); setJobsError("");
+      } catch (e: any) {
+        if (alive) { setJobsError(e?.response?.data?.detail || "后台任务状态读取失败，稍后重试"); setJobsReady(false); }
+        delay = 6000;
+      } finally {
+        inFlight = false;
+        if (alive) timer = setTimeout(poll, delay);
+      }
+    };
+    const visible = () => { if (!document.hidden) void poll(); };
+    document.addEventListener("visibilitychange", visible);
+    void poll();
+    return () => { alive = false; controller.abort(); clearTimeout(timer); document.removeEventListener("visibilitychange", visible); };
+  }, [load, jobsRevision]);
+
+  const createDataset = async (source: SyncedTable) => {
+    setLoadingDataset(source.id);
+    try {
+      const res = await client.get("/bi/semantic/tables");
+      const table = (res.data?.tables as PhysTable[] || []).find((t) => t.table === source.local_table);
+      if (!table) {
+        setError("本地表不可用，请刷新列表或重新同步后重试");
+        return;
+      }
+      setDatasetFor({ source, table });
+    } catch (e: any) {
+      setError(e?.response?.data?.detail || "读取本地表信息失败");
+    } finally {
+      setLoadingDataset(null);
+    }
+  };
 
   const testSource = async (s: Source) => {
     setTesting(s.id);
@@ -318,9 +395,9 @@ export default function DataSources() {
                       {addr(s)}
                     </TableCell>
                     <TableCell sx={{ ...td, textAlign: "right", color: "#475569" }}>{s.table_count}</TableCell>
-                    <TableCell sx={{ ...td, color: "text.secondary" }}>{s.updated_at?.slice(0, 16)}</TableCell>
+                    <TableCell sx={{ ...td, color: "text.secondary" }}>{formatChinaTime(s.updated_at).slice(0, 16)}</TableCell>
                     <TableCell sx={{ ...td, pr: 2, textAlign: "right", whiteSpace: "nowrap" }}>
-                      <Button size="small" onClick={() => setPickFor(s)}
+                      <Button size="small" onClick={() => { setJobsReady(false); setJobsRevision((r) => r + 1); setPickFor(s); }}
                         sx={{ textTransform: "none", fontSize: 11.5, borderRadius: 1.5, minWidth: "auto", px: 1 }}>
                         选表接入
                       </Button>
@@ -351,6 +428,15 @@ export default function DataSources() {
             <Typography sx={{ fontSize: 14, fontWeight: 700, color: "text.primary" }}>
               已接入表
             </Typography>
+            <Tooltip title={jobsError || "后台任务"}>
+              <IconButton size="small" aria-label="后台任务" onClick={() => { setJobsOpen(true); setJobsRevision((r) => r + 1); }}>
+                <Refresh sx={{ fontSize: 18, color: jobsError ? "error.main" : "primary.main",
+                  animation: jobs.some((j) => j.tables.some((t) => isImportActive(t.state))) ? "importSpin 1.2s linear infinite" : "none",
+                  "@keyframes importSpin": { to: { transform: "rotate(360deg)" } },
+                  "@media (prefers-reduced-motion: reduce)": { animation: "none" },
+                }} />
+              </IconButton>
+            </Tooltip>
             <Typography sx={{ fontSize: 11.5, color: "text.secondary" }}>
               {synced.length} 张
             </Typography>
@@ -475,6 +561,12 @@ export default function DataSources() {
                     </TableCell>
                     <TableCell sx={{ ...td, color: "text.secondary" }}>{t.synced_at?.slice(0, 16)}</TableCell>
                     <TableCell sx={{ ...td, pr: 2, textAlign: "right" }}>
+                      <Button size="small" startIcon={loadingDataset === t.id
+                        ? <CircularProgress size={13} /> : <Add sx={{ fontSize: 16 }} />}
+                        disabled={loadingDataset !== null} onClick={() => createDataset(t)}
+                        sx={{ fontSize: 11.5, whiteSpace: "nowrap" }}>
+                        创建数据集
+                      </Button>
                       {t.kind === "db" && (
                         <Tooltip title="重新同步（重拉数据）">
                           <IconButton size="small" aria-label="重新同步" onClick={() => resyncTable(t)}
@@ -499,6 +591,13 @@ export default function DataSources() {
         </>
       )}
 
+      {datasetFor && (
+        <CreateDatasetDialog tables={[datasetFor.table]}
+          initialTable={datasetFor.table.table} initialName={datasetFor.source.source_table}
+          onClose={() => setDatasetFor(null)}
+          onCreated={async () => { setDatasetFor(null); setOk("数据集已创建"); await load(); }}
+          onError={setError} />
+      )}
       {createOpen && (
         <CreateSourceDialog types={dsTypes} typesError={typesError} onRetry={loadTypes}
           onClose={() => setCreateOpen(false)}
@@ -506,10 +605,12 @@ export default function DataSources() {
           onError={setError} onOk={setOk} />
       )}
       {pickFor && (
-        <PickTablesDialog source={pickFor} onClose={() => setPickFor(null)}
-          onDone={async (msg) => { setPickFor(null); await load(); setOk(msg); }}
+        <PickTablesDialog source={pickFor} synced={synced} importLocks={importLocks} statusReady={jobsReady}
+          onClose={() => setPickFor(null)}
+          onDone={(msg) => { setPickFor(null); setJobsReady(false); setJobsOpen(true); setJobsRevision((r) => r + 1); setOk(msg); }}
           onError={setError} />
       )}
+      {jobsOpen && <ImportJobsDialog jobs={jobs} error={jobsError} ready={jobsReady} onClose={() => setJobsOpen(false)} />}
 
       <Snackbar open={!!ok} autoHideDuration={3000} onClose={() => setOk("")}
         anchorOrigin={{ vertical: "bottom", horizontal: "center" }}>
@@ -664,11 +765,36 @@ function CreateSourceDialog({
   );
 }
 
+export function groupRemoteTables(tables: RemoteTable[], keyword: string) {
+  const search = keyword.trim().toLowerCase();
+  const groups = new Map<string, RemoteTable[]>();
+  for (const table of tables) {
+    const fullName = table.schema && !table.table.startsWith(`${table.schema}.`)
+      ? `${table.schema}.${table.table}` : table.table;
+    if (!fullName.toLowerCase().includes(search)) continue;
+    const schema = table.schema || "";
+    const group = groups.get(schema) || [];
+    group.push(table);
+    groups.set(schema, group);
+  }
+  return [...groups.entries()];
+}
+
+export function toggleTableSelection(picked: Record<string, boolean>, tables: RemoteTable[]) {
+  const checked = !tables.every((table) => picked[table.table]);
+  const next = { ...picked };
+  for (const table of tables) next[table.table] = checked;
+  return next;
+}
+
 /* ── 选表接入 ───────────────────────────────────────────── */
 function PickTablesDialog({
-  source, onClose, onDone, onError,
+  source, synced, importLocks, statusReady, onClose, onDone, onError,
 }: {
   source: Source;
+  synced: SyncedTable[];
+  importLocks: ImportLock[];
+  statusReady: boolean;
   onClose: () => void;
   onDone: (msg: string) => void;
   onError: (m: string) => void;
@@ -678,43 +804,56 @@ function PickTablesDialog({
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [keyword, setKeyword] = useState("");
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
-    client.get(`/bi/sources/${source.id}/tables`)
+    client.get(`/bi/sources/${source.id}/tables`, { timeout: 60000 })
       .then((res) => setTables(res.data?.tables || []))
       .catch((e) => onError(e?.response?.data?.detail || "读取表清单失败"))
       .finally(() => setLoading(false));
   }, [source.id]);
 
-  const shown = keyword.trim()
-    ? tables.filter((t) => t.table.toLowerCase().includes(keyword.trim().toLowerCase()))
-    : tables;
-  const count = Object.values(picked).filter(Boolean).length;
+  const groups = groupRemoteTables(tables, keyword);
+  const shown = groups.flatMap(([, group]) => group);
+  const locked = new Map<string, ImportState>([
+    ...synced.filter((t) => t.source_id === source.id).map((t) => [t.source_table, "done"] as [string, ImportState]),
+    ...importLocks.filter((t) => t.source_id === source.id).map((t) => [t.source_table, t.state] as [string, ImportState]),
+  ]);
+  const available = shown.filter((t) => !locked.has(t.table));
+  const names = Object.keys(picked).filter((name) => picked[name] && !locked.has(name));
+  const count = names.length;
+  const shownPickedCount = shown.filter((t) => locked.has(t.table) || picked[t.table]).length;
+  const allShownPicked = shown.length > 0 && shownPickedCount === shown.length;
+
+  const toggleShown = () => {
+    setPicked((prev) => toggleTableSelection(prev, available));
+  };
 
   const sync = async () => {
-    const names = Object.entries(picked).filter(([, v]) => v).map(([k]) => k);
     if (!names.length) return;
     setSyncing(true);
     try {
-      const res = await client.post(`/bi/sources/${source.id}/sync`, { tables: names });
-      const syncedCount = res.data?.synced?.length || 0;
-      const rows = (res.data?.synced || []).reduce((a: number, s: any) => a + (s.rows || 0), 0);
-      onDone(`已接入 ${syncedCount} 张表 · 共 ${rows} 行`);
+      await client.post(`/bi/sources/${source.id}/import-jobs`, { tables: names });
+      onDone(`已创建 ${names.length} 张表的导入任务`);
     } catch (e: any) {
-      onError(e?.response?.data?.detail || "同步失败");
+      onError(e?.response?.data?.detail || "创建导入任务失败");
     } finally {
       setSyncing(false);
     }
   };
 
   return (
-    <Dialog open onClose={onClose} maxWidth="sm" fullWidth>
+    <Dialog open onClose={syncing ? undefined : onClose} maxWidth="sm" fullWidth>
       <DialogTitle sx={{ fontSize: 16, fontWeight: 700 }}>
         选表接入 · {source.name}
       </DialogTitle>
       <DialogContent sx={{ pt: 1 }}>
+        {!statusReady && <Alert severity="warning" sx={{ mb: 1 }}>正在确认表的接入状态，暂不可提交</Alert>}
         <TextField fullWidth size="small" placeholder="搜索源库表..." value={keyword}
-          onChange={(e) => setKeyword(e.target.value)}
+          onChange={(e) => {
+            setKeyword(e.target.value);
+            setCollapsed({});
+          }}
           InputProps={{
             startAdornment: (
               <InputAdornment position="start">
@@ -724,6 +863,16 @@ function PickTablesDialog({
             sx: { borderRadius: 2, fontSize: 12.5 },
           }}
           sx={{ mt: 1 }} />
+        <FormControlLabel
+          sx={{ mt: 1, ml: 0 }}
+          control={
+            <Checkbox size="small" checked={allShownPicked}
+              indeterminate={shownPickedCount > 0 && !allShownPicked}
+              disabled={loading || syncing || !statusReady || available.length === 0}
+              onChange={toggleShown} sx={{ p: 0.5, mr: 0.5 }} />
+          }
+          label={<Typography sx={{ fontSize: 12.5 }}>当前全选（{shown.length} 张）</Typography>}
+        />
         <Box sx={{
           mt: 1.5, maxHeight: 380, overflow: "auto", border: "1px solid #EEF3FB", borderRadius: 2,
         }}>
@@ -735,15 +884,38 @@ function PickTablesDialog({
                 {keyword ? "没有匹配的表" : "源库里没有表"}
               </Typography>
             </Box>
-          ) : shown.map((t) => (
+          ) : groups.map(([schema, group]) => {
+            const selectedCount = group.filter((t) => locked.has(t.table) || picked[t.table]).length;
+            const availableGroup = group.filter((t) => !locked.has(t.table));
+            const expanded = !collapsed[schema];
+            return <Box key={schema}>
+              {schema && <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, px: 1, py: 0.5, bgcolor: "#F8FAFC" }}>
+                <IconButton size="small" aria-label={`${expanded ? "折叠" : "展开"} ${schema}`}
+                  aria-expanded={expanded}
+                  onClick={() => setCollapsed((prev) => ({ ...prev, [schema]: expanded }))}>
+                  {expanded ? <ExpandLess fontSize="small" /> : <ExpandMore fontSize="small" />}
+                </IconButton>
+                <FormControlLabel sx={{ m: 0 }} control={
+                  <Checkbox size="small" checked={selectedCount === group.length}
+                    indeterminate={selectedCount > 0 && selectedCount < group.length}
+                    disabled={syncing || !statusReady || availableGroup.length === 0}
+                    onChange={() => setPicked((prev) => toggleTableSelection(prev, availableGroup))} />
+                } label={<Typography sx={{ fontSize: 12.5, fontWeight: 600 }}>{schema}（{group.length} 张）</Typography>} />
+              </Box>}
+              {(!schema || expanded) && group.map((t) => (
             <Box key={t.table}
-              onClick={() => setPicked((p) => ({ ...p, [t.table]: !p[t.table] }))}
               sx={{
-                display: "flex", alignItems: "center", gap: 1, px: 1, py: 0.35,
-                cursor: "pointer", "&:hover": { bgcolor: "rgba(99,102,241,0.05)" },
+                display: "flex", alignItems: "center", gap: 1, pl: schema ? 5 : 1, pr: 1, py: 0.35,
+                "&:hover": { bgcolor: "rgba(99,102,241,0.05)" },
               }}>
-              <Checkbox size="small" checked={!!picked[t.table]} sx={{ p: 0.5 }} />
-              <Typography sx={{ fontSize: 12.5, fontFamily: "ui-monospace" }}>{t.table}</Typography>
+              <FormControlLabel sx={{ m: 0 }} control={
+                <Checkbox size="small" checked={locked.has(t.table) || !!picked[t.table]}
+                  disabled={syncing || !statusReady || locked.has(t.table)}
+                  onChange={() => setPicked((p) => ({ ...p, [t.table]: !p[t.table] }))}
+                  sx={{ p: 0.5, mr: 1 }} />
+              } label={<Typography title={t.table} sx={{ fontSize: 12.5, fontFamily: "ui-monospace" }}>
+                {schema && t.table.startsWith(`${schema}.`) ? t.table.slice(schema.length + 1) : t.table}
+              </Typography>} />
               {t.kind === "view" && (
                 <Box sx={{
                   px: 0.6, py: 0.05, borderRadius: 0.75, fontSize: 10,
@@ -753,19 +925,68 @@ function PickTablesDialog({
                 </Box>
               )}
               <Box sx={{ flex: 1 }} />
+              {locked.has(t.table) && <Chip size="small" label={IMPORT_LABEL[locked.get(t.table)!]}
+                sx={{ fontSize: 10.5, height: 20 }} />}
               <Typography sx={{ fontSize: 11, color: "text.disabled" }}>{t.columns.length} 列</Typography>
             </Box>
-          ))}
+              ))}
+            </Box>;
+          })}
         </Box>
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2.5 }}>
-        <Button onClick={onClose} sx={{ textTransform: "none", mr: "auto" }}>取消</Button>
-        <Button variant="contained" onClick={sync} disabled={syncing || !count}
+        <Button onClick={onClose} disabled={syncing} sx={{ textTransform: "none", mr: "auto" }}>取消</Button>
+        <Button variant="contained" onClick={sync} disabled={syncing || !count || !statusReady || loading}
           startIcon={syncing ? <CircularProgress size={13} color="inherit" /> : <Refresh sx={{ fontSize: 15 }} />}
           sx={{ bgcolor: "#6366F1", textTransform: "none", borderRadius: 2 }}>
-          接入{count ? ` ${count} 张` : ""}
+          创建导入任务{count ? `（${count} 张）` : ""}
         </Button>
       </DialogActions>
     </Dialog>
   );
+}
+
+function ImportJobsDialog({ jobs, error, ready, onClose }: {
+  jobs: ImportJob[]; error: string; ready: boolean; onClose: () => void;
+}) {
+  const ordered = [...jobs].sort((a, b) => Number(b.tables.some((t) => isImportActive(t.state)))
+    - Number(a.tables.some((t) => isImportActive(t.state))));
+  return <Dialog open onClose={onClose} maxWidth="md" fullWidth PaperProps={{ sx: { bgcolor: "background.paper" } }}>
+    <DialogTitle sx={{ fontSize: 16, fontWeight: 700 }}>后台任务</DialogTitle>
+    <DialogContent>
+      {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+      {!ready && !error && <CircularProgress size={22} />}
+      {ready && !jobs.length && <Typography sx={{ py: 4, textAlign: "center", color: "text.secondary" }}>暂无导入任务</Typography>}
+      {ordered.map((job) => {
+        const done = job.tables.filter((t) => t.state === "done").length;
+        const failed = job.tables.filter((t) => t.state === "failed").length;
+        return <Paper key={job.id} variant="outlined" sx={{ p: 2, mb: 2, borderColor: "#EEF3FB", borderRadius: "12px" }}>
+          <Typography sx={{ fontSize: 14, fontWeight: 600 }}>{job.source_name} · 导入 {job.tables.length} 张表</Typography>
+          <Typography sx={{ fontSize: 12, my: 1, color: failed ? "error.main" : "text.secondary" }}>
+            已接入 {done} / {job.tables.length}{failed ? ` · 失败 ${failed}` : ""}
+          </Typography>
+          <LinearProgress variant="determinate" value={(done + failed) / job.tables.length * 100}
+            color={failed ? "error" : "primary"} aria-label="导入任务进度" sx={{ mb: 2 }} />
+          {job.tables.map((item) => <Box key={item.source_table} sx={{ my: 1.5 }}>
+            <Box sx={{ display: "flex", gap: 1, alignItems: "center", flexWrap: "wrap" }}>
+              {(item.state === "reading" || item.state === "writing") && <CircularProgress size={13} />}
+              <Typography sx={{ fontSize: 12.5, fontFamily: "ui-monospace", overflowWrap: "anywhere" }}>{item.source_table}</Typography>
+              <Chip size="small" label={IMPORT_LABEL[item.state]} color={item.state === "failed" ? "error" : item.state === "done" ? "success" : "default"}
+                sx={{ height: 20, fontSize: 10.5 }} />
+              <Typography sx={{ fontSize: 11.5, color: "text.secondary" }}>
+                {item.state === "reading" ? `已读取 ${item.rows_read.toLocaleString()} 行`
+                  : item.state === "writing" ? `已写入 ${item.rows_written.toLocaleString()} / ${item.rows_read.toLocaleString()} 行`
+                  : item.state === "done" ? `${item.rows_written.toLocaleString()} 行` : ""}
+              </Typography>
+            </Box>
+            {item.state === "writing" && <LinearProgress variant={item.rows_read ? "determinate" : "indeterminate"}
+              value={item.rows_read ? Math.min(100, item.rows_written / item.rows_read * 100) : undefined}
+              aria-label={`${item.source_table} 写入进度`} sx={{ mt: 1 }} />}
+            {item.error && <Typography sx={{ mt: 0.5, fontSize: 12, color: "error.main", overflowWrap: "anywhere" }}>{item.error}</Typography>}
+          </Box>)}
+        </Paper>;
+      })}
+    </DialogContent>
+    <DialogActions sx={{ px: 3, pb: 2 }}><Button onClick={onClose}>关闭</Button></DialogActions>
+  </Dialog>;
 }

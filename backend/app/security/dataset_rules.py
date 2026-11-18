@@ -14,6 +14,8 @@
 
 from __future__ import annotations
 
+from app.timezone import time_text
+
 from typing import Any
 
 from sqlalchemy import text
@@ -52,14 +54,14 @@ def list_rules(db: Session, dataset_id: int) -> dict:
             {
                 "id": r[0], "user_id": r[1], "username": r[2] or "",
                 "role_name": r[3] or "", "filter_rule": r[4], "note": r[5] or "",
-                "created_at": str(r[6] or ""),
+                "created_at": time_text(r[6] or ""),
             }
             for r in row_rows
         ],
         "masks": [
             {
                 "id": r[0], "column_name": r[1], "mask_type": r[2],
-                "mask_pattern": r[3] or "", "created_at": str(r[4] or ""),
+                "mask_pattern": r[3] or "", "created_at": time_text(r[4] or ""),
             }
             for r in mask_rows
         ],

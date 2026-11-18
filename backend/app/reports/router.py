@@ -6,9 +6,10 @@
 
 from __future__ import annotations
 
+from app.timezone import china_now
+
 import os
 import re
-from datetime import datetime
 from urllib.parse import quote
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
@@ -218,7 +219,7 @@ def export_dashboard(
     except Exception as exc:
         raise HTTPException(400, f"导出失败：{str(exc)[:200]}") from exc
 
-    stamp = datetime.now().strftime("%Y%m%d-%H%M")
+    stamp = china_now().strftime("%Y%m%d-%H%M")
     base = re.sub(r'[\\/:*?"<>|]', "-", row.name or "看板")[:40]
     filename = f"{base}-{stamp}.{kind}"
     if kind == "html":

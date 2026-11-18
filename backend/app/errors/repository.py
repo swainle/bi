@@ -8,6 +8,8 @@
 
 from __future__ import annotations
 
+from app.timezone import time_text
+
 import json
 import os
 import time
@@ -74,7 +76,7 @@ def _row_dict(row) -> dict:
         "username": m["username"],
         "user_agent": m["user_agent"],
         "extra": extra or {},
-        "created_at": str(m["created_at"] or ""),
+        "created_at": time_text(m["created_at"] or ""),
     }
 
 

@@ -1,3 +1,4 @@
+import { formatChinaTime } from "../../../utils/time";
 /** 筛选栏 —— 页面级参数控件：下拉 / 分段 / 多选 / 搜索 */
 
 import { useEffect, useState } from "react";
@@ -168,10 +169,7 @@ const shiftYmd = (day: string, delta: number) => {
   base.setDate(base.getDate() + delta);
   return toYmd(base.getFullYear(), base.getMonth(), base.getDate());
 };
-const todayYmd = () => {
-  const now = new Date();
-  return toYmd(now.getFullYear(), now.getMonth(), now.getDate());
-};
+const todayYmd = () => formatChinaTime(new Date()).slice(0, 10);
 
 /** 快捷档位：结束 = 今天，开始 = 往前 n-1 天（含今天） */
 const DATE_SHORTCUTS: { key: string; label: string; days: number }[] = [

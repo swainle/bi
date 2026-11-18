@@ -1,3 +1,4 @@
+import { formatChinaTime } from "../utils/time";
 /** 业务看板页 —— 页面元素 + 组件实例 + 参数筛选 + 动作浮层 + 就地编辑（类原型工具） */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -263,7 +264,7 @@ export default function DashboardPage() {
           Array.isArray(row) ? row : columns.map((col) => (row as Record<string, unknown>)?.[col])
         ));
         if (rows.length >= LIMIT) truncated = true;
-        const stamp = new Date().toISOString().slice(0, 10);
+        const stamp = formatChinaTime(new Date()).slice(0, 10);
         downloadCsv(`${detail.data?.name || "数据集"}-${stamp}.csv`, columns, rows);
         ok += 1;
         await new Promise((resolve) => window.setTimeout(resolve, 300));
@@ -643,7 +644,7 @@ export default function DashboardPage() {
       );
       const disposition = String(res.headers?.["content-disposition"] || "");
       const match = disposition.match(/filename="?([^";]+)"?/);
-      const filename = match?.[1] || `${meta?.name || "看板"}-${new Date().toISOString().slice(0, 10)}.${format}`;
+      const filename = match?.[1] || `${meta?.name || "看板"}-${formatChinaTime(new Date()).slice(0, 10)}.${format}`;
       const url = URL.createObjectURL(res.data);
       if (format === "html") {
         if (popup) {
@@ -751,7 +752,7 @@ export default function DashboardPage() {
                   >
                     <Typography noWrap sx={{ fontSize: 12.5, color: "#1D1D1F" }}>{fav.name}</Typography>
                     <Typography noWrap sx={{ fontSize: 10.5, color: "#94A3B8", mt: 0.25 }}>
-                      {Object.keys(fav.params || {}).length} 个筛选 · {(fav.updated_at || "").slice(5, 16)}
+                      {Object.keys(fav.params || {}).length} 个筛选 · {formatChinaTime(fav.updated_at).slice(5, 16)}
                     </Typography>
                   </Box>
                   <IconButton size="small" onClick={() => void removeFavorite(fav.id)} title="删除收藏">

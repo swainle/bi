@@ -2,7 +2,7 @@
 
 约定：
     * 后台线程随应用启动，默认每分钟检查一次；多 worker 用 PG advisory lock 去重；
-    * 时间按服务器本地时区（Asia/Shanghai），频率支持每天 / 每周；
+    * 时间按北京时间（UTC+8），频率支持每天 / 每周；
     * 生成失败只记录错误并把下次时间往后推，不会每分钟重试刷屏。
 """
 
@@ -11,7 +11,7 @@ from __future__ import annotations
 import os
 import threading
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Any
 
@@ -24,6 +24,7 @@ from app.database import SessionLocal, engine
 from app.models.user import User
 from app.reports import generate, tokens
 from app.reports import repository as repo
+from app.timezone import as_china, time_text, utc_now
 
 LOCK_KEY = 872302
 FREQUENCIES = ("daily", "weekly")
@@ -61,8 +62,8 @@ def parse_time(value: str) -> tuple[int, int]:
 
 def next_run_at(frequency: str, send_time: str, week_day: int = 1,
                 after: datetime | None = None) -> datetime:
-    """下一次发送时间（纯函数，便于测试）."""
-    now = (after or datetime.now()).replace(second=0, microsecond=0)
+    """按北京时间排期，返回兼容数据库的 UTC 无时区时间。"""
+    now = as_china(after or utc_now()).replace(second=0, microsecond=0)
     hour, minute = parse_time(send_time)
     if frequency == "weekly":
         target = min(max(int(week_day or 1), 1), 7)
@@ -70,11 +71,11 @@ def next_run_at(frequency: str, send_time: str, week_day: int = 1,
         candidate = (now + timedelta(days=delta)).replace(hour=hour, minute=minute)
         if candidate <= now:
             candidate += timedelta(days=7)
-        return candidate
+        return candidate.astimezone(timezone.utc).replace(tzinfo=None)
     candidate = now.replace(hour=hour, minute=minute)
     if candidate <= now:
         candidate += timedelta(days=1)
-    return candidate
+    return candidate.astimezone(timezone.utc).replace(tzinfo=None)
 
 
 def _load_user(db: Session, user_id: int | None) -> Any | None:
@@ -205,7 +206,7 @@ def run_subscription(db: Session, subscription: dict, *, triggered_by: str = "sc
             run["delivered"] = delivered
 
     repo.finish_run(db, subscription["id"], status="success", error="", next_run_at=next_at)
-    run["next_run_at"] = str(next_at)
+    run["next_run_at"] = time_text(next_at)
     return run
 
 
@@ -228,7 +229,7 @@ def run_due() -> dict:
     db = SessionLocal()
     results: list[dict] = []
     try:
-        for subscription in repo.due_subscriptions(db, datetime.now()):
+        for subscription in repo.due_subscriptions(db, utc_now()):
             try:
                 run = run_subscription(db, subscription)
                 results.append({"subscription_id": subscription["id"], "run_id": run["id"],

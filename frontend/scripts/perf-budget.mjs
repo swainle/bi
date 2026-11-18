@@ -6,7 +6,7 @@
  *   npm run build && npm run budget
  *
  * 阈值（可用环境变量覆盖）：
- *   MAX_TOTAL_GZIP_KB   全部 JS 的 gzip 总量上限，默认 1075KB
+ *   MAX_TOTAL_GZIP_KB   全部 JS 的 gzip 总量上限，默认 1250KB（含按需加载的 SQL 编辑器）
  *   MAX_CHUNK_RAW_KB    单个 chunk 的未压缩体积上限，默认 1250KB
  */
 
@@ -15,7 +15,7 @@ import path from "node:path";
 import zlib from "node:zlib";
 
 const DIST = path.resolve("dist/assets/js");
-const MAX_TOTAL_GZIP_KB = Number(process.env.MAX_TOTAL_GZIP_KB || 1075);
+const MAX_TOTAL_GZIP_KB = Number(process.env.MAX_TOTAL_GZIP_KB || 1250);
 const MAX_CHUNK_RAW_KB = Number(process.env.MAX_CHUNK_RAW_KB || 1250);
 
 if (!fs.existsSync(DIST)) {

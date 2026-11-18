@@ -1,3 +1,4 @@
+import { formatChinaTime } from "../utils/time";
 // 审计日志管理页（含错误日志）
 import { useState, useEffect } from "react";
 import {
@@ -60,7 +61,7 @@ export default function AuditLogPage() {
           <TableBody>
             {logs.map(log => (
               <TableRow key={log.id}>
-                <TableCell sx={{ fontSize: 12, color: '#6B7280' }}>{log.created_at?.slice(0, 19)}</TableCell>
+                <TableCell sx={{ fontSize: 12, color: '#6B7280' }}>{formatChinaTime(log.created_at).slice(0, 19)}</TableCell>
                 <TableCell><Chip label={log.action} size="small" color={actionColor[log.action] || "default"} variant="outlined" /></TableCell>
                 <TableCell sx={{ fontSize: 12 }}>{log.resource_type}#{log.resource_id}</TableCell>
                 <TableCell sx={{ fontSize: 12, color: '#9CA3AF', maxWidth: 200, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -103,7 +104,7 @@ export default function AuditLogPage() {
               ) : errors.map((item) => (
                 <TableRow key={item.id} hover>
                   <TableCell sx={{ fontSize: 12, color: "#6B7280", whiteSpace: "nowrap" }}>
-                    {item.created_at?.slice(0, 19)}
+                    {formatChinaTime(item.created_at).slice(0, 19)}
                   </TableCell>
                   <TableCell>
                     <Chip label={item.source === "backend" ? "后端" : "前端"} size="small"

@@ -80,7 +80,13 @@ async def lifespan(app: FastAPI):
     from app.sources import sync_scheduler
 
     sync_scheduler.start_background()
-    yield
+    from app.sources import import_jobs
+
+    import_stop = import_jobs.start_background()
+    try:
+        yield
+    finally:
+        import_stop.set()
 
 
 app = FastAPI(

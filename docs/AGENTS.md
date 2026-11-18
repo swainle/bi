@@ -160,6 +160,7 @@ DATABASE_URL="postgresql://cavan-m4max@127.0.0.1:5432/mingzebi_dev" DEBUG=true \
   接口：`PATCH /api/bi/sources/files/{id}/schedule`（`{interval_minutes}`）、
   `POST /api/bi/sources/sync/due`（立即跑一轮，验证 / 补跑）。验证调度别等真实间隔：
   把该行 `synced_at` 回拨超过间隔再调 sync/due 即可。
+- **新表后台导入（2026-11-18）**：`sources/import_jobs.py` 使用 `bi_source_import`（迁移 `048`）持久化任务，启动时由 API 后台线程执行；PG advisory lock 防止多进程重复执行，部分唯一索引预留活动源表。创建接口返回 202，前端通过任务列表轮询进度；不要改回在选表弹框里等待长同步请求。写入与日期批次删除处于同一事务，超出 200,000 行明确失败，不得静默截断。
 - **5 分钟后台刷新（2026-11-14 修）**：`bi_engine._refresh_once()` 是唯一入口（后台线程每 300s 调一次）：
   只对 `information_schema` 里有 `updated_at` 的表做增量（视图 / `bi_demo_sku` 跳过），每张表独立 commit/rollback，
   物化视图只刷 `pg_matviews` 里真实存在的（`ACCEL_MAP` 拼出的 `*_agg` 多数没建）。
@@ -596,6 +597,7 @@ DATABASE_URL="postgresql://cavan-m4max@127.0.0.1:5432/mingzebi_dev" DEBUG=true \
 
 - 根目录保留 `README.md`、`AGENTS.md`、`COPYRIGHT.md`、`LICENSE`，更新日志统一为 `CHANGELOG.md`。
 - `docs/` 常用文档平铺；技术方案与缺口清单放 `docs/plans/`，不按功能建目录。
+- 用户帮助文档例外：按用户要求放在 `docs/help/*.md`，由前端 `/help/:slug` 渲染；修改文档后需重建发布前端，Docker 构建必须携带该目录。
 - 移动或重命名文档时同步更新当前引用；历史更新日志保留原文。
 
 ## 生产统一镜像（2026-11-17）

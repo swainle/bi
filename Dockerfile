@@ -6,6 +6,7 @@ COPY frontend/package.json frontend/package-lock.json frontend/.npmrc ./
 COPY frontend/packages ./packages
 RUN npm ci
 COPY frontend/ ./
+COPY docs/help/ /docs/help/
 FROM frontend-dev AS frontend-build
 RUN npm run build && npm run budget
 
@@ -14,11 +15,12 @@ FROM python:3.11-slim AS runtime
 WORKDIR /app
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    TZ=Asia/Shanghai
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential libpq-dev curl gnupg ca-certificates unixodbc unixodbc-dev \
-    chromium fonts-noto-cjk nginx gettext-base && \
+    chromium fonts-noto-cjk nginx gettext-base tzdata && \
     rm -rf /var/lib/apt/lists/*
 
 # SQL Server 连接器走 pyodbc，需要系统 ODBC 驱动；MS 源不可达时跳过，其它数据源不受影响

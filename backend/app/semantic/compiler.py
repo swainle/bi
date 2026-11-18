@@ -129,9 +129,23 @@ def compile_query(dataset: Dataset, request: dict) -> QueryObject:
     if kw_value and kw_columns:
         keyword = KeywordSpec(columns=kw_columns, value=kw_value)
 
+    # 只展开本次查询用到的公式，所有查询入口共用（含明细预览）。
+    used_columns = {d.column for d in dimensions + columns} | {f.column for f in filters}
+    used_columns.update(m.column for m in metrics if m.column)
+    used_columns.update(kw_columns)
+    used_columns.update(o.column for o in order_by)
+    from sqlglot import exp, parse_one
+
+    for metric in metrics:
+        if metric.expression:
+            used_columns.update(c.name for c in parse_one(metric.expression).find_all(exp.Column))
+    calculated = {f.source_column: f.expression for f in dataset.fields
+                  if f.expression and (f.source_column in used_columns or f.name in used_columns)}
+
     return QueryObject(
         table=dataset.physical_table or "custom_sql",
         subquery=(dataset.sql_text or None),
+        calculated_columns=calculated,
         dimensions=dimensions,
         columns=columns,
         metrics=metrics,

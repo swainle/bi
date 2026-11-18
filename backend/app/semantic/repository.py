@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+from app.timezone import time_text
+
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.semantic.aliases import label_for, needs_label
 from app.semantic.models import Dataset, DatasetField, DatasetMetric
+from app.semantic.formulas import validate_formula
 from app.semantic.validator import (
     SemanticError,
     validate_format,
@@ -65,6 +68,9 @@ def create_dataset(
     source_id: int | None = None,
     sandbox: bool = False,
 ) -> Dataset:
+    name = name.strip()
+    if not name or len(name) > 120:
+        raise SemanticError("数据集名称需为 1 到 120 个字符")
     mode = (conn_mode or "extract").strip().lower()
     if mode not in ("extract", "live"):
         raise SemanticError(f"取数方式只能是 extract 或 live：{conn_mode}")
@@ -114,9 +120,42 @@ def list_fields(db: Session, dataset_id: int) -> list[DatasetField]:
 
 def _validate_column(db: Session, dataset: Dataset, column: str) -> None:
     """列校验：抽取模式查本地表；直连模式交给源库（这里不查本地库）."""
+    if dataset.sql_text:
+        if column not in {c["name"] for c in probe_sql_columns(db, dataset.sql_text)}:
+            raise SemanticError(f"SQL 输出列不存在：{column}")
+        return
     if (dataset.conn_mode or "extract") == "live":
         return
     validate_source_column(db, dataset.physical_table, column)
+
+
+def formula_columns(db: Session, dataset: Dataset) -> set[str]:
+    if dataset.sql_text:
+        return {c["name"] for c in probe_sql_columns(db, dataset.sql_text)}
+    if dataset.conn_mode == "live":
+        from app.sources import repository as sources
+        source = sources.get_source(db, dataset.source_id)
+        if source is None:
+            raise SemanticError("数据源不存在")
+        return {c["name"] for c in sources._remote_columns(sources.engine_for(source), dataset.physical_table)}
+    return {c["name"] for c in physical_columns_typed(db, dataset.physical_table)}
+
+
+def _formula_definition(db: Session, dataset: Dataset, name: str, expression: str,
+                        field_id: int | None = None) -> str:
+    from app.query.contract import OrderSpec
+
+    try:
+        OrderSpec(column=name)
+        if "." in name or len(name.encode("utf-8")) > 63:
+            raise ValueError("字段名不能含点号或超过 63 字节")
+    except ValueError as exc:
+        raise SemanticError("公式字段名不合法（最长 63 字节，不能含点号、引号或 SQL 注释）") from exc
+    columns = formula_columns(db, dataset)
+    if name in columns or any(f.id != field_id and (f.name == name or f.source_column == name)
+                              for f in list_fields(db, dataset.id)):
+        raise SemanticError(f"字段名已存在：{name}")
+    return validate_formula(expression, columns)
 
 
 def add_field(
@@ -131,27 +170,35 @@ def add_field(
     is_filterable: bool = True,
     is_groupable: bool = True,
     validate: bool = True,
+    expression: str = "",
 ) -> DatasetField:
-    if validate:
+    if expression:
+        if data_type not in {"text", "integer", "numeric", "date", "datetime", "bool"}:
+            raise SemanticError("公式字段类型不合法")
+        expression = _formula_definition(db, dataset, name, expression)
+        source_column = name
+    elif validate:
         _validate_column(db, dataset, source_column)
     # 源库英文列（dm.v_bangdan 的 29 列）自动起中文名；用户手改过名字的不动
-    if needs_label(name, source_column):
+    if not expression and needs_label(name, source_column):
         name = label_for(source_column, name)
     row = db.execute(
         text(
             "INSERT INTO bi_dataset_field "
             "(dataset_id, name, source_column, role, data_type, is_filterable, "
-            " is_groupable, default_grain, description) "
-            "VALUES (:d, :n, :c, :r, :t, :f, :g, :grain, :desc) RETURNING *"
+            " is_groupable, default_grain, description, expression) "
+            "VALUES (:d, :n, :c, :r, :t, :f, :g, :grain, :desc, :expr) RETURNING *"
         ),
         {
             "d": dataset.id, "n": name, "c": source_column,
             "r": validate_role(role), "t": data_type,
             "f": is_filterable, "g": is_groupable,
             "grain": default_grain, "desc": description,
+            "expr": expression,
         },
     ).fetchone()
     db.commit()
+    _touch(db, dataset.id)
     return DatasetField.from_row(row)
 
 
@@ -161,6 +208,7 @@ def delete_field(db: Session, dataset_id: int, field_id: int) -> bool:
         {"id": field_id, "d": dataset_id},
     )
     db.commit()
+    _touch(db, dataset_id)
     return result.rowcount > 0
 
 
@@ -241,7 +289,7 @@ def list_metric_versions(db: Session, metric_id: int) -> list[dict]:
             "format": r._mapping["format"], "description": r._mapping["description"] or "",
             "changed_by": r._mapping["changed_by"],
             "changed_by_name": r._mapping["changed_by_name"] or "",
-            "changed_at": str(r._mapping["changed_at"] or ""),
+            "changed_at": time_text(r._mapping["changed_at"] or ""),
             "note": r._mapping["note"] or "",
         }
         for r in rows
@@ -408,21 +456,31 @@ def update_field(
         raise SemanticError(f"字段不存在：{field_id}")
 
     source_column = str(payload.get("source_column", current.source_column)).strip()
-    _validate_column(db, dataset, source_column)
     role = validate_role(payload.get("role", current.role))
     name = str(payload.get("name", current.name)).strip()
     if not name:
         raise SemanticError("字段名称不能为空")
+    expression = str(payload.get("expression", current.expression) or "").strip()
+    if expression:
+        expression = _formula_definition(db, dataset, name, expression, field_id)
+        if payload.get("data_type", current.data_type) not in {"text", "integer", "numeric", "date", "datetime", "bool"}:
+            raise SemanticError("公式字段类型不合法")
+        source_column = name
+    else:
+        if current.expression:
+            raise SemanticError("公式字段的表达式不能为空")
+        _validate_column(db, dataset, source_column)
 
     row = db.execute(
         text(
             "UPDATE bi_dataset_field SET name = :n, source_column = :c, role = :r, "
             " data_type = :t, is_filterable = :f, is_groupable = :g, "
-            " default_grain = :grain, description = :desc "
+            " default_grain = :grain, description = :desc, expression = :expr "
             "WHERE id = :id AND dataset_id = :d RETURNING *"
         ),
         {
             "n": name, "c": source_column, "r": role,
+            "expr": expression,
             "t": str(payload.get("data_type", current.data_type) or "text"),
             "f": bool(payload.get("is_filterable", current.is_filterable)),
             "g": bool(payload.get("is_groupable", current.is_groupable)),
@@ -489,6 +547,9 @@ def _touch(db: Session, dataset_id: int) -> None:
         text("UPDATE bi_dataset SET updated_at = now() WHERE id = :id"), {"id": dataset_id}
     )
     db.commit()
+    from app import cache
+
+    cache.invalidate_prefix("render")
 
 
 # ── 物理列同步（Superset 的「同步列」）──────────────────────
@@ -542,8 +603,10 @@ def sync_fields(db: Session, dataset: Dataset) -> dict:
 
 
 def probe_sql_columns(db: Session, sql_text: str) -> list[dict]:
-    """跑一次 LIMIT 1 拿到自定义 SQL 的输出列与样例值（建字段用）."""
-    probe = f"SELECT * FROM ({sql_text}) AS __probe LIMIT 1"
+    """字段校验只读取结构，不执行无权限过滤的数据采样。"""
+    from app.query.sql_lab import validate
+    from app.security.sql_guard import to_sql
+    probe = f"SELECT * FROM ({to_sql(validate(sql_text))}) AS __probe LIMIT 0"
     result = db.execute(text(probe))
     keys = list(result.keys())
     row = result.fetchone()
@@ -554,12 +617,12 @@ def probe_sql_columns(db: Session, sql_text: str) -> list[dict]:
     return out
 
 
-def list_physical_tables(db: Session) -> list[dict]:
-    """可建数据集的物理表：内置白名单表 + 数据源同步表 / 文件导入表.
+def list_physical_tables(db: Session, *, include_counts: bool = True) -> list[dict]:
+    """可建数据集的本地业务表（自动发现，无需登记表名）。
 
     每张表带 origin（内置 / 数据源 · 名称 / 文件 · 文件名），供新建数据集时挑选。
     """
-    from app.query.whitelist import ALLOWED_TABLES
+    from app.query.table_catalog import is_queryable
 
     rows = db.execute(
         text(
@@ -583,20 +646,22 @@ def list_physical_tables(db: Session) -> list[dict]:
     except Exception:
         registered = {}
 
-    names = sorted((ALLOWED_TABLES & present) | (set(registered) & present))
+    names = sorted(table for table in present if is_queryable(table))
     out: list[dict] = []
     for table in names:
         meta = registered.get(table)
         if not meta:
-            origin = "内置"
+            origin = "本地数据库"
         elif meta["kind"] == "file":
             origin = f"文件 · {meta['source_table']}"
         else:
             origin = f"数据源 · {meta['source_name'] or '已接入'}"
-        try:
-            count = db.execute(text(f'SELECT count(*) FROM "{table}"')).scalar() or 0
-        except Exception:
-            count = 0
+        count = 0
+        if include_counts:
+            try:
+                count = db.execute(text(f'SELECT count(*) FROM "{table}"')).scalar() or 0
+            except Exception:
+                count = 0
         out.append({
             "table": table,
             "rows": int(count),

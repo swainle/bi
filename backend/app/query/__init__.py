@@ -10,7 +10,7 @@
     grain.py     时间粒度（多方言）
     builder.py   SQL 编译（参数绑定）
     executor.py  执行 + 行级权限 + 列脱敏
-    whitelist.py 受管辖表白名单（唯一事实来源）
+    table_catalog.py 内置演示表目录及系统内部表保护
     async_jobs/  异步任务（store / runner）
 """
 
@@ -26,7 +26,7 @@ from app.query.contract import (
 )
 from app.query.executor import QueryResult, run
 from app.query.grain import GRAINS, grain_expression, supported_grains, validate_grain
-from app.query.whitelist import ALLOWED_TABLES, is_allowed
+from app.query.table_catalog import BUILTIN_TABLES, is_queryable
 
 __all__ = [
     "QueryObject",
@@ -44,6 +44,6 @@ __all__ = [
     "validate_grain",
     "grain_expression",
     "supported_grains",
-    "ALLOWED_TABLES",
-    "is_allowed",
+    "BUILTIN_TABLES",
+    "is_queryable",
 ]

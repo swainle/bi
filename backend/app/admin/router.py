@@ -6,10 +6,13 @@
 
 from __future__ import annotations
 
+from app.timezone import time_text, utc_now
+
+
+
 import os
 import re
 import time
-from datetime import datetime
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel, EmailStr, Field
@@ -510,7 +513,7 @@ def list_users(
             "position_name": POSITION_LABELS.get(r[9] or "member", "员工"),
             "is_active": bool(r[4]),
             "department_id": r[5],
-            "created_at": str(r[6] or ""),
+            "created_at": time_text(r[6] or ""),
             "approval_status": r[7] or "approved",
         }
         for r in rows
@@ -1009,10 +1012,10 @@ def list_registrations(
                 "role": r[3] or "user",
                 "department_id": r[4],
                 "department_name": r[5] or "未分配",
-                "created_at": str(r[6] or ""),
+                "created_at": time_text(r[6] or ""),
                 "approval_status": r[7] or "approved",
                 "reject_reason": r[8] or "",
-                "approved_at": str(r[9] or ""),
+                "approved_at": time_text(r[9] or ""),
             }
             for r in rows
         ],
@@ -1048,7 +1051,7 @@ def approve_registration(
     target.approval_status = "approved"
     target.is_active = True
     target.approved_by = current_user.id
-    target.approved_at = datetime.utcnow()
+    target.approved_at = utc_now()
     target.reject_reason = None
     target.token_version = (target.token_version or 0) + 1
     db.commit()
@@ -1072,7 +1075,7 @@ def reject_registration(
     target.approval_status = "rejected"
     target.is_active = False
     target.approved_by = current_user.id
-    target.approved_at = datetime.utcnow()
+    target.approved_at = utc_now()
     target.reject_reason = reason or None
     target.token_version = (target.token_version or 0) + 1
     db.commit()
@@ -1369,7 +1372,7 @@ def _model_rows(db: Session) -> list[dict]:
                 "max_tokens": int(m["max_tokens"] or 4096),
                 "enabled": bool(m["enabled"]),
                 "is_default": bool(m["is_default"]),
-                "last_test_at": str(m["last_test_at"] or ""),
+                "last_test_at": time_text(m["last_test_at"] or ""),
                 "last_test_ok": m["last_test_ok"],
                 "last_test_ms": m["last_test_ms"],
                 "last_test_error": m["last_test_error"] or "",
@@ -1460,7 +1463,7 @@ def update_model(
     data = payload.model_dump(exclude_unset=True)
 
     sets: list[str] = []
-    params: dict = {"id": model_id, "updated_at": datetime.utcnow()}
+    params: dict = {"id": model_id, "updated_at": utc_now()}
     if "name" in data and data["name"]:
         sets.append("name = :name")
         params["name"] = data["name"].strip()
@@ -1596,7 +1599,7 @@ def ops_status(
                 "table_name": r[0] or "—",
                 "elapsed_ms": float(r[1] or 0),
                 "source": r[2] or "internal",
-                "created_at": str(r[3] or ""),
+                "created_at": time_text(r[3] or ""),
             }
             for r in rows
         ]

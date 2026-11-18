@@ -10,7 +10,7 @@
     GET  /api/bi/query/slow         最近的慢查询（管理员）
     GET  /api/bi/query/grains       支持的粒度
 
-安全：白名单 + 行级权限 + 参数绑定 + 列脱敏，全部在 app/query 与 app/security 内完成。
+安全：系统表保护 + 行级权限 + 参数绑定 + 列脱敏，全部在 app/query 与 app/security 内完成。
 """
 
 from __future__ import annotations
@@ -26,7 +26,6 @@ from app.query import async_jobs, running, slowlog
 from app.query.contract import QueryObject
 from app.query.executor import run as execute_query
 from app.query.grain import supported_grains
-from app.query.whitelist import ALLOWED_TABLES
 from app.security.errors import RlsBlockedError, SecurityError
 
 router = APIRouter(prefix="/bi/query", tags=["BI查询契约"])
@@ -59,7 +58,7 @@ def run_query(
     """按 QueryObject 执行一次查询."""
     query = _parse(payload)
     try:
-        result = execute_query(db, query, current_user, allowed_tables=ALLOWED_TABLES)
+        result = execute_query(db, query, current_user)
     except RlsBlockedError as exc:
         raise HTTPException(exc.http_status, exc.message) from exc
     except Exception as exc:

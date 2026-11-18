@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+from app.timezone import time_text
+
 import json
 
 from fastapi import APIRouter, Body, Depends, HTTPException
@@ -49,7 +51,7 @@ def _row_dict(row) -> dict:
         "name": m["name"],
         "view_key": m["view_key"],
         "params": raw or {},
-        "updated_at": str(m["updated_at"] or ""),
+        "updated_at": time_text(m["updated_at"] or ""),
     }
 
 

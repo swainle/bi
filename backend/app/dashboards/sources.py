@@ -16,6 +16,8 @@
 
 from __future__ import annotations
 
+from app.timezone import time_text
+
 from typing import Any, Iterable
 
 from sqlalchemy import text
@@ -133,7 +135,7 @@ def list_for(db: Session, dashboard_id: int) -> list[dict]:
         {
             "view_key": r[0], "item_key": r[1], "item_kind": r[2], "item_type": r[3],
             "dataset_id": r[4], "role": r[5], "metric": r[6], "dimension": r[7],
-            "dataset_name": r[8] or "", "updated_at": str(r[9] or ""),
+            "dataset_name": r[8] or "", "updated_at": time_text(r[9] or ""),
         }
         for r in result.fetchall()
     ]

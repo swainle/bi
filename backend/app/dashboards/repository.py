@@ -6,6 +6,10 @@
 
 from __future__ import annotations
 
+from app.timezone import china_now, time_text
+
+
+
 import json
 import re
 from dataclasses import dataclass
@@ -51,7 +55,7 @@ class DashboardRow:
                 "owner_id": self.owner_id, "doc": self.doc,
                 "views": self.view_count, "items": self.item_count,
                 "charts": self.chart_count, "team_shared": bool(self.team_shared),
-                "updated_at": str(self.updated_at or "")}
+                "updated_at": time_text(self.updated_at or "")}
 
 
 def _row(item) -> DashboardRow | None:
@@ -98,9 +102,8 @@ def save(db: Session, dashboard_id: int, doc: DashboardDoc | dict, name: str | N
          publish: bool = False) -> DashboardRow | None:
     payload = doc.model_dump() if isinstance(doc, DashboardDoc) else validate_doc(doc).model_dump()
     if publish:
-        from datetime import datetime
         payload["published"] = True
-        payload["published_at"] = datetime.now().isoformat(timespec="seconds")
+        payload["published_at"] = china_now().isoformat(timespec="seconds")
     sql = "UPDATE bi_canvas SET doc = :doc, updated_at = now()"
     params: dict = {"doc": json.dumps(payload, ensure_ascii=False), "id": dashboard_id}
     if name:

@@ -1,6 +1,8 @@
 """用户模型."""
 
-from datetime import datetime, timezone
+from app.timezone import utc_now
+
+from datetime import datetime
 from typing import Optional
 
 import json
@@ -28,13 +30,13 @@ class User(Base):
     # 管理员默认所有权限为 true
     permissions: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(timezone.utc), server_default=func.now()
+        DateTime, default=utc_now, server_default=func.now()
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
-        default=lambda: datetime.now(timezone.utc),
+        default=utc_now,
         server_default=func.now(),
-        onupdate=lambda: datetime.now(timezone.utc),
+        onupdate=utc_now,
     )
 
     # RBAC 扩展字段
@@ -58,7 +60,7 @@ class User(Base):
     reject_reason: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
     # 头像 URL（相对于 uploads 目录或绝对 URL）
     avatar_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
-    # 令牌版本号：每次登录 +1，旧令牌自动失效（单设备登录）
+    # 令牌版本号：管理员撤销登录凭证时递增，普通登录不改变版本
     token_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     # 计费字段
     plan: Mapped[Optional[str]] = mapped_column(String(30), nullable=True, default="free")

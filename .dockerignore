@@ -14,5 +14,6 @@ frontend/dist
 frontend/storybook-static
 frontend/test-results
 frontend/playwright-report
-docs
+docs/*
+!docs/help/
 deploy/glitchtip/.api-token

@@ -7,12 +7,14 @@
 services:
   db:
     image: pgvector/pgvector:pg16
+    command: ["postgres", "-c", "timezone=UTC", "-c", "log_timezone=Asia/Shanghai"]
     container_name: mingzebi-db
     restart: unless-stopped
     environment:
       POSTGRES_USER: mingzebi
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?请设置 POSTGRES_PASSWORD}
       POSTGRES_DB: mingzebi
+      TZ: Asia/Shanghai
     ports:
       - "127.0.0.1:5433:5432"
     volumes:

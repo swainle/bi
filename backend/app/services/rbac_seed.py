@@ -32,7 +32,7 @@ PERMISSIONS = [
     ("bi:ops:manage", "运维操作", "管理后台"),
     ("bi:nav:datasets", "数据集入口", "业务入口"),
     ("bi:nav:datasources", "数据源入口", "业务入口"),
-    ("bi:nav:sql", "SQL 查询入口", "业务入口"),
+    ("bi:nav:sql", "SQL Lab 入口", "业务入口"),
     ("bi:nav:components", "组件库入口", "业务入口"),
     ("bi:nav:editor", "编辑设计入口", "业务入口"),
     # AI 能力（不是后台分区）

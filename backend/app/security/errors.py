@@ -40,12 +40,12 @@ class NotReadOnlyError(SecurityError):
 
 
 class TableNotAllowedError(SecurityError):
-    """引用了白名单之外的表."""
+    """引用了系统内部表或非法表名。"""
 
     code = "sql_table_not_allowed"
 
     def __init__(self, tables: list[str], *, detail: str = "") -> None:
-        super().__init__(f"表不在白名单内：{', '.join(sorted(tables))}", detail=detail)
+        super().__init__(f"不是可访问的业务表：{', '.join(sorted(tables))}", detail=detail)
         self.tables = tables
 
 

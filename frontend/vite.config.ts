@@ -14,6 +14,7 @@ export default defineConfig(({ mode }) => {
   return {
   plugins: [react()],
   server: {
+    fs: { allow: [".", "../docs/help"] },
     // 0.0.0.0 = 局域网可访问（手机/其他电脑用 http://<本机IP>:5300 打开）
     host,
     port,

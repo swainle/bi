@@ -29,6 +29,30 @@ from app.sources import types_catalog
 router = APIRouter(prefix="/bi/sources", tags=["BI数据源"])
 
 
+@router.get("/import-jobs", dependencies=[Depends(require_nav("bi:nav:datasources"))])
+def list_import_jobs(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    from app.sources import import_jobs
+
+    return {"jobs": import_jobs.list_jobs(db, current_user.id), "active_tables": import_jobs.active_tables(db)}
+
+
+@router.post("/{source_id}/import-jobs", status_code=202,
+             dependencies=[Depends(require_nav("bi:nav:datasources"))])
+def create_import_job(source_id: int, payload: dict = Body(...),
+                      current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    from app.sources import import_jobs
+
+    try:
+        job_id = import_jobs.create(db, source_id, payload.get("tables"), current_user.id)
+    except import_jobs.ImportConflict as exc:
+        db.rollback()
+        raise HTTPException(409, str(exc)) from exc
+    except Exception as exc:
+        db.rollback()
+        raise _guard(exc) from exc
+    return {"job_id": job_id}
+
+
 def _guard(exc: Exception) -> HTTPException:
     if isinstance(exc, repo.SourceError):
         return HTTPException(400, str(exc))
