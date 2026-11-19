@@ -92,6 +92,7 @@ class MetricSpec(BaseModel):
     agg: str = "SUM"
     alias: str | None = None
     expression: str | None = None        # 例："SUM(revenue)"，仅允许语义层传入
+    custom_expression: bool = False
 
     @field_validator("column")
     @classmethod
@@ -209,7 +210,8 @@ class QueryObject(BaseModel):
                 ({"column": x.get("col", x.get("column")),
                   "agg": x.get("agg", "SUM"),
                   "alias": x.get("alias"),
-                  "expression": x.get("expression")}
+                  "expression": x.get("expression"),
+                  "custom_expression": x.get("custom_expression", False)}
                  if isinstance(x, dict) else x)
                 for x in out["metrics"]
             ]

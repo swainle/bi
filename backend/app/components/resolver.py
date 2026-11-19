@@ -58,7 +58,8 @@ def _metric_items(spec: ComponentSpec) -> list[dict]:
     """binding.metric + binding.metrics → [{name, agg, fmt}]（去重、保序）."""
     out: list[dict] = []
     if spec.binding.metric:
-        out.append({"name": spec.binding.metric, "agg": spec.binding.agg, "fmt": spec.compute.format})
+        out.append({"name": spec.binding.metric, "agg": spec.binding.agg, "fmt": spec.compute.format,
+                    **({"expression": spec.binding.agg_expression} if spec.binding.agg == "CUSTOM" else {})})
     for item in spec.binding.metrics or []:
         if isinstance(item, dict):
             name = item.get("name")
@@ -177,7 +178,8 @@ def _request_for(spec: ComponentSpec, kind: str) -> dict:
     return {
         "columns": raw_columns,
         "dimensions": dims,
-        "metrics": [{"name": m["name"], "agg": m["agg"]} for m in metrics],
+        "metrics": [{"name": m["name"], "agg": m["agg"],
+                     **({"expression": m["expression"]} if "expression" in m else {})} for m in metrics],
         "filters": [],
         "order_by": order_by,
         "limit": limit,

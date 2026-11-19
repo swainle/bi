@@ -47,15 +47,15 @@ def prepare(db, sql: str, user) -> str:
     return to_sql(root)
 
 
-def mask_rows(db, sql: str, rows: list[dict]) -> list[dict]:
-    from app.security.masking import MASK_FUNCS, mask_rules
+def sql_mask_rules(db, sql: str) -> dict:
+    from app.security.masking import mask_rules
     root = guard_readonly(sql)
     rules = {}
     for table in referenced_tables(root):
         for column, kind, pattern in mask_rules(db, table):
             rules.setdefault(column, []).append((kind, pattern))
     if not rules:
-        return rows
+        return rules
     if any(alias.args.get("columns") for alias in root.find_all(exp.TableAlias)):
         raise SqlSyntaxError("包含脱敏字段的查询请使用 AS 逐列命名，不支持整组列重命名")
     # shortcut: 按列名保守传播脱敏，需区分同名源列时升级为字段血缘。
@@ -65,6 +65,13 @@ def mask_rows(db, sql: str, rows: list[dict]) -> list[dict]:
             inherited = [rule for col in alias.this.find_all(exp.Column) for rule in rules.get(col.name, [])]
             if inherited and alias.alias not in rules:
                 rules[alias.alias] = inherited
+    return rules
+
+
+def mask_rows(db, sql: str, rows: list[dict]) -> list[dict]:
+    from app.security.masking import MASK_FUNCS
+
+    rules = sql_mask_rules(db, sql)
     for row in rows:
         for column, value in row.items():
             if value is None:

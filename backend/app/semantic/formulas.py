@@ -47,13 +47,20 @@ def validate_formula(expression: str, columns: set[str] | None = None) -> str:
 
 def check_formula_masks(db, query, dataset_id: int | None = None) -> None:
     """禁止公式通过新别名绕开已有的源列脱敏。"""
-    if not query.calculated_columns:
+    expressions = list(query.calculated_columns.values()) + [
+        metric.expression for metric in query.metrics if metric.custom_expression and metric.expression
+    ]
+    if not expressions:
         return
     from sqlalchemy import text
     from sqlglot import parse_one
     from app.security.masking import mask_rules
 
     protected = {r[0] for r in mask_rules(db, query.table)}
+    if query.subquery:
+        from app.query.sql_lab import sql_mask_rules
+
+        protected.update(sql_mask_rules(db, query.subquery))
     if dataset_id:
         rules = db.execute(text("SELECT column_name FROM bi_dataset_column_mask WHERE dataset_id = :d"),
                            {"d": dataset_id}).fetchall()
@@ -62,7 +69,7 @@ def check_formula_masks(db, query, dataset_id: int | None = None) -> None:
         fields = db.execute(text("SELECT name, source_column FROM bi_dataset_field WHERE dataset_id = :d"),
                             {"d": dataset_id}).fetchall()
         protected.update(r[1] for r in fields if r[0] in names)
-    for expression in query.calculated_columns.values():
+    for expression in expressions:
         columns = {c.name for c in parse_one(expression, read="postgres").find_all(exp.Column)}
         if columns & protected:
-            raise SemanticError("公式不能引用已设置脱敏规则的源列")
+            raise SemanticError("公式或自定义汇总不能引用已设置脱敏规则的源列")

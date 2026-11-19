@@ -202,12 +202,24 @@ def field_hits_in_doc(
                     if isinstance(value, str) and value:
                         dims.append(value)
                 metric = str(binding.get("metric") or "")
+                expression_fields = set()
+                expression = binding.get("agg_expression")
+                if binding.get("agg") == "CUSTOM" and isinstance(expression, str) and expression:
+                    from sqlglot import exp, parse_one
+                    from sqlglot.errors import ParseError
+
+                    try:
+                        expression_fields = {c.name for c in parse_one(
+                            expression, read="postgres"
+                        ).find_all(exp.Column)}
+                    except ParseError:
+                        pass  # 编辑中的未完成表达式仍保留主指标引用。
                 for name in wanted:
-                    if name in dims or metric == name:
+                    if name in dims or metric == name or name in expression_fields:
                         out[name].append({
                             "dashboard_id": dashboard_id, "dashboard_name": dashboard_name,
                             "view_key": view_key, "item_key": item_key, "item_kind": kind,
-                            "role": "metric" if metric == name else "dimension",
+                            "role": "metric" if metric == name or name in expression_fields else "dimension",
                         })
 
             for field in (spec.get("filter") or {}).get("fields") or []:

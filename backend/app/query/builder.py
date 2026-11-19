@@ -165,8 +165,17 @@ def build(
                     f"改用 COUNT / COUNT_DISTINCT，或换成数值列"
                 )
         if metric.expression:
-            # 语义层定义的表达式（管理员维护，已在建模时校验）
-            select_parts.append(f'{metric.expression} AS {quote(metric.output_name, dialect)}')
+            expression = metric.expression
+            if metric.custom_expression:
+                import sqlglot
+                from sqlglot import exp
+
+                node = sqlglot.parse_one(expression, read="postgres")
+                family = normalize_dialect(dialect)
+                if node.find(exp.Median) and family != "postgres":
+                    raise ValueError("当前数据源暂不支持 MEDIAN 自定义汇总；请使用本地 PostgreSQL 数据集")
+                expression = node.sql(dialect=family, unsupported_level=sqlglot.ErrorLevel.RAISE)
+            select_parts.append(f'{expression} AS {quote(metric.output_name, dialect)}')
         else:
             col = quote(metric.require_column(), dialect)
             if metric.agg == "COUNT_DISTINCT":

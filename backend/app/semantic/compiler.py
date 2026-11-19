@@ -69,6 +69,16 @@ def compile_query(dataset: Dataset, request: dict) -> QueryObject:
         if isinstance(item, str):
             item = {"name": item}
         name = item.get("name", "")
+        if str(item.get("agg", "")).upper() == "CUSTOM":
+            from app.semantic.aggregate_expression import compile_aggregate
+
+            if dataset.metric_by_name(name) is None:
+                _field(dataset, name)
+            metrics.append(MetricSpec(
+                expression=compile_aggregate(item.get("expression", ""), dataset),
+                alias=name, custom_expression=True,
+            ))
+            continue
         metric = dataset.metric_by_name(name)
         if metric is not None:
             metrics.append(MetricSpec(expression=metric.expression, alias=metric.name))

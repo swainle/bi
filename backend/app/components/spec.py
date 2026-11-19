@@ -112,6 +112,7 @@ class BindingSpec(BaseModel):
     metric: str | None = None         # 语义字段或指标名
     metrics: list = []                # 多指标：["热销指数"] 或 [{"name":"榜单排名","agg":"MIN"}]
     agg: str = "SUM"
+    agg_expression: str = Field(default="", max_length=4000)
     top_n: int = 10
     sort: Literal["desc", "asc"] = "desc"
     order_by_dimension: bool = False   # 按维度名排序（价格带这类有序类目用）
@@ -126,7 +127,7 @@ class BindingSpec(BaseModel):
     @classmethod
     def _agg(cls, v: str) -> str:
         up = (v or "SUM").strip().upper()
-        if up not in AGGREGATES:
+        if up not in (*AGGREGATES, "CUSTOM"):
             raise ComponentSpecError(f"不支持的聚合：{v}")
         return up
 

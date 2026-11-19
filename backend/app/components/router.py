@@ -122,7 +122,7 @@ def component_meta():
         "kinds": list(KINDS),
         "accents": list(ACCENTS),
         "formats": list(FORMATS),
-        "aggregates": list(AGGREGATES),
+        "aggregates": [*AGGREGATES, "CUSTOM"],
         "headlines": list(HEADLINES),
         "hints": list(HINTS),
     }
