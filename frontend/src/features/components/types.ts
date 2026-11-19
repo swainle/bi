@@ -309,8 +309,24 @@ export interface ComponentSpec {
   table_view: TableViewSpec;
   banner: BannerSpec;
   nav: NavSpec;
+  /** 指标卡右上角徽标的弹窗（独立的 TOP N 榜单） */
+  top?: TopListSpec;
   /** 形状元素（type=divider）的外观参数 */
   shape?: ShapeSpec;
+}
+
+/** 指标卡右上角徽标 → 弹窗（独立的 TOP N 榜单，不改页面状态） */
+export interface TopListSpec {
+  enabled: boolean;
+  title: string;
+  dim: string;
+  metric: string;
+  agg: string;
+  top_n: number;
+  columns: string[];
+  page_size: number;
+  /** 并列处理：strict = 严格前 N 条（同分按名称排序）；all = 并列全部展示 */
+  ties?: "strict" | "all";
 }
 
 export interface ComponentItem {
@@ -386,6 +402,8 @@ export interface RenderPayload {
   metric_label?: string | null;
   /** 词云的「颜色（分类）」字段名（未设置时为空） */
   series_label?: string | null;
+  /** 指标卡：右上角徽标的弹窗配置（enabled 才可点） */
+  top?: TopListSpec | null;
   params_used?: Record<string, unknown>;
   error?: string;
 

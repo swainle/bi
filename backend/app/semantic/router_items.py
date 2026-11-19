@@ -10,6 +10,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.middleware.audit import log_audit
 from app.security.nav_guard import require_nav
 from app.middleware.auth import get_current_user
 from app.models.user import User
@@ -411,7 +412,53 @@ def delete_dataset_mask(
     _require_dataset_owner(db, dataset_id, current_user)
     from app.security import dataset_rules
 
-    return dataset_rules.delete_mask(db, dataset_id, column_name)
+    result = dataset_rules.delete_mask(db, dataset_id, column_name)
+    # R13：手工关闭自动脱敏必须留审计
+    from app.middleware.audit import log_audit
+
+    log_audit(current_user.id, "dataset.mask.delete", "dataset", dataset_id,
+              {"column_name": column_name, "deleted": result.get("deleted")})
+    return result
+
+
+@router.put("/datasets/{dataset_id}/security/dept-scope", dependencies=[Depends(require_nav("bi:nav:datasets"))])
+def set_dataset_dept_scope(
+    dataset_id: int,
+    payload: dict = Body(default={}),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """配置部门隔离：{column_name: 部门列, mode: department|self|all}（一个数据集一条）."""
+    _require_dataset_owner(db, dataset_id, current_user)
+    from app.security import dept_scope
+
+    try:
+        rule = dept_scope.set_rule(
+            db, dataset_id,
+            column_name=str(payload.get("column_name") or ""),
+            mode=str(payload.get("mode") or "department"),
+            created_by=current_user.id,
+        )
+    except dept_scope.DeptScopeError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    # 敏感：行级隔离规则变更
+    log_audit(current_user.id, "dataset.dept_scope", "dataset", dataset_id,
+              {"column_name": rule.get("column_name"), "mode": rule.get("mode")})
+    return rule
+
+
+@router.delete("/datasets/{dataset_id}/security/dept-scope", dependencies=[Depends(require_nav("bi:nav:datasets"))])
+def delete_dataset_dept_scope(
+    dataset_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _require_dataset_owner(db, dataset_id, current_user)
+    from app.security import dept_scope
+
+    result = dept_scope.delete_rule(db, dataset_id)
+    log_audit(current_user.id, "dataset.dept_scope_delete", "dataset", dataset_id, result)
+    return result
 
 
 @router.get("/datasets/{dataset_id}/metrics/{metric_id}/versions")

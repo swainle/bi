@@ -42,3 +42,23 @@ def test_cache_key_differs_by_cross_filters() -> None:
         cross_filters=[{"column": "品牌", "value": "萌趣兔"}],
     )
     assert base != linked
+
+
+# ── 筛选字段合并：空壳不能把绑了列的那条顶掉 ─────────────────
+def test_merge_param_def_keeps_bound_field() -> None:
+    from app.dashboards.render import merge_param_def
+
+    defs: dict[str, dict] = {}
+    merge_param_def(defs, {"id": "date", "column": "上架时间", "type": "date"})
+    # 页面上第二条筛选栏（同 id，没绑字段）不能把上面那条顶掉
+    merge_param_def(defs, {"id": "date", "column": "", "type": "date"})
+    assert defs["date"]["column"] == "上架时间"
+
+
+def test_merge_param_def_later_bound_wins() -> None:
+    from app.dashboards.render import merge_param_def
+
+    defs: dict[str, dict] = {}
+    merge_param_def(defs, {"id": "platform", "column": "", "type": "select"})
+    merge_param_def(defs, {"id": "platform", "column": "平台", "type": "select"})
+    assert defs["platform"]["column"] == "平台"

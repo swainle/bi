@@ -57,6 +57,10 @@ interface Props {
   designHeight?: number;
   filterFields?: FilterFieldSpec[];
   filterValues?: Record<string, unknown>;
+  /** 本页卡片读的数据集：给了就做「逐级筛选」 */
+  filterDatasets?: number[];
+  /** 指标卡徽标点击（TOP N 榜单弹窗） */
+  onTopList?: (itemKey: string) => void;
   onFilterChange?: (id: string, value: unknown) => void;
   /** 手工参考线（拖标尺拉出来的） */
   guides?: DocGuide[];
@@ -78,7 +82,7 @@ const BoardSurface = forwardRef<BoardSurfaceHandle, Props>(function BoardSurface
   canvasRef, items, cards, errors, selectedKeys, rendering,
   onSelect, onBlankSelect, onLayoutChange, onDelete, onDrop,
   scale = 1, offsetX = 0, bleedMask = true, ghostNav = null, designWidth, designHeight = 620,
-  filterFields, filterValues, onFilterChange,
+  filterFields, filterValues, filterDatasets, onTopList, onFilterChange,
   guides = [], guidesVisible = true, onGuideMove, onGuideRemove, onGuideMenu, onBlankMenu,
   onTableMore, onDuplicate, currentPage,
 }, ref) {
@@ -442,6 +446,8 @@ const BoardSurface = forwardRef<BoardSurfaceHandle, Props>(function BoardSurface
               } : undefined}
               filterFields={filterFields}
               filterValues={filterValues}
+              filterDatasets={filterDatasets}
+              onTopList={onTopList}
               onFilterChange={onFilterChange}
               onLoadAll={onTableMore ? () => onTableMore(item) : undefined}
             />

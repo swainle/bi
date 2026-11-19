@@ -17,9 +17,11 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import APIRouter, Body, Depends, HTTPException
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.middleware.audit import log_audit
 from app.security.nav_guard import require_nav
 from app.middleware.auth import get_current_user
 from app.models.user import User
@@ -96,10 +98,17 @@ def list_datasets(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """列出可见数据集（公共 + 自己的）；模板库里复制出来的数据集只标出来，不进「数据集」页."""
+    """列出可见数据集（公共 + 自己的 + 归属本部门的）；模板库副本只标出来，不进「数据集」页."""
     from app import template_market
+    from app.admin.permissions import scoped_department_ids
 
-    items = repo.list_datasets(db, owner_id=current_user.id)
+    scoped = scoped_department_ids(db, current_user)
+    items = repo.list_datasets(
+        db,
+        owner_id=current_user.id,
+        dept_ids=scoped or [],
+        all_departments=scoped is None,
+    )
     template_map = template_market.dataset_template_map(db)
     payload = []
     for dataset in items:
@@ -244,6 +253,17 @@ def create_dataset(
         if not is_queryable(table):
             raise HTTPException(404, f"不是可访问的业务表：{table}")
 
+    from app.semantic.access import validate_dept_choice
+
+    dept_id = validate_dept_choice(db, payload.get("dept_id"), current_user)
+    # 直连数据集未选部门时，跟随数据源的归属部门（数据源本身就是部门资产）
+    if dept_id is None and mode == "live" and source_id not in (None, ""):
+        row = db.execute(
+            text("SELECT dept_id FROM bi_source WHERE id = :i"), {"i": int(source_id)}
+        ).fetchone()
+        if row and row[0]:
+            dept_id = int(row[0])
+
     try:
         probed = None
         if sql_text:
@@ -259,6 +279,7 @@ def create_dataset(
             conn_mode=mode,
             source_id=int(source_id) if source_id not in (None, "") else None,
             sandbox=sandbox,
+            dept_id=dept_id,
         )
         if sql_text and not payload.get("fields"):
             # 虚拟数据集：按 SQL 的输出列自动建字段
@@ -290,6 +311,10 @@ def create_dataset(
                 fmt=item.get("format", "number"),
                 description=item.get("description", ""),
             )
+        # R13：薪资 / 成本 / PII 等字段默认脱敏（已有规则不覆盖）
+        from app.security import sensitive_fields
+
+        sensitive_fields.auto_mask_dataset(db, dataset.id, current_user.id)
     except KeyError as exc:
         raise HTTPException(400, f"缺少字段：{exc}") from exc
     except (SemanticError, SecurityError) as exc:
@@ -307,6 +332,8 @@ def create_dataset(
         raise HTTPException(400, "虚拟数据集创建失败，请检查 SQL 和输出字段") from exc
 
     full = repo.get_dataset(db, dataset.id)
+    log_audit(current_user.id, "dataset.create", "dataset", dataset.id,
+              {"name": dataset.name, "table": table, "mode": mode, "dept_id": dept_id})
     return full.to_dict() if full else {"id": dataset.id}
 
 
@@ -334,6 +361,8 @@ def update_dataset(
         )
     except (SemanticError, SecurityError) as exc:
         raise _guard(exc) from exc
+    log_audit(current_user.id, "dataset.update", "dataset", dataset_id,
+              {"name": payload.get("name"), "fields": sorted(payload.keys())})
     return dataset.to_dict() if dataset else {"id": dataset_id}
 
 
@@ -365,6 +394,8 @@ def rename_dataset(
         renamed = repo.rename_dataset(db, dataset_id, payload.get("name"))
     except (SemanticError, SecurityError) as exc:
         raise _guard(exc) from exc
+    log_audit(current_user.id, "dataset.rename", "dataset", dataset_id,
+              {"from": dataset.name, "to": renamed.name})
     return renamed.to_dict(with_items=False)
 
 
@@ -380,6 +411,7 @@ def sync_dataset_columns(
         result = repo.sync_fields(db, dataset)
     except (SemanticError, SecurityError) as exc:
         raise _guard(exc) from exc
+    log_audit(current_user.id, "dataset.sync", "dataset", dataset_id, result)
     return {"id": dataset_id, **result}
 
 
@@ -389,7 +421,11 @@ def get_dataset(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    return _require_dataset(db, dataset_id).to_dict()
+    from app.semantic.access import assert_dataset_visible
+
+    dataset = _require_dataset(db, dataset_id)
+    assert_dataset_visible(db, dataset, current_user)
+    return dataset.to_dict()
 
 
 @router.get("/datasets/{dataset_id}/usages")
@@ -425,6 +461,8 @@ def delete_dataset(
     if dataset.owner_id not in (None, current_user.id) and current_user.role not in ("admin", "super_admin"):
         raise HTTPException(403, "只能删除自己创建的数据集")
     ok = repo.delete_dataset(db, dataset_id)
+    log_audit(current_user.id, "dataset.delete", "dataset", dataset_id,
+              {"name": dataset.name, "table": dataset.physical_table})
     return {"deleted": ok, "id": dataset_id}
 
 
@@ -447,7 +485,10 @@ def query_dataset(
     db: Session = Depends(get_db),
 ):
     """按语义名查询：dimensions / metrics / filters / order_by / limit."""
+    from app.semantic.access import assert_dataset_visible
+
     dataset = _require_dataset(db, dataset_id)
+    assert_dataset_visible(db, dataset, current_user)
     try:
         query: QueryObject = compile_query(dataset, payload or {})
         if (dataset.conn_mode or "extract") == "live":

@@ -22,7 +22,18 @@ from app.semantic.validator import (
 
 
 # ── 数据集 ──────────────────────────────────────────────────
-def list_datasets(db: Session, owner_id: int | None = None) -> list[Dataset]:
+def list_datasets(
+    db: Session,
+    owner_id: int | None = None,
+    *,
+    dept_ids: list[int] | None = None,
+    all_departments: bool = False,
+) -> list[Dataset]:
+    """数据集列表。
+
+    owner_id 给了才做可见性过滤：公共（owner 为空）+ 自己的 + 归属部门在 `dept_ids` 内的；
+    `all_departments=True`（数据范围 all 的账号）不过滤。
+    """
     sql = (
         "SELECT d.*, "
         " (SELECT count(*) FROM bi_dataset_field f WHERE f.dataset_id = d.id) AS field_count, "
@@ -30,9 +41,13 @@ def list_datasets(db: Session, owner_id: int | None = None) -> list[Dataset]:
         "FROM bi_dataset d"
     )
     params: dict = {}
-    if owner_id is not None:
-        sql += " WHERE d.owner_id IS NULL OR d.owner_id = :owner"
+    if owner_id is not None and not all_departments:
+        clauses = ["d.owner_id IS NULL", "d.owner_id = :owner"]
         params["owner"] = owner_id
+        if dept_ids:
+            clauses.append("d.dept_id = ANY(:depts)")
+            params["depts"] = list(dept_ids)
+        sql += " WHERE (" + " OR ".join(clauses) + ")"
     sql += " ORDER BY d.updated_at DESC, d.id DESC"
     rows = db.execute(text(sql), params).fetchall()
     return [Dataset.from_row(r) for r in rows]
@@ -67,6 +82,7 @@ def create_dataset(
     conn_mode: str = "extract",
     source_id: int | None = None,
     sandbox: bool = False,
+    dept_id: int | None = None,
 ) -> Dataset:
     name = name.strip()
     if not name or len(name) > 120:
@@ -90,12 +106,13 @@ def create_dataset(
     row = db.execute(
         text(
             "INSERT INTO bi_dataset "
-            "  (name, physical_table, description, owner_id, sql_text, conn_mode, source_id, is_sandbox) "
-            "VALUES (:n, :t, :d, :o, :sql, :mode, :sid, :sandbox) RETURNING *"
+            "  (name, physical_table, description, owner_id, sql_text, conn_mode, source_id, "
+            "   is_sandbox, dept_id) "
+            "VALUES (:n, :t, :d, :o, :sql, :mode, :sid, :sandbox, :dept) RETURNING *"
         ),
         {"n": name, "t": physical_table, "d": description, "o": owner_id,
          "sql": sql_text or None, "mode": mode, "sid": source_id if mode == "live" else None,
-         "sandbox": bool(sandbox)},
+         "sandbox": bool(sandbox), "dept": dept_id},
     ).fetchone()
     db.commit()
     return Dataset.from_row(row)

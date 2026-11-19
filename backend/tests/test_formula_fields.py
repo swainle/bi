@@ -213,7 +213,7 @@ def test_formula_test_api_checks_without_saving(monkeypatch):
     from app.database import get_db
     from app.middleware.auth import get_current_user
     from app.semantic import repository as repo, router_items
-    from app.security import nav_guard
+    from app.security.nav import guard as nav_guard
 
     app = FastAPI()
     app.include_router(router_items.router, prefix="/api")

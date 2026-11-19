@@ -28,7 +28,7 @@ def _get_jwt_secret() -> str:
         with open(secret_file, "w") as f:
             f.write(random_key)
         os.chmod(secret_file, 0o600)
-        print(f"[mingzebi] 未设置 JWT_SECRET，已生成开发密钥 → {secret_file}")
+        print(f"[mingcebi] 未设置 JWT_SECRET，已生成开发密钥 → {secret_file}")
         return random_key
 
     raise RuntimeError(
@@ -64,7 +64,7 @@ class Settings(BaseSettings):
     # 默认管理员（首次初始化时创建）
     admin_username: str = os.getenv("ADMIN_USERNAME", "admin")
     admin_password: str = os.getenv("ADMIN_PASSWORD", "")
-    admin_email: str = os.getenv("ADMIN_EMAIL", "admin@mingzebi.local")
+    admin_email: str = os.getenv("ADMIN_EMAIL", "admin@mingcebi.local")
 
     # 调试 / 日志
     debug: bool = os.getenv("DEBUG", "true").lower() in ("true", "1", "yes")

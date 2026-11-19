@@ -35,15 +35,51 @@ interface Props {
   /** 卡片当前高度（来自版面 layout.h）；改高度直接改版面 */
   height?: number;
   onResize?: (height: number) => void;
+  /** 指标卡「徽标弹窗」用的字段候选 */
+  metricOptions?: { name: string; role?: string }[];
+  dimensionOptions?: { name: string; role?: string }[];
+  identifierOptions?: { name: string; role?: string }[];
 }
 
-export default function StylePanel({ kind, spec, onChange, height, onResize }: Props) {
+export default function StylePanel({
+  kind, spec, onChange, height, onResize,
+  metricOptions = [], dimensionOptions = [], identifierOptions = [],
+}: Props) {
   const setUi = (patch: Partial<ComponentSpec["ui"]>) =>
     onChange({ ...spec, ui: { ...spec.ui, ...patch } });
   const setCompute = (patch: Partial<ComponentSpec["compute"]>) =>
     onChange({ ...spec, compute: { ...spec.compute, ...patch } });
   const setChart = (patch: Partial<ComponentSpec["chart"]>) =>
     onChange({ ...spec, chart: { ...spec.chart, ...patch } });
+  /** 指标卡右上角徽标的弹窗（独立的 TOP N 榜单） */
+  const top = spec.top ?? {
+    enabled: false, title: "", dim: "", metric: "", agg: "SUM", top_n: 10, columns: [], page_size: 10,
+  };
+  const setTop = (patch: Partial<typeof top>) =>
+    onChange({ ...spec, top: { ...top, ...patch } });
+  /** 徽标里带数字就用它当默认条数（TOP10 → 10） */
+  const badgeTopN = (() => {
+    const hit = /TOP\s*(\d+)/i.exec(spec.ui.badge || "");
+    const value = hit ? Number(hit[1]) : 0;
+    return Number.isFinite(value) && value > 0 ? value : 10;
+  })();
+  /* 开关早就开着、但维度/指标是空的（早期在候选还没加载时打开过）：补上默认值，
+     否则弹窗一点就报「没有配置指标」，看着像功能坏了 */
+  useEffect(() => {
+    if (kind !== "kpi" || !top.enabled) return;
+    const dim = top.dim || dimensionOptions.find((f) => f.name.includes("标题"))?.name
+      || dimensionOptions[0]?.name || "";
+    const metric = top.metric || spec.binding.metric || metricOptions[0]?.name || "";
+    if (!dim && !metric) return;
+    if (dim === top.dim && metric === top.metric) return;
+    setTop({ dim, metric, agg: top.agg || "SUM" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kind, top.enabled, top.dim, top.metric, dimensionOptions, metricOptions]);
+
+  const columnChoices = [
+    ...dimensionOptions.map((f) => f.name),
+    ...identifierOptions.map((f) => f.name),
+  ].filter((name, index, list) => list.indexOf(name) === index);
 
   // 圆角：只对头标卡开放（其余卡片形状是写死的）
   const currentRadius = Math.round(spec.ui.radius ?? 12);
@@ -217,6 +253,89 @@ export default function StylePanel({ kind, spec, onChange, height, onResize }: P
             {HINTS.map(([v, t]) => <MenuItem key={v} value={v} sx={{ fontSize: 12.5 }}>{t}</MenuItem>)}
           </TextField>
         </Stack>
+      )}
+
+      {kind === "kpi" && (
+        <Box sx={{ mt: 1.5, pt: 1.25, borderTop: "1px solid #F1F5FC" }}>
+          <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <Typography sx={{ fontSize: 12.5, color: "#334155" }}>徽标弹窗</Typography>
+            <Switch
+              size="small"
+              checked={!!top.enabled}
+              onChange={(e) => {
+                const on = e.target.checked;
+                if (!on) { setTop({ enabled: false }); return; }
+                setTop({
+                  enabled: true,
+                  top_n: top.top_n || badgeTopN,
+                  dim: top.dim || (dimensionOptions.find((f) => f.name.includes("标题"))?.name ?? dimensionOptions[0]?.name ?? ""),
+                  metric: top.metric || spec.binding.metric || metricOptions[0]?.name || "",
+                  /* 排行用「合计」最符合直觉；卡片上的 COUNT(日销量) 是数行数，拿来排名会看不懂 */
+                  agg: top.agg || "SUM",
+                });
+              }}
+              sx={{ mr: -0.75 }}
+            />
+          </Box>
+
+          {top.enabled && (
+            <Box sx={{ mt: 1, display: "flex", flexDirection: "column", gap: 1 }}>
+              <TextField size="small" fullWidth label="弹窗标题" placeholder="默认：卡片标题 TOP N"
+                value={top.title}
+                onChange={(e) => setTop({ title: e.target.value })}
+                sx={fieldSx} />
+              <Box sx={{ display: "flex", gap: 1 }}>
+                <TextField select size="small" label="排名维度" value={top.dim}
+                  onChange={(e) => setTop({ dim: e.target.value })}
+                  sx={{ flex: 1.2, ...fieldSx }}>
+                  {[...dimensionOptions, ...identifierOptions].map((f) => (
+                    <MenuItem key={`d-${f.name}`} value={f.name} sx={{ fontSize: 12.5 }}>{f.name}</MenuItem>
+                  ))}
+                </TextField>
+                <TextField select size="small" label="指标" value={top.metric}
+                  onChange={(e) => setTop({ metric: e.target.value })}
+                  sx={{ flex: 1, ...fieldSx }}>
+                  {metricOptions.map((f) => (
+                    <MenuItem key={`m-${f.name}`} value={f.name} sx={{ fontSize: 12.5 }}>{f.name}</MenuItem>
+                  ))}
+                </TextField>
+              </Box>
+              <Box sx={{ display: "flex", gap: 1 }}>
+                <TextField select size="small" label="聚合" value={top.agg}
+                  onChange={(e) => setTop({ agg: e.target.value })}
+                  sx={{ flex: 1, ...fieldSx }}>
+                  {["SUM", "AVG", "MIN", "MAX", "COUNT", "COUNT_DISTINCT"].map((agg) => (
+                    <MenuItem key={agg} value={agg} sx={{ fontSize: 12.5 }}>{agg}</MenuItem>
+                  ))}
+                </TextField>
+                <TextField size="small" type="number" label="前 N 条" value={top.top_n}
+                  onChange={(e) => setTop({ top_n: Math.max(1, Math.min(200, Number(e.target.value) || 10)) })}
+                  sx={{ width: 84, ...fieldSx }} />
+              </Box>
+              <TextField select size="small" label="并列" value={top.ties ?? "strict"}
+                onChange={(e) => setTop({ ties: e.target.value as "strict" | "all" })}
+                sx={fieldSx}>
+                <MenuItem value="strict" sx={{ fontSize: 12.5 }}>严格前 N 条（同分按名称排序）</MenuItem>
+                <MenuItem value="all" sx={{ fontSize: 12.5 }}>并列全部展示</MenuItem>
+              </TextField>
+              {/* 排行口径就这一行：聚合 + 从大到小 + 前 N（弹窗里就是按这个算的） */}
+              <Typography sx={{ fontSize: 11.5, color: "#94A3B8", mt: -0.25 }}>
+                {`${(top.agg || "SUM").replace("COUNT_DISTINCT", "去重计数")}(${top.metric || "指标"}) 从大到小 · 前 ${top.top_n}${(top.ties ?? "strict") === "all" ? "（并列全展示）" : ""}`}
+              </Typography>
+              <TextField select size="small" label="附列" SelectProps={{ multiple: true }}
+                value={top.columns}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setTop({ columns: (typeof value === "string" ? value.split(",") : value).slice(0, 6) });
+                }}
+                sx={fieldSx}>
+                {columnChoices.filter((name) => name !== top.dim).map((name) => (
+                  <MenuItem key={`c-${name}`} value={name} sx={{ fontSize: 12.5 }}>{name}</MenuItem>
+                ))}
+              </TextField>
+            </Box>
+          )}
+        </Box>
       )}
     </Box>
   );

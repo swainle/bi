@@ -79,7 +79,7 @@ def test_invalid_source_rejected_before_local_writes(setup_sync, row, message):
 def test_metadata_endpoint_requires_datasource_permission(monkeypatch):
     from app.database import get_db
     from app.middleware.auth import get_current_user
-    from app.security import nav_guard
+    from app.security.nav import guard as nav_guard
     from app.sources import router
     app = FastAPI()
     app.include_router(router.router)

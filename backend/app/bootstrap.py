@@ -232,8 +232,28 @@ def ensure_components() -> dict:
         finally:
             db.close()
     except Exception as e:
-        print(f"[bootstrap] 组件库种子跳过：{e}")
-        return {"error": str(e)[:200]}
+        # 种子挂了不能只是一行「跳过」：组件库会停在旧版本，改模板永远不生效（2026-11-15 实测踩到）。
+        # 打全栈，进错误日志，返回 error 让启动自检能看到。
+        import traceback
+
+        print(f"[bootstrap] 组件库种子失败：{type(e).__name__}: {e}")
+        traceback.print_exc()
+        try:  # 顺带进「错误日志」，管理后台能看到，不用翻启动日志
+            from app.errors import repository as error_repo
+
+            db = SessionLocal()
+            try:
+                error_repo.insert(db, {
+                    "source": "backend", "level": "error",
+                    "message": f"组件库种子失败：{type(e).__name__}: {e}",
+                    "stack": traceback.format_exc(),
+                    "url": "bootstrap.ensure_components",
+                })
+            finally:
+                db.close()
+        except Exception:
+            pass
+        return {"error": f"{type(e).__name__}: {e}"[:200]}
 
 
 def ensure_pages() -> dict:
@@ -251,6 +271,23 @@ def ensure_pages() -> dict:
         return {"error": str(e)[:200]}
 
 
+def ensure_rls_backstop() -> dict:
+    """S6：确保 RLS 只读角色 + 已配置部门规则的物理表策略（失败只告警，不阻断启动）."""
+    try:
+        from app.security import rls_backstop
+
+        db = SessionLocal()
+        try:
+            result = rls_backstop.ensure_all(db)
+            print(f"[bootstrap] RLS 兜底：{result}")
+            return result
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"[bootstrap] RLS 兜底跳过：{e}")
+        return {"error": str(e)[:200]}
+
+
 def init_all() -> None:
     """完整初始化（幂等）."""
     ensure_schema()
@@ -258,6 +295,7 @@ def init_all() -> None:
     ensure_components()
     ensure_pages()
     ensure_rbac_seed()
+    ensure_rls_backstop()
     ensure_seed_data()
     ensure_admin()
 

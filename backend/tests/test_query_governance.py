@@ -33,4 +33,4 @@ def test_user_slot_disabled(monkeypatch):
 
 
 def test_env_int_fallback():
-    assert executor._env_int("MZBI_NOT_EXIST_ENV", 15) == 15
+    assert executor._env_int("MCBI_NOT_EXIST_ENV", 15) == 15

@@ -1,13 +1,13 @@
 // 关键页面视觉回归：登录页 / 我的看板 / 成品看板 / 组件库。
 //
-// token 从 /tmp/mzbi_tokens.json 读取（由 scripts/visual_tokens.py 生成），
+// token 从 /tmp/mcbi_tokens.json 读取（由 scripts/visual_tokens.py 生成），
 // 直接注入 localStorage —— 不走登录接口，避免把正在用的浏览器会话踢下线。
 import fs from "node:fs";
 
 import { expect, test } from "@playwright/test";
 
-const TOKEN_FILE = process.env.MZBI_TOKEN_FILE || "/tmp/mzbi_tokens.json";
-const DASHBOARD_ID = process.env.MZBI_DASHBOARD_ID || "57";
+const TOKEN_FILE = process.env.MCBI_TOKEN_FILE || "/tmp/mcbi_tokens.json";
+const DASHBOARD_ID = process.env.MCBI_DASHBOARD_ID || "57";
 
 function readTokens(): { access_token: string; refresh_token: string } {
   if (!fs.existsSync(TOKEN_FILE)) {

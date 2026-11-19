@@ -12,7 +12,7 @@ import {
   MoreHoriz as MoreIcon, Search as SearchIcon,
 } from "@mui/icons-material";
 import client from "../../api/client";
-import { useAuth } from "../../hooks/useAuth";
+import { useAuth } from "../auth/useAuth";
 import {
   BORDER, ConfirmDialog, EmptyState, INK, Loading, MUTED, PrimaryButton,
   SectionHead, TD, TH, dialogPaperSx, dialogTitleSx, fmtTime, friendlyError, useToast,

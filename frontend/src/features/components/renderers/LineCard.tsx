@@ -5,6 +5,8 @@ import { Box } from "@mui/material";
 import { accentOf } from "../palette";
 import CardShell from "../skin/CardShell";
 import { AXIS, TEXT, TOOLTIP } from "../skin/tokens";
+import { fitChart } from "../skin/CardFit";
+import { useBoxSize } from "../skin/useBoxSize";
 import { chartOf, formatAxis } from "../skin/format";
 import type { RenderPayload, UiSpec } from "../types";
 
@@ -17,6 +19,7 @@ interface Props {
 export default function LineCard({ payload, ui, area, compact }: Props & { compact?: boolean }) {
   const token = accentOf(ui.accent);
   const opts = chartOf(payload.chart);
+  const [boxRef, box] = useBoxSize<HTMLDivElement>();
   const series = payload.series ?? [];
   const names = series.map((s) => String(s.name ?? ""));
   const values = series.map((s) => Number(s.value ?? 0));
@@ -86,12 +89,14 @@ export default function LineCard({ payload, ui, area, compact }: Props & { compa
       hideTitle={opts.show_title === false}
       meta={chartShowMeta(payload) ? (payload.subtitle || payload.metric_label || undefined) : undefined}
     >
-      <ReactEChartsCore
-        option={option}
-        notMerge
-        style={{ width: "100%", height: "100%" }}
-        opts={{ renderer: "canvas" }}
-      />
+      <Box ref={boxRef} sx={{ width: "100%", height: "100%" }}>
+        <ReactEChartsCore
+          option={fitChart(option, box)}
+          notMerge
+          style={{ width: "100%", height: "100%" }}
+          opts={{ renderer: "canvas" }}
+        />
+      </Box>
     </CardShell>
   );
 }

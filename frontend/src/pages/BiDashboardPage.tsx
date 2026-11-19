@@ -14,7 +14,7 @@ import {
 } from "@mui/icons-material";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import client from "../api/client";
-import { useAuth } from "../hooks/useAuth";
+import { useAuth } from "../features/auth/useAuth";
 import DataSources from "../features/bi-dashboard/DataSources";
 import DatasetPanel from "../features/bi-dashboard/DatasetPanel";
 import TestDataPanel from "../features/bi-dashboard/TestDataPanel";
@@ -22,8 +22,8 @@ import TeamBoardsPanel from "../features/bi-dashboard/TeamBoardsPanel";
 import TeamShareDialog from "../features/bi-dashboard/TeamShareDialog";
 import AlertRulesDialog from "../features/bi-dashboard/AlertRulesDialog";
 import ReportSubscriptionsDialog from "../features/bi-dashboard/ReportSubscriptionsDialog";
-import BiSideNav, { BI_NAV_ITEMS, type SideNavItem } from "../features/bi-dashboard/BiSideNav";
-import TopBar from "../components/layout/TopBar";
+import BiSideNav, { BI_NAV_ITEMS, type SideNavItem } from "../features/shell/BiSideNav";
+import TopBar from "../features/shell/TopBar";
 import BoardThumb from "../features/bi-dashboard/BoardThumb";
 import type { DashboardDoc } from "../features/components/types";
 
@@ -65,7 +65,7 @@ interface BoardCardMeta {
 
 export default function BiDashboardPage() {
   const nav = useNavigate();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   /** 视图可深链（/bi?view=templates），从「项目」页点菜单也能落回同一个视图 */
   const [activeNav, setActiveNav] = useState(() => searchParams.get("view") || "dashboards");
@@ -204,15 +204,17 @@ export default function BiDashboardPage() {
     if (!next) return;
     const item = BI_NAV_ITEMS.find((i) => i.key === next);
     if (item?.perm && !navCan(item.perm)) {
+      // 权限还没拉回来时不能裁 URL：冷启动直链（/bi?view=datasource）会先被写成「我的看板」，
+      // 刷新也回不到原来的入口
+      if (authLoading || !user) return;
       setActiveNav("dashboards");
       const fixed = new URLSearchParams(searchParams);
       fixed.delete("view");
       setSearchParams(fixed, { replace: true });
       return;
     }
-    if (next !== activeNav) setActiveNav(next);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams]);
+    setActiveNav((prev) => (prev === next ? prev : next));
+  }, [searchParams, navCan, authLoading, user]);
 
   // 重命名
   const handleRename = async () => {

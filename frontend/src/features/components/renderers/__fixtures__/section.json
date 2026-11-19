@@ -1,0 +1,23 @@
+{
+  "kind": "section",
+  "title": "分节标题",
+  "index": "一",
+  "note": "",
+  "icon": "grid",
+  "value": null,
+  "unit": "",
+  "ui": {
+    "accent": "indigo",
+    "radius": 14,
+    "min_height": 60,
+    "show_unit": true,
+    "animate": true,
+    "align": "left",
+    "columns": 1,
+    "badge": "",
+    "edge": true,
+    "edge_px": 1.0,
+    "edge_alpha": 22,
+    "shadow_px": 16
+  }
+}

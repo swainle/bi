@@ -92,7 +92,7 @@ def test_table_names_need_no_registration_but_internal_tables_remain_protected()
 def test_save_rechecks_query_and_dataset_permission(monkeypatch):
     from app.database import get_db
     from app.middleware.auth import get_current_user
-    from app.security import nav_guard
+    from app.security.nav import guard as nav_guard
     from app.semantic import router as api
     from app.semantic.models import Dataset
 
@@ -110,6 +110,10 @@ def test_save_rechecks_query_and_dataset_permission(monkeypatch):
     fields = Mock()
     monkeypatch.setattr(api.repo, "add_field", fields)
     monkeypatch.setattr(api.repo, "get_dataset", lambda *args: None)
+    from app.security import sensitive_fields
+
+    auto_mask = Mock(return_value=0)
+    monkeypatch.setattr(sensitive_fields, "auto_mask_dataset", auto_mask)
     payload = {"name": "销售", "sql": "SELECT amount FROM orders_new"}
     with TestClient(app) as client:
         assert client.post("/bi/semantic/datasets", json=payload).status_code == 403
@@ -122,6 +126,7 @@ def test_save_rechecks_query_and_dataset_permission(monkeypatch):
         assert fields.call_args.kwargs["data_type"] == "numeric"
         assert fields.call_args.kwargs["role"] == "measure"
         probe.assert_called_once_with(db, "SELECT amount FROM orders_new", user, 1)
+        auto_mask.assert_called_once_with(db, 7, user.id)
         probe.side_effect = SecurityError("权限校验失败")
         create.reset_mock()
         assert client.post("/bi/semantic/datasets", json=payload).status_code == 400

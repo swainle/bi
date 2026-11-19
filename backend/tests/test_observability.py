@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app import observability
+from app.observability import sentry as observability
 
 
 def _reset(monkeypatch) -> None:

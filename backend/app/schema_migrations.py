@@ -12,6 +12,8 @@
 from __future__ import annotations
 
 import os
+import json
+import re
 from typing import Iterable
 
 from sqlalchemy import inspect, text
@@ -32,14 +34,24 @@ CREATE TABLE IF NOT EXISTS public.schema_migrations (
 def _listed_files() -> list[str]:
     if not os.path.isdir(MIGRATIONS_DIR):
         return []
-    return sorted(
+    files = sorted(
         f for f in os.listdir(MIGRATIONS_DIR) if f.endswith(".sql")
     )
+    invalid = [f for f in files if not re.fullmatch(r"\d{14}_.+\.sql", f)]
+    if invalid:
+        raise ValueError(f"迁移文件必须使用 14 位时间戳前缀：{', '.join(invalid)}")
+    return files
 
 
 def applied_files(db) -> set[str]:
     rows = db.execute(text("SELECT filename FROM schema_migrations")).fetchall()
-    return {r[0] for r in rows}
+    done = {r[0] for r in rows}
+    alias_file = os.path.join(MIGRATIONS_DIR, "legacy_names.json")
+    if os.path.isfile(alias_file):
+        with open(alias_file, encoding="utf-8") as fh:
+            aliases = json.load(fh)
+        done.update(current for legacy, current in aliases.items() if legacy in done)
+    return done
 
 
 def run_all() -> list[str]:

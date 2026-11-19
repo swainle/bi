@@ -8,7 +8,7 @@
     5. 业务入口：数据集/数据源/SQL/组件库/编辑设计的菜单权限与对应写接口一致（有权限放行、无权限 403）。
 
 用法（反反复复跑都行，脚本自己清场）：
-    DATABASE_URL="postgresql://.../mingzebi_dev" \
+    DATABASE_URL="postgresql://.../mingcebi_dev" \
       backend/.venv/bin/python scripts/admin_permission_matrix.py [--base-url http://127.0.0.1:8300]
 
 需要后端在跑。当前 160 项断言；任何一条不符合预期 → 退出码 1（CI / 交付前门禁）。
@@ -162,7 +162,7 @@ def _user_names() -> list[str]:
     return [f"qa_{code[3:]}" for code, _n, _p in ROLES] + [
         "qa_plain", "qa_admin2", "qa_pending_own", "qa_pending_other",
         "qa_rejected", "qa_victim", "qa_plain2", "qa_admin3",
-        "qa_dept_admin", "qa_global_admin", "qa_other_user",
+        "qa_dept_admin", "qa_global_admin", "qa_other_user", "qa_exec2",
         "qa_dept_user", "qa_dept_forced", "qa_dept_other", "qa_dept_escalate",
         "qa_mgr_a", "qa_mgr_share", "qa_share_member",
         "qa_pending_mgr_a", "qa_pending_mgr_b", "qa_mgr_user", "qa_mgr_other",
@@ -330,6 +330,8 @@ def main() -> int:
             department_id=int(global_dept) if global_dept else None,
         )
         ids["qa_admin2"] = make_user(db, "qa_admin2", "admin")
+        # 高层角色（S1 内置角色，真实角色而不是 qa_ 临时角色）
+        ids["qa_exec2"] = make_user(db, "qa_exec2", "executive", department_id=dept_a)
         # 部门负责人：dept_a 负责人
         db.execute(text("UPDATE departments SET leader_id = :u WHERE id = :d"),
                    {"u": ids["qa_leader"], "d": dept_a})
@@ -719,6 +721,32 @@ def main() -> int:
             "                AND x.permission_code = 'bi:ai:sql')"
         )).scalar()
         check.check("SQL 入口角色已回填 bi:ai:sql", int(missing_ai_sql or 0), 0)
+
+        # ── 6.8 MCP 分区（S1：只有 bi:mcp:manage 能进，高危工具默认关）──
+        check.check("管理员看 MCP 客户端（放行）",
+                    nav_status("admin", "GET", "/admin/mcp/clients"), 200)
+        check.check("无 MCP 管理权限看客户端（拒绝）",
+                    nav_status("qa_ro", "GET", "/admin/mcp/clients"), 403)
+        check.check("高层角色看 MCP 客户端（拒绝）",
+                    nav_status("qa_exec2", "GET", "/admin/mcp/clients"), 403)
+        check.check("管理员看工具目录（放行）",
+                    nav_status("admin", "GET", "/admin/mcp/tools"), 200)
+        high_default_on = db.execute(text(
+            "SELECT count(*) FROM bi_mcp_tool WHERE risk = 'high' AND default_enabled"
+        )).scalar()
+        check.check("高危工具默认全关", int(high_default_on or 0), 0)
+
+        # ── 6.9 高层角色边界（S1：全部部门只读 + 汇总导出；禁 SQL / 明细 / 写操作）──
+        check.check("高层执行 SQL（拒绝）", nav_status("qa_exec2", "POST", "/bi/engine/query", {}), 403)
+        check.check("高层看我的看板（放行）", nav_status("qa_exec2", "GET", "/bi/dashboards"), 200)
+        check.check("高层用 AI 分析（放行）", nav_status("qa_exec2", "GET", "/bi/engine/ai/audit"), 200)
+        exec_perms = {r[0] for r in db.execute(text(
+            "SELECT rp.permission_code FROM role_permission rp JOIN roles r ON r.id = rp.role_id "
+            "WHERE r.code = 'executive'"
+        )).fetchall()}
+        check.check("高层权限 = AI 分析 + 汇总导出", exec_perms, {"bi:ai:use", "bi:data:export:summary"})
+        check.check("高层数据范围 = 全部部门",
+                    db.execute(text("SELECT data_scope FROM roles WHERE code = 'executive'")).scalar(), "all")
 
         # ── 7. 普通用户没有后台/审批能力 ──
         r = api.call(ids["qa_plain2"], "POST", "/admin/registrations/1/reject", {"reason": "x"})

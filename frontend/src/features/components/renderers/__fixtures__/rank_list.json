@@ -1,0 +1,129 @@
+{
+  "items": [
+    {
+      "name": "冻干虾干水族饲料补钙易消化高蛋白营养均衡成体幼体龟粮",
+      "value": 2000.0
+    },
+    {
+      "name": "冻干鸡心粒猫咪零食补铁护心成幼猫通用独立小包装 5包组合",
+      "value": 2000.0
+    },
+    {
+      "name": "仓鼠主粮五谷混合营养均衡成鼠幼鼠通用大包装 3kg",
+      "value": 2000.0
+    },
+    {
+      "name": "仓鼠零食冻干鸡胸肉粒无谷高蛋白小宠通用小包装 5包组合",
+      "value": 2000.0
+    },
+    {
+      "name": "鸡肉粒散装无谷高蛋白成幼猫通用独立小包装冻干零食 1kg",
+      "value": 2000.0
+    },
+    {
+      "name": "猫条零食独立小包装调理肠胃补水鱼肉成幼猫通用湿粮包无谷高蛋白",
+      "value": 2000.0
+    },
+    {
+      "name": "鹦鹉零食谷物混合天然无添加补钙训练奖励 750g",
+      "value": 2000.0
+    },
+    {
+      "name": "冻干三文鱼粒狗狗零食美毛亮毛无谷高蛋白营养增肥 200g",
+      "value": 2000.0
+    },
+    {
+      "name": "猫条零食益生元调理肠胃成幼猫通用补水湿粮包独立包装 尝鲜装",
+      "value": 2000.0
+    },
+    {
+      "name": "冻干鸡胸肉粒猫咪零食发腮增肥无谷高蛋白独立小包装 750g",
+      "value": 2000.0
+    }
+  ],
+  "count": 180,
+  "order": "value",
+  "show_rank": true,
+  "show_score": true,
+  "show_tags": true,
+  "quads": {},
+  "kind": "rank_list",
+  "dimension_label": "产品标题",
+  "metric_label": "日销量",
+  "series_label": null,
+  "component_kind": "rank_list",
+  "title": "排行",
+  "subtitle": "",
+  "unit": "",
+  "ui": {
+    "accent": "indigo",
+    "radius": 14,
+    "min_height": 260,
+    "show_unit": true,
+    "animate": true,
+    "align": "left",
+    "columns": 1,
+    "badge": "",
+    "edge": true,
+    "edge_px": 1.0,
+    "edge_alpha": 22,
+    "shadow_px": 16
+  },
+  "compute": {
+    "headline": "first",
+    "hint": "none",
+    "format": "int",
+    "bucket_size": null,
+    "bucket_start": null,
+    "bucket_count": 0,
+    "transform": "raw",
+    "scale": 1.0,
+    "offset": 0.0,
+    "decimals": 0,
+    "prefix": "",
+    "suffix": ""
+  },
+  "chart": {
+    "show_labels": true,
+    "show_legend": true,
+    "show_grid": true,
+    "show_title": true,
+    "show_meta": true,
+    "x_title": "",
+    "y_title": "",
+    "label_rotate": 0,
+    "y_min": null,
+    "y_max": null,
+    "bar_width": 26,
+    "hbar_threshold_key": "",
+    "hbar_threshold_gte": null,
+    "hbar_highlight": "violet",
+    "smooth": true,
+    "label_format": "auto",
+    "cloud_palette": "潮彩",
+    "scatter_mode": "point",
+    "trend_line": false,
+    "dot_size": 8,
+    "x_key": "",
+    "y_key": "",
+    "size_key": "",
+    "log_x": false,
+    "log_y": false,
+    "label_layout": "inside",
+    "single_slice": true,
+    "pie_inner": 46,
+    "pie_start": 90,
+    "pie_label": "name_pct",
+    "pie_gap": true,
+    "pie_rose": false
+  },
+  "combo": {
+    "bar_name": "",
+    "line_name": "",
+    "note": "",
+    "right_axis": true,
+    "smooth": true
+  },
+  "rls": false,
+  "top": null
+}

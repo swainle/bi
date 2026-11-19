@@ -8,13 +8,13 @@ import fs from "node:fs";
 
 import { expect, test } from "@playwright/test";
 
-const TOKEN_FILE = process.env.MZBI_TOKEN_FILE || "/tmp/mzbi_tokens.json";
-const DASHBOARD_ID = process.env.MZBI_DASHBOARD_ID || "57";
+const TOKEN_FILE = process.env.MCBI_TOKEN_FILE || "/tmp/mcbi_tokens.json";
+const DASHBOARD_ID = process.env.MCBI_DASHBOARD_ID || "57";
 
 // 预算可用环境变量覆盖（慢机器 / 临时验证「门禁真的会失败」）
-const LOGIN_LCP_MAX_MS = Number(process.env.MZBI_LOGIN_LCP_MAX_MS || 3000);
-const DASHBOARD_LCP_MAX_MS = Number(process.env.MZBI_DASHBOARD_LCP_MAX_MS || 4500);
-const CHART_MAX_MS = Number(process.env.MZBI_CHART_MAX_MS || 8000);
+const LOGIN_LCP_MAX_MS = Number(process.env.MCBI_LOGIN_LCP_MAX_MS || 3000);
+const DASHBOARD_LCP_MAX_MS = Number(process.env.MCBI_DASHBOARD_LCP_MAX_MS || 4500);
+const CHART_MAX_MS = Number(process.env.MCBI_CHART_MAX_MS || 8000);
 
 function readTokens(): { access_token: string; refresh_token: string } | null {
   if (!fs.existsSync(TOKEN_FILE)) return null;

@@ -7,10 +7,10 @@
     4. {root}/拼多多_商品ID_{product_id}/主图/ 素材包那种层级
     5. {root}/{product_id}/{ID}/              再退一层
 
-ID 形如 608759849830_main / 608759849830_detail，product_id 取前面的数字部分。
+ID 形如 700000000001_main / 700000000001_detail，product_id 取前面的数字部分。
 
 图片根目录默认 {upload_dir}/images；需要额外目录时用环境变量：
-    MINGZEBI_IMAGE_DIRS=/路径/素材A:/路径/素材B
+    MINGCEBI_IMAGE_DIRS=/路径/素材A:/路径/素材B
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ def _natural_key(path: Path):
 
 def _roots() -> list[Path]:
     dirs = [str(Path(settings.upload_dir) / "images")]
-    extra = os.getenv("MINGZEBI_IMAGE_DIRS", "").strip()
+    extra = os.getenv("MINGCEBI_IMAGE_DIRS", "").strip()
     if extra:
         dirs.extend(part for part in re.split(r"[;:]", extra) if part.strip())
     out: list[Path] = []

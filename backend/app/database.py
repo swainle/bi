@@ -46,6 +46,8 @@ else:
     _engine_kwargs["pool_recycle"] = 1800        # 30 分钟后回收连接，防止 PG 断开
     _engine_kwargs["pool_timeout"] = _env_int("DB_POOL_TIMEOUT", 30)    # 等待连接超时，防并发 500
     _engine_kwargs["pool_use_lifo"] = True       # LIFO 复用最近连接，减少空闲数
+    # 标记应用连接：安全监控据此区分「应用查询」与「外部直连会话」
+    _engine_kwargs["connect_args"] = {"application_name": "mingcebi-api"}
 
 engine = create_engine(_db_url, **_engine_kwargs)
 

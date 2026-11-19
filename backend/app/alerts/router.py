@@ -13,13 +13,16 @@ from sqlalchemy.orm import Session
 from app.alerts import evaluate
 from app.alerts import repository as repo
 from app import notifications
+from app.admin.permissions import is_admin
 from app.dashboards import render as renderer
 from app.dashboards import repository as dash_repo
 from app.dashboards.models import validate_doc
 from app.dashboards.router import _can_read, _require_edit, _require_read
 from app.database import get_db
+from app.middleware.audit import log_audit
 from app.middleware.auth import get_current_user
 from app.models.user import User
+from app.security import outbound
 
 router = APIRouter(prefix="/bi/alerts", tags=["BI告警"])
 
@@ -62,7 +65,7 @@ def _kpi_cards(db: Session, doc) -> list[dict]:
     return out
 
 
-def _clean(payload: dict, *, base: dict | None = None) -> dict:
+def _clean(payload: dict, *, base: dict | None = None, user: User) -> dict:
     """校验并归一化规则字段（新建 / 修改共用）."""
     merged = {**(base or {}), **payload}
 
@@ -91,14 +94,24 @@ def _clean(payload: dict, *, base: dict | None = None) -> dict:
         raise HTTPException(400, "通知渠道只能是站内 / 自定义 Webhook / 钉钉 / 企业微信 / 邮件")
     webhook_url = str(merged.get("webhook_url") or "").strip()[:500]
     email_to = str(merged.get("email_to") or "").strip()[:500]
+    admin = is_admin(user)
     if channel == "email":
         emails = notifications.valid_emails(email_to)
         if not emails:
             raise HTTPException(400, "请填写收件人邮箱")
-        email_to = ", ".join(emails)
+        try:
+            email_to = outbound.validate_email_targets(
+                ", ".join(emails), is_admin=admin, user_email=getattr(user, "email", "") or "")
+        except outbound.OutboundError as exc:
+            raise HTTPException(403 if not admin else 400, str(exc)) from exc
     elif channel != "inapp":
         if not webhook_url.startswith(("http://", "https://")):
             raise HTTPException(400, "通知地址必须以 http:// 或 https:// 开头")
+    if channel not in ("inapp", "email"):
+        try:
+            webhook_url = outbound.validate_webhook_url(webhook_url, is_admin=admin)
+        except outbound.OutboundError as exc:
+            raise HTTPException(403 if not admin else 400, str(exc)) from exc
     if channel != "email":
         email_to = ""
 
@@ -122,6 +135,16 @@ def _clean(payload: dict, *, base: dict | None = None) -> dict:
         "enabled": bool(enabled),
         "cooldown_minutes": cooldown,
     }
+
+
+def _audit_outbound(user: User, rule_id: int, data: dict) -> None:
+    channel = str(data.get("channel") or "inapp")
+    if channel == "inapp":
+        return
+    log_audit(getattr(user, "id", None), "alert.rule.outbound", "alert_rule", rule_id, {
+        "channel": channel,
+        "target": outbound.mask_target(data.get("email_to") or data.get("webhook_url") or ""),
+    })
 
 
 def _rule_or_404(db: Session, rule_id: int) -> dict:
@@ -186,7 +209,7 @@ def create_rule(
 ):
     dashboard_id = _as_int(payload.get("dashboard_id"), "看板")
     row = _require_edit(dash_repo.get(db, dashboard_id), current_user, db)
-    data = _clean(payload)
+    data = _clean(payload, user=current_user)
 
     doc = validate_doc(row.doc)
     cards = {card["item_key"]: card for card in _kpi_cards(db, doc)}
@@ -199,7 +222,9 @@ def create_rule(
         "metric": data["metric"] or card["metric"],
         "created_by": current_user.id,
     })
-    return repo.create_rule(db, data)
+    created = repo.create_rule(db, data)
+    _audit_outbound(current_user, int(created.get("id") or 0), data)
+    return created
 
 
 @router.put("/rules/{rule_id}")
@@ -212,7 +237,7 @@ def update_rule(
     rule = _rule_or_404(db, rule_id)
     _require_rule_edit(db, rule, current_user)
 
-    data = _clean(payload, base=rule)
+    data = _clean(payload, base=rule, user=current_user)
     if data["item_key"] != rule["item_key"]:
         row = _require_read(dash_repo.get(db, rule["dashboard_id"]), current_user, db)
         cards = {card["item_key"]: card for card in _kpi_cards(db, validate_doc(row.doc))}
@@ -220,7 +245,9 @@ def update_rule(
         if card is None:
             raise HTTPException(400, "这张卡片不存在或不是指标卡，无法告警")
         data["metric"] = data["metric"] or card["metric"]
-    return repo.update_rule(db, rule_id, data)
+    updated = repo.update_rule(db, rule_id, data)
+    _audit_outbound(current_user, rule_id, data)
+    return updated
 
 
 @router.delete("/rules/{rule_id}")
@@ -269,7 +296,8 @@ def preview_rule(
     item_key = str(payload.get("item_key") or "").strip()
     if item_key not in cards:
         raise HTTPException(400, "这张卡片不存在或不是指标卡，无法告警")
-    draft = _clean({**payload, "name": payload.get("name") or cards[item_key]["title"]})
+    draft = _clean({**payload, "name": payload.get("name") or cards[item_key]["title"]},
+                   user=current_user)
     return evaluate.check(db, {
         "id": None,
         "dashboard_id": dashboard_id,

@@ -5,6 +5,7 @@ import { accentOf } from "../palette";
 import CardShell from "../skin/CardShell";
 import { TEXT } from "../skin/tokens";
 import { chartOf, formatValue } from "../skin/format";
+import { useBoxSize } from "../skin/useBoxSize";
 import type { RenderPayload, UiSpec } from "../types";
 
 interface Props {
@@ -15,6 +16,7 @@ interface Props {
 export default function HbarCard({ payload, ui, compact, onSliceClick }: Props & { compact?: boolean; onSliceClick?: (name: string) => void }) {
   const token = accentOf(ui.accent);
   const opts = chartOf(payload.chart);
+  const [boxRef, box] = useBoxSize<HTMLDivElement>();
   const series = payload.series ?? [];
 
   if (!series.length) {
@@ -24,6 +26,9 @@ export default function HbarCard({ payload, ui, compact, onSliceClick }: Props &
   }
 
   const max = Math.max(...series.map((s) => Number(s.value ?? 0)), 1);
+  // 容器矮时只画放得下的前几条：整排塞进去会被裁成一条缝，还不如让位给前几名
+  const rowHeight = 26;
+  const visible = box.h > 0 ? series.slice(0, Math.max(1, Math.floor(box.h / rowHeight))) : series;
   const labelWidth = Math.min(120, Math.max(64, ...series.map((s) => String(s.name).length * 13)));
   // 阈值染色：达标项用高亮色（如「需求供给比 ≥3」）
   const highlight = accentOf(opts.hbar_highlight || "violet");
@@ -43,11 +48,11 @@ export default function HbarCard({ payload, ui, compact, onSliceClick }: Props &
       meta={chartShowMeta(payload) ? (payload.subtitle || payload.metric_label || undefined) : undefined}
       note={`${payload.dimension_label || ""} · 共 ${payload.count ?? series.length} 项`}
     >
-      <Box sx={{
+      <Box ref={boxRef} sx={{
         height: "100%", display: "flex", flexDirection: "column",
         justifyContent: "center", gap: 1, overflow: "hidden",
       }}>
-        {series.map((item, index) => {
+        {visible.map((item, index) => {
           const value = Number(item.value ?? 0);
           const ratio = Math.max(0.06, value / max);
           const strong = index === 0 && !compact;

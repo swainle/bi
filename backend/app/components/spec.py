@@ -654,6 +654,61 @@ class LayoutSpec(BaseModel):
         return max(120, min(int(v), 4000))
 
 
+class TopListSpec(BaseModel):
+    """指标卡右上角徽标的弹窗：点开按「维度 + 指标」自己算一个 TOP N 榜单。
+
+    和卡片上那个数字是两套口径 —— 卡片显示的是聚合值（例如 COUNT(日销量)），
+    弹窗里是按指标排行的明细（例如 日销量 SUM 前 10 个产品）。不改页面任何状态。
+    """
+
+    enabled: bool = False
+    title: str = ""                   # 弹窗标题（空 = 「卡片标题 TOP N」）
+    dim: str = ""                     # 排名维度（产品标题 / 产品id …）
+    metric: str = ""                  # 排序指标（空 = 卡片绑定的指标）
+    agg: str = "SUM"
+    top_n: int = 10
+    columns: list[str] = []           # 额外列（上架时间 / 品牌 / 榜单 / 价格带 / 差评数 …）
+    page_size: int = 10
+    # 并列怎么处理：strict = 严格前 N 条（同分按维度名排序，稳定）；all = 把并列的全部带出来
+    ties: Literal["strict", "all"] = "strict"
+
+    @field_validator("title")
+    @classmethod
+    def _title(cls, v: str) -> str:
+        return str(v or "").strip()[:40]
+
+    @field_validator("dim", "metric")
+    @classmethod
+    def _name(cls, v: str) -> str:
+        return str(v or "").strip()[:60]
+
+    @field_validator("agg")
+    @classmethod
+    def _agg(cls, v: str) -> str:
+        value = str(v or "SUM").upper()
+        return value if value in AGGREGATES else "SUM"
+
+    @field_validator("top_n")
+    @classmethod
+    def _top(cls, v: int) -> int:
+        return max(1, min(int(v or 10), 200))
+
+    @field_validator("page_size")
+    @classmethod
+    def _page(cls, v: int) -> int:
+        return max(5, min(int(v or 10), 200))
+
+    @field_validator("columns")
+    @classmethod
+    def _columns(cls, v: list) -> list:
+        out: list[str] = []
+        for item in (v or [])[:8]:
+            name = str(item or "").strip()[:40]
+            if name and name not in out:
+                out.append(name)
+        return out
+
+
 class ComponentSpec(BaseModel):
     title: str
     subtitle: str = ""
@@ -671,6 +726,8 @@ class ComponentSpec(BaseModel):
     table_view: TableViewSpec = Field(default_factory=TableViewSpec)
     banner: BannerSpec = Field(default_factory=BannerSpec)
     nav: NavSpec = Field(default_factory=NavSpec)
+    # 指标卡右上角徽标的弹窗（独立的 TOP N 榜单；不填 = 徽标只作展示）
+    top: TopListSpec = Field(default_factory=TopListSpec)
 
     @field_validator("title")
     @classmethod

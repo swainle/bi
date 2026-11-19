@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from app.dashboards import render_cache
-from app.query import metrics
-from app.routers import metrics as metrics_router
+from app.observability import metrics
+from app.observability import router as metrics_router
 
 
 def test_incr_snapshot_reset():

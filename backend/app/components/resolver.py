@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import re
 from decimal import Decimal
+import datetime as _dt
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -52,7 +53,11 @@ def _execute_dataset(db: Session, dataset, query, user):
         try:
             return run_live(db, query, user, src, dataset_id=dataset.id)
         except LiveQueryError as exc:
-            raise ComponentSpecError(f"{dataset.name}：{exc}") from exc
+            message = str(exc)
+            # 「数据源连接失败：host:port」本身已经说清是哪台库，别再叠一层数据集名（卡片上放不下）
+            if message.startswith("数据源"):
+                raise ComponentSpecError(message) from exc
+            raise ComponentSpecError(f"{dataset.name}：{message}") from exc
     return execute_query(db, query, user, dataset_id=dataset.id)
 
 
@@ -104,6 +109,42 @@ def _check_metric_aggs(db: Session, dataset, spec: ComponentSpec) -> None:
             f"字段「{item['name']}」是{label}，{item['agg']} 用不了；"
             f"改用 COUNT / COUNT_DISTINCT，或换成数值列"
         )
+
+
+def _prune_aux_refs(spec: ComponentSpec, allowed: set[str]) -> ComponentSpec:
+    """清掉指向「当前数据集里不存在」的辅助列引用（缩略图 / 图表轴 / 排行取值 / 表格列配置）.
+
+    这些列是「挂载用」的：缩略图只是多挂一列取图、图表轴是画法参数。换绑数据集
+    （平台分套切表）后旧名残留很常见，缺了应当降级（少一列 / 轴回落），不能抛「未知字段」
+    把整张卡打成一条报错 —— 2026-11-15 用户实测：明细表缩略图字段 `主图ID`（直连表才有）
+    残留在「测试-01」上，整张明细表只显示「天猫：未知字段：主图ID」。
+    """
+    if not allowed:
+        return spec
+    missing = lambda name: bool(name) and name not in allowed  # noqa: E731
+    view, chart, rank = spec.table_view, spec.chart, spec.rank
+    touched = False
+    if view.thumb and view.thumb_key and missing(view.thumb_key):
+        view = view.model_copy(update={"thumb_key": ""})
+        touched = True
+    if view.columns and any(missing(str((c or {}).get("key") or "")) for c in view.columns):
+        view = view.model_copy(update={"columns": [
+            c for c in view.columns if not missing(str((c or {}).get("key") or ""))
+        ]})
+        touched = True
+    chart_patch = {key: "" for key in ("x_key", "y_key", "size_key", "hbar_threshold_key")
+                   if missing(getattr(chart, key, ""))}
+    if chart_patch:
+        chart = chart.model_copy(update=chart_patch)
+        touched = True
+    rank_patch = {key: "" for key in ("value_key", "x_key", "y_key", "cvr_key", "tags_key")
+                  if missing(getattr(rank, key, ""))}
+    if rank_patch:
+        rank = rank.model_copy(update=rank_patch)
+        touched = True
+    if not touched:
+        return spec
+    return spec.model_copy(update={"table_view": view, "chart": chart, "rank": rank})
 
 
 def _extra_metric_names(spec: ComponentSpec) -> list[str]:
@@ -248,6 +289,41 @@ def _fix_filter_columns(dataset, filters: list[dict]) -> list[dict]:
                 item = {**item, "name": fixed}
         out.append(item)
     return out
+
+
+def _grain_label(value: "_dt.date | _dt.datetime", grain: str) -> str:
+    """时间维度按粒度转成人看的字符串（月 → 2026-05、日 → 2026-05-04、小时 → … 13:00）."""
+    if isinstance(value, _dt.datetime):
+        local = value
+    else:
+        local = _dt.datetime(value.year, value.month, value.day)
+    g = (grain or "day").lower()
+    if g == "hour":
+        return local.strftime("%Y-%m-%d %H:00")
+    if g == "month":
+        return local.strftime("%Y-%m")
+    if g == "quarter":
+        return f"{local.year}-Q{(local.month - 1) // 3 + 1}"
+    if g == "year":
+        return local.strftime("%Y")
+    return local.strftime("%Y-%m-%d")
+
+
+def _format_time_dimension(rows: list[dict], dataset: Any, spec: ComponentSpec) -> list[dict]:
+    """把时间维度列格式化成可读字符串：`datetime` 直接丢给前端会显示成
+    `2026-05-01T00:00:00+08:00`（月粒度折线图的横轴就变成一长串 ISO 串）。"""
+    name = spec.binding.dimension
+    if not name or not rows:
+        return rows
+    field = getattr(dataset, "field_by_name", lambda _n: None)(name) if hasattr(dataset, "field_by_name") else None
+    if field is None or getattr(field, "role", "") != "time":
+        return rows
+    grain = spec.binding.grain or getattr(field, "default_grain", None) or "day"
+    for row in rows:
+        value = row.get(name)
+        if isinstance(value, (_dt.date, _dt.datetime)):
+            row[name] = _grain_label(value, grain)
+    return rows
 
 
 def _normalize(kind: str, rows: list[dict], spec: ComponentSpec) -> list[dict]:
@@ -549,6 +625,15 @@ def _resolve_bound(
     if dataset is None:
         raise ComponentSpecError(f"数据集不存在：{binding.dataset_id}")
 
+    # 挂了「辅助列」（缩略图 / 图表轴 / 排行取值列）但当前数据集里没有这一列 —— 常见于
+    # 平台分套切表、或卡片换绑数据集后旧字段残留。这类列不是用户显式绑定的口径，
+    # 缺了就该静默降级（少一列），不能让整张卡变成一条「未知字段」报错。
+    # 注意：表格列配置 / 图表轴也可能指向**指标**（如「词数」），候选集合必须带上指标名。
+    allowed = {f.name for f in (getattr(dataset, "fields", None) or [])}
+    allowed |= {m.name for m in (getattr(dataset, "metrics", None) or [])}
+    spec = _prune_aux_refs(spec, allowed)
+    binding = spec.binding
+
     _check_metric_aggs(db, dataset, spec)
     request = _request_for(spec, kind)
     # 词云只绑了指标、没绑维度：自动挑一个「适合当词」的列（跳过标题/链接/ID 这类长文本）
@@ -596,7 +681,7 @@ def _resolve_bound(
 
     query = compile_query(dataset, request)
     result = _execute_dataset(db, dataset, query, user)
-    raw_rows = [dict(r) for r in result.rows]
+    raw_rows = _format_time_dimension([dict(r) for r in result.rows], dataset, spec)
 
     if kind == "combo":
         payload = build_combo(raw_rows, spec)
@@ -628,6 +713,11 @@ def _resolve_bound(
         "sql": result.sql,
         "elapsed_ms": result.elapsed_ms,
         "rls": result.rls,
+        # 指标卡右上角徽标的弹窗配置：前端据此把徽标做成可点（点了按它自己的口径取 TOP N）
+        "top": spec.top.model_dump() if kind == "kpi" else None,
+        # 这张卡最终读的是哪个数据集（平台分套切换后是目标表）：前端做「逐级筛选」时
+        # 要按这些数据集去取候选值，不能拿卡片 spec 里那个（那是切换前的）。
+        "dataset_id": dataset.id,
         "params_used": {k: v for k, v in params.items() if v not in (None, "", [])},
     })
 

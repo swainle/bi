@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.sources.repository import build_url
+from app.sources.repository import apply_source_overrides, build_url, clean_probe_error
 
 
 def test_clickhouse_uses_native_driver() -> None:
@@ -103,3 +103,62 @@ def test_mssql_uri_with_driver_kept(monkeypatch) -> None:
     uri = "mssql+pyodbc://u:p@h:1433/db?driver=ODBC+Driver+17+for+SQL+Server&TDS_Version=7.4"
     # 手填了 driver 就完全照用，不重复追加
     assert build_url({"uri": uri}) == uri
+
+
+# ── 编辑数据源：「已存配置 + 未落库修改」合并（测连通不落库） ──────────────
+
+def test_overrides_merge_keeps_unset_fields() -> None:
+    stored = {
+        "id": 7, "ds_type": "postgresql", "host": "10.0.0.8", "port": 5432,
+        "db_name": "dm", "username": "u", "password": "cipher", "uri": "",
+    }
+    merged = apply_source_overrides(stored, {"host": "10.0.0.9"})
+    assert merged["host"] == "10.0.0.9"
+    assert merged["port"] == 5432 and merged["db_name"] == "dm"
+    # 改地址不用重填密码
+    assert merged["password"] == "cipher"
+    assert merged["id"] == 7
+
+
+def test_overrides_blank_password_keeps_stored() -> None:
+    stored = {"ds_type": "postgresql", "password": "cipher"}
+    assert apply_source_overrides(stored, {"password": ""})["password"] == "cipher"
+
+
+def test_overrides_explicit_empty_uri_switches_to_host_mode() -> None:
+    stored = {"ds_type": "postgresql", "uri": "postgresql://u@old:5432/dm", "host": "old"}
+    merged = apply_source_overrides(stored, {"uri": ""})
+    assert merged["uri"] == ""
+    # 没给 uri 键时必须原样保留（旧实现的坑：缺省即写空串会把连接串清掉）
+    assert apply_source_overrides(stored, {"host": "new"})["uri"] == stored["uri"]
+
+
+# ── 数据源圆点：驱动报错压成一句能给 tooltip 看的话 ───────────────────────
+
+def test_clean_probe_error_trims_noise() -> None:
+    raw = (
+        "连接失败：(psycopg2.OperationalError) connection to server at \"10.0.0.9\", "
+        "port 5432 failed: timeout expired\n\n(Background on this error at: https://sqlalche.me/e/20/e3q8)"
+    )
+    assert clean_probe_error(raw) == (
+        'connection to server at "10.0.0.9", port 5432 failed: timeout expired'
+    )
+
+
+def test_clean_probe_error_collapses_driver_newlines() -> None:
+    raw = (
+        '连接失败：(psycopg2.OperationalError) connection to server at "127.0.0.1", port 5999 '
+        "failed: Connection refused\n\tIs the server running on that host and accepting "
+        "TCP/IP connections?\n\n(Background on this error at: https://sqlalche.me/e/20/e3q8)"
+    )
+    assert clean_probe_error(raw) == (
+        'connection to server at "127.0.0.1", port 5999 failed: Connection refused '
+        "Is the server running on that host and accepting TCP/IP connections?"
+    )
+
+
+def test_clean_probe_error_keeps_plain_reason() -> None:
+    assert clean_probe_error("数据源密码无法解密（服务密钥可能变过），请重新填写密码") == (
+        "数据源密码无法解密（服务密钥可能变过），请重新填写密码"
+    )
+    assert clean_probe_error("") == "未知原因"

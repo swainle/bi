@@ -7,7 +7,7 @@ import {
 } from "@mui/material";
 import { ChevronRight, ContentCopy, ExpandMore, PlayArrow, Save, TableChart } from "@mui/icons-material";
 import client from "../../api/client";
-import { useAuth } from "../../hooks/useAuth";
+import { useAuth } from "../auth/useAuth";
 import CodeMirror, { EditorView, type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { PostgreSQL, sql as sqlLanguage } from "@codemirror/lang-sql";
 

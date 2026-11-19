@@ -84,7 +84,7 @@ def test_failed_batch_rolls_back_all_names(db):
 def test_sync_endpoint_checks_permission_owner_and_uses_database_comments(monkeypatch):
     from app.database import get_db
     from app.middleware.auth import get_current_user
-    from app.security import nav_guard
+    from app.security.nav import guard as nav_guard
     from app.semantic import router_items
     user = SimpleNamespace(id=1, role="user", allowed=False)
     dataset = Dataset(7, "订单", "orders", owner_id=2)

@@ -17,10 +17,14 @@
 
 from __future__ import annotations
 
+import time
+from concurrent.futures import ThreadPoolExecutor
+
 from fastapi import APIRouter, Body, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.middleware.audit import log_audit
 from app.security.nav_guard import require_nav
 from app.middleware.auth import get_current_user
 from app.models.user import User
@@ -72,6 +76,63 @@ def list_source_types(
     return {"types": types_catalog.list_types()}
 
 
+# 数据源连通性缓存：值 = {ok, message, at}；进页面探一次，短时间重复进入不再连源库
+_STATUS_TTL = 30.0
+_status_cache: dict[int, dict] = {}
+
+
+@router.get("/status")
+def sources_status(
+    refresh: int = 0,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """数据源连通性（列表名称旁的小圆点：绿=连得上 / 红=连不上）.
+
+    只读探测，30 秒内复用结果；点圆点传 refresh=1 立即重探。失败原文给 tooltip，
+    不改库、不写审计。
+    """
+    items = repo.list_sources(db)
+    if not items:
+        return {"status": {}}
+
+    now = time.time()
+    need = [
+        s for s in items
+        if refresh
+        or int(s["id"]) not in _status_cache
+        or now - _status_cache[int(s["id"])]["at"] >= _STATUS_TTL
+    ]
+    # 取配置放在主线程（Session 不能跨线程用），线程里只做网络 I/O
+    jobs: list[tuple[int, dict]] = []
+    for item in need:
+        src = repo.get_source(db, int(item["id"]))
+        if src is not None:
+            jobs.append((int(item["id"]), src))
+
+    def probe(job: tuple[int, dict]) -> tuple[int, bool, str]:
+        source_id, src = job
+        try:
+            repo.test_source(src)
+            return source_id, True, "连接正常"
+        except Exception as exc:  # 网络 / 驱动 / 认证失败都归到红点，压成一句给 tooltip
+            return source_id, False, repo.clean_probe_error(exc)
+
+    if jobs:
+        with ThreadPoolExecutor(max_workers=min(4, len(jobs))) as pool:
+            for source_id, ok, message in pool.map(probe, jobs):
+                _status_cache[source_id] = {"ok": ok, "message": message, "at": time.time()}
+
+    return {"status": {
+        str(s["id"]): {
+            "ok": _status_cache[int(s["id"])]["ok"],
+            "message": _status_cache[int(s["id"])]["message"],
+            "checked_at": int(_status_cache[int(s["id"])]["at"]),
+        }
+        for s in items if int(s["id"]) in _status_cache
+    }}
+
+
 @router.get("")
 def list_sources(
     current_user: User = Depends(get_current_user),
@@ -86,10 +147,17 @@ def create_source(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    from app.semantic.access import validate_dept_choice
+
+    payload = dict(payload)
+    payload["dept_id"] = validate_dept_choice(db, payload.get("dept_id"), current_user)
     try:
-        return repo.create_source(db, payload, current_user.id)
+        created = repo.create_source(db, payload, current_user.id)
     except Exception as exc:
         raise _guard(exc) from exc
+    log_audit(current_user.id, "source.create", "source", int(created.get("id") or 0),
+              {"name": created.get("name"), "type": created.get("ds_type")})
+    return created
 
 
 @router.patch("/{source_id}", dependencies=[Depends(require_nav("bi:nav:datasources"))])
@@ -99,10 +167,26 @@ def update_source(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    current = repo.get_source(db, source_id)
+    if current is None:
+        raise HTTPException(404, "数据源不存在")
+    payload = dict(payload or {})
+    if "dept_id" in payload:
+        from app.semantic.access import validate_dept_choice
+
+        # 只有真的换部门才校验数据范围：原样提交不能被自己看不到的旧部门挡住
+        if (payload.get("dept_id") or None) != (current.get("dept_id") or None):
+            payload["dept_id"] = validate_dept_choice(db, payload.get("dept_id"), current_user)
     try:
-        return repo.update_source(db, source_id, payload)
+        updated = repo.update_source(db, source_id, payload)
     except Exception as exc:
         raise _guard(exc) from exc
+    # 地址 / 密码 / 账号可能变了：旧连通性结论立即作废
+    _status_cache.pop(source_id, None)
+    # 只记改了哪些键，绝不落密码/连接串
+    log_audit(current_user.id, "source.update", "source", source_id,
+              {"fields": sorted(k for k in (payload or {}) if "pass" not in k.lower())})
+    return updated
 
 
 @router.delete("/{source_id}")
@@ -112,9 +196,12 @@ def delete_source(
     db: Session = Depends(get_db),
 ):
     try:
-        return repo.delete_source(db, source_id)
+        result = repo.delete_source(db, source_id)
     except Exception as exc:
         raise _guard(exc) from exc
+    _status_cache.pop(source_id, None)
+    log_audit(current_user.id, "source.delete", "source", source_id, {})
+    return result
 
 
 @router.post("/test", dependencies=[Depends(require_nav("bi:nav:datasources"))])
@@ -132,16 +219,27 @@ def test_payload(
 @router.post("/{source_id}/test", dependencies=[Depends(require_nav("bi:nav:datasources"))])
 def test_source(
     source_id: int,
+    payload: dict = Body(default={}),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    """测连通；带 body 时按「已存配置 + 本次修改」测 —— 编辑对话框不必重填密码."""
     src = repo.get_source(db, source_id)
     if src is None:
         raise HTTPException(404, "数据源不存在")
+    overrides = payload or {}
     try:
-        return repo.test_source(src)
+        result = repo.test_source(repo.apply_source_overrides(src, overrides))
     except Exception as exc:
+        # 只有测的是「已存配置」才更新列表圆点；编辑对话框里的临时配置不能污染它
+        if not overrides:
+            _status_cache[int(source_id)] = {
+                "ok": False, "message": repo.clean_probe_error(exc), "at": time.time(),
+            }
         raise _guard(exc) from exc
+    if not overrides:
+        _status_cache[int(source_id)] = {"ok": True, "message": "连接正常", "at": time.time()}
+    return result
 
 
 @router.get("/{source_id}/tables")
@@ -254,9 +352,13 @@ async def upload_file(
     if len(content) > 200 * 1024 * 1024:
         raise HTTPException(400, "文件太大（上限 200MB）")
     try:
-        return repo.import_file(db, content, file.filename or "upload.csv", current_user.id)
+        result = repo.import_file(db, content, file.filename or "upload.csv", current_user.id)
     except Exception as exc:
         raise _guard(exc) from exc
+    log_audit(current_user.id, "source.upload", "source_table", 0,
+              {"filename": file.filename, "bytes": len(content),
+               "local_table": result.get("local_table")})
+    return result
 
 
 @router.get("/files")
@@ -274,6 +376,8 @@ def drop_file(
     db: Session = Depends(get_db),
 ):
     try:
-        return repo.drop_source_table(db, table_id)
+        result = repo.drop_source_table(db, table_id)
     except Exception as exc:
         raise _guard(exc) from exc
+    log_audit(current_user.id, "source.file_delete", "source_table", table_id, {})
+    return result

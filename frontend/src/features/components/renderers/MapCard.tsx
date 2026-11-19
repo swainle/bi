@@ -11,7 +11,7 @@ import { TEXT, TOOLTIP } from "../skin/tokens";
 import { chartOf, formatValue } from "../skin/format";
 import type { RenderPayload, UiSpec } from "../types";
 
-const MAP_NAME = "mingzebi-china";
+const MAP_NAME = "mingcebi-china";
 
 /** GeoJSON 只拉一次；失败允许下次重试 */
 let geoPromise: Promise<{ features?: { properties?: { name?: string } }[] }> | null = null;

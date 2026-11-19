@@ -172,13 +172,13 @@ def upsert_builtin(db: Session, *, code: str, name: str, kind: str, spec: dict,
 
     默认**只插入缺失的组件、绝不覆盖已存在组件的 spec** —— 库里那张卡可能已经被用户调过
     （改字段、加选项、设默认值），启动时被种子冲掉是不可接受的。
-    需要让种子改动生效（开发环境）时，用环境变量 `MINGZEBI_RESEED=1` 或显式传 overwrite_spec=True。
+    需要让种子改动生效（开发环境）时，用环境变量 `MINGCEBI_RESEED=1` 或显式传 overwrite_spec=True。
     """
     import os
 
     existing = get_by_code(db, code)
     if existing:
-        force = overwrite_spec or os.getenv("MINGZEBI_RESEED", "") in ("1", "true", "yes")
+        force = overwrite_spec or os.getenv("MINGCEBI_RESEED", "") in ("1", "true", "yes")
         if not force:
             return existing
         # 重写种子时保留画布位置，避免重启把用户拖好的布局冲掉

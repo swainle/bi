@@ -26,6 +26,7 @@ from app.dashboards import render as renderer
 from app.dashboards import repository as dash_repo
 from app.dashboards.models import validate_doc
 from app.reports import browser
+from app.security import watermark
 
 REPORT_DIR = os.getenv("BI_REPORT_DIR") or os.path.join(settings.project_root, "var", "reports")
 EXPORT_DIR = os.getenv("BI_EXPORT_DIR") or os.path.join(settings.project_root, "var", "exports")
@@ -92,8 +93,8 @@ _TEMPLATE = Template(
   </div>
 {% endfor %}
 </div>
-<div class="foot">由明策BI 自动生成 · {{ generated_at }}</div>
-</div></body></html>"""
+<div class="foot">由明策BI 自动生成 · {{ generated_at }} · {{ watermark_text }}</div>
+</div>{{ watermark_html | safe }}</body></html>"""
 )
 
 
@@ -250,7 +251,7 @@ def build_report(db: Session, subscription: dict, user: Any, board_name: str,
 
 
 def _write_html(path: str, board_name: str, title: str, blocks: list[dict], summary: dict,
-                generated_at: str) -> None:
+                generated_at: str, info: dict) -> None:
     params_text = "、".join(f"{key} = {value}" for key, value in (summary.get("params") or {}).items())
     html = _TEMPLATE.render(
         css=_CSS,
@@ -259,13 +260,15 @@ def _write_html(path: str, board_name: str, title: str, blocks: list[dict], summ
         generated_at=generated_at,
         params=params_text,
         cards=blocks,
+        watermark_text=info.get("text") or "",
+        watermark_html=watermark.overlay_html(info.get("text") or ""),
     )
     with open(path, "w", encoding="utf-8") as fh:
         fh.write(html)
 
 
 def _write_xlsx(path: str, board_name: str, title: str, blocks: list[dict], summary: dict,
-                generated_at: str) -> None:
+                generated_at: str, info: dict) -> None:
     wb = Workbook()
     head_font = Font(bold=True, color="1D1D1F")
     head_fill = PatternFill("solid", fgColor="F5F8FF")
@@ -274,6 +277,8 @@ def _write_xlsx(path: str, board_name: str, title: str, blocks: list[dict], summ
     overview.title = "概览"
     overview_rows = [
         ("看板", board_name), ("报表", title), ("生成时间", generated_at),
+        ("导出人", info.get("user") or ""), ("部门", info.get("department") or ""),
+        ("请求号", f"#{info.get('request_id') or ''}"),
         ("卡片数", summary.get("cards") or 0), ("取数失败", len(summary.get("errors") or [])),
     ]
     for key, value in (summary.get("params") or {}).items():
@@ -283,6 +288,7 @@ def _write_xlsx(path: str, board_name: str, title: str, blocks: list[dict], summ
         overview.cell(row=index, column=2, value=str(value))
     overview.column_dimensions["A"].width = 18
     overview.column_dimensions["B"].width = 52
+    watermark.xlsx_header(overview, info)
 
     used: set[str] = {"概览"}
     for index, block in enumerate(blocks, start=1):
@@ -291,6 +297,7 @@ def _write_xlsx(path: str, board_name: str, title: str, blocks: list[dict], summ
             name = name[:29] + f"~{index}"
         used.add(name)
         ws = wb.create_sheet(name)
+        watermark.xlsx_header(ws, info)
         ws.cell(row=1, column=1, value=block.get("title") or name).font = Font(bold=True, size=13)
         if block.get("subtitle"):
             ws.cell(row=2, column=1, value=block["subtitle"])
@@ -348,6 +355,7 @@ def generate_files(db: Session, subscription: dict, user: Any,
     title = subscription.get("name") or f"{board_name} 报表"
     blocks, summary = build_report(db, subscription, user, board_name, doc, params=params,
                                    cross_filters=cross_filters)
+    info = watermark.identity(db, user, source="定时报表")
 
     folder = os.path.join(REPORT_DIR, str(subscription["dashboard_id"]))
     os.makedirs(folder, exist_ok=True)
@@ -358,8 +366,8 @@ def generate_files(db: Session, subscription: dict, user: Any,
     pdf_rel = f"{subscription['dashboard_id']}/{stamp}-{token}.pdf"
     generated_at = china_now().strftime("%Y-%m-%d %H:%M")
 
-    _write_html(os.path.join(REPORT_DIR, html_rel), board_name, title, blocks, summary, generated_at)
-    _write_xlsx(os.path.join(REPORT_DIR, xlsx_rel), board_name, title, blocks, summary, generated_at)
+    _write_html(os.path.join(REPORT_DIR, html_rel), board_name, title, blocks, summary, generated_at, info)
+    _write_xlsx(os.path.join(REPORT_DIR, xlsx_rel), board_name, title, blocks, summary, generated_at, info)
     pdf_error = browser.print_pdf(os.path.join(REPORT_DIR, html_rel), os.path.join(REPORT_DIR, pdf_rel))
     if pdf_error:
         # 浏览器缺失 / 渲染失败不影响报表本身，下载入口按 has_pdf 自适应
@@ -370,7 +378,8 @@ def generate_files(db: Session, subscription: dict, user: Any,
 
 def export_dashboard(db: Session, board: Any, user: Any, *, view_key: str = "",
                      params: dict | None = None, title: str = "",
-                     cross_filters: list[dict] | None = None) -> dict:
+                     cross_filters: list[dict] | None = None,
+                     request_id: str = "") -> dict:
     """整页导出（不改数据库）：按当前视图 + 当前筛选参数渲染，写 HTML / Excel 到 var/exports."""
     doc = validate_doc(board.doc)
     subscription = {
@@ -380,6 +389,7 @@ def export_dashboard(db: Session, board: Any, user: Any, *, view_key: str = "",
     }
     blocks, summary = build_report(db, subscription, user, board.name, doc, params=params,
                                    cross_filters=cross_filters)
+    info = watermark.identity(db, user, request_id=request_id, source="页面导出")
 
     folder = os.path.join(EXPORT_DIR, str(board.id))
     os.makedirs(folder, exist_ok=True)
@@ -390,8 +400,8 @@ def export_dashboard(db: Session, board: Any, user: Any, *, view_key: str = "",
     generated_at = china_now().strftime("%Y-%m-%d %H:%M")
     name = subscription["name"]
 
-    _write_html(html_abs, board.name, name, blocks, summary, generated_at)
-    _write_xlsx(xlsx_abs, board.name, name, blocks, summary, generated_at)
+    _write_html(html_abs, board.name, name, blocks, summary, generated_at, info)
+    _write_xlsx(xlsx_abs, board.name, name, blocks, summary, generated_at, info)
     return {"html_path": html_abs, "xlsx_path": xlsx_abs, "summary": summary}
 
 

@@ -81,6 +81,37 @@ function spiralPack(pending: WordBox[], seed: WordBox[], W: number, H: number,
   return out;
 }
 
+/** 词很少时的排法：居中按行铺（一行放不下就换行），整体垂直居中.
+ *  2~6 个词用螺旋会「第一个词占住正中、其余词只能挤边缝」，排出来一大一小还容易放不下；
+ *  按行铺既能保证每个词都看得见，又能把卡片撑满。放不下返回 null，由外层整体缩小再试。 */
+function rowsPack(batch: WordBox[], W: number, H: number, pad: number, gapX: number, gapY: number): WordBox[] | null {
+  if (!batch.length) return null;
+  const lines: { words: WordBox[]; w: number; h: number }[] = [];
+  for (const word of batch) {
+    const line = lines[lines.length - 1];
+    if (line && line.w + gapX + word.w <= W - pad * 2) {
+      line.words.push(word);
+      line.w += gapX + word.w;
+      line.h = Math.max(line.h, word.h);
+    } else {
+      lines.push({ words: [word], w: word.w, h: word.h });
+    }
+  }
+  const totalH = lines.reduce((sum, line) => sum + line.h, 0) + gapY * (lines.length - 1);
+  if (totalH > H - pad * 2) return null;
+  const out: WordBox[] = [];
+  let y = pad + (H - pad * 2 - totalH) / 2;
+  for (const line of lines) {
+    let x = (W - line.w) / 2;
+    for (const word of line.words) {
+      out.push({ ...word, x, y: y + (line.h - word.h) / 2 });
+      x += word.w + gapX;
+    }
+    y += line.h + gapY;
+  }
+  return out;
+}
+
 export default function WordCloudCard({ payload, ui, compact }: Props) {
   const token = accentOf(ui.accent);
   /** 主题色：面板里选的 6 套之一（缺省「潮彩」） */
@@ -156,20 +187,37 @@ export default function WordCloudCard({ payload, ui, compact }: Props) {
     const maxValue = words[0]?.value || 1;
     const minValue = words[words.length - 1]?.value ?? 0;
     const span = Math.max(1, maxValue - minValue);
-    /* 最大字号按容器算：既要「大的压得住场」（约卡片高的 1/3），又不能让头名一个字就吃满整行
-       —— 按头名词长反算：最长的那个词最宽不超过容器的一半 */
+    /* 权重完全一样（COUNT 计数、或者只有两三个词且值相同）：没有大小之分，
+       全部按「头名」画 —— 否则 ratio 恒为 0，整片云会缩成一撮小字。 */
+    const flat = maxValue <= minValue;
+    /* 词越少，每个词能占的地方越大（sparse: 1 = ≤2 个词，0 = ≥12 个词）；
+       2 个词不该缩在卡片中心一小撮（2026-11-15 用户要求「词少的时候字自适应大一点」） */
+    const sparse = Math.max(0, Math.min(1, (12 - words.length) / 10));
+    /* 最大字号按容器 + 面积预算算：既要「大的压得住场」，又不能让头名一个字就吃满整行
+       —— 按头名词长反算：最宽不超过容器的一半（词少时放宽到 3/4 宽） */
     const topChars = Math.max(1, words[0]?.name.length ?? 1);
-    const maxSize = Math.max(11, Math.min(
-      compact ? 26 : 46,
-      usableH * (compact ? 0.3 : 0.34),
-      (usableW * (compact ? 0.62 : 0.52)) / topChars,
-    ));
-    const minSize = Math.max(7, compact ? Math.min(9, maxSize * 0.4) : Math.min(12, maxSize * 0.28));
+    const totalChars = words.reduce((sum, word) => sum + Math.max(1, word.name.length), 0);
+    const heightCap = usableH * (0.34 + 0.26 * sparse);
+    const widthCap = (usableW * (0.52 + 0.26 * sparse)) / topChars;
+    let maxSize: number;
+    if (sparse > 0) {
+      /* 词少：按「面积均分」定字号，词才会撑满卡片（2 个词不该缩在中央一小撮）。
+         跨度是「字数 × 字号²」：均分下来每个词都够大，又不会大到摆不下。
+         有大小差异时头名允许比平均值大一截（其余词本来就更小）。 */
+      const avg = Math.sqrt((usableW * usableH * 0.55) / (1.2 * Math.max(1, totalChars)));
+      maxSize = Math.min(compact ? 30 : 96, avg * (flat ? 1 : 1.6), heightCap, widthCap);
+    } else {
+      maxSize = Math.min(compact ? 26 : 46, heightCap, widthCap);
+    }
+    maxSize = Math.max(11, maxSize);
+    const minSize = Math.max(7, compact
+      ? Math.min(9, maxSize * 0.4)
+      : Math.min(12 + 20 * sparse, maxSize * (0.28 + 0.34 * sparse)));
     const measurer = makeMeasurer(fontFamily);
 
     /** 按排名给字号：头部差距保留，尾部不至于小到看不清 */
     const sized = (word: { key: string; name: string; value: number; index: number }, scale: number): WordBox => {
-      const ratio = Math.max(0, (word.value - minValue) / span);
+      const ratio = (flat && sparse > 0) ? 1 : Math.max(0, (word.value - minValue) / span);
       const size = (minSize + (maxSize - minSize) * Math.sqrt(ratio)) * scale;
       const weight = size > maxSize * 0.6 ? 700 : size > maxSize * 0.38 ? 600 : 400;
       const { w, h } = measurer(word.name, size, weight);
@@ -177,6 +225,22 @@ export default function WordCloudCard({ payload, ui, compact }: Props) {
       const fit = w > usableW ? usableW / w : 1;
       return { ...word, size: size * fit, weight, x: 0, y: 0, w: w * fit, h: h * fit };
     };
+
+    /* 词少（≤ 6 个）：居中按行铺，整体缩小直到全部放得下 —— 每个词都在、且尽量大 */
+    if (words.length <= 6) {
+      for (const scale of [1, 0.92, 0.84, 0.76, 0.68, 0.6, 0.52, 0.44, 0.36, 0.3]) {
+        const packed = rowsPack(words.map((word) => sized(word, scale)), box.w, box.h, pad, gap, gap);
+        if (packed) return packed;
+      }
+      /* 极端窄卡：至少把最大的词缩着放进正中 */
+      const only = sized(words[0], 1);
+      const shrink = Math.min(1, usableW / Math.max(1, only.w), usableH / Math.max(1, only.h));
+      return [{
+        ...only,
+        size: only.size * shrink, w: only.w * shrink, h: only.h * shrink,
+        x: (box.w - only.w * shrink) / 2, y: (box.h - only.h * shrink) / 2,
+      }];
+    }
 
     let result: WordBox[] = [];
     let pending = words.map((word) => sized(word, 1));
@@ -188,6 +252,16 @@ export default function WordCloudCard({ payload, ui, compact }: Props) {
       const placedKeys = new Set(packed.map((p) => p.key));
       pending = pending.filter((word) => !placedKeys.has(word.key));
       result = packed;
+    }
+    /* 极端窄卡 / 超大字号：一级级缩都塞不下时，至少把最大的词缩着放进正中，不能整片空白 */
+    if (!result.length) {
+      const only = sized(words[0], 1);
+      const fit = Math.min(1, usableW / Math.max(1, only.w), usableH / Math.max(1, only.h));
+      result = [{
+        ...only,
+        size: only.size * fit, w: only.w * fit, h: only.h * fit,
+        x: (box.w - only.w * fit) / 2, y: (box.h - only.h * fit) / 2,
+      }];
     }
     return result;
   }, [box, words, fontFamily, compact]);

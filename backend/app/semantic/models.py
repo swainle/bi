@@ -97,6 +97,7 @@ class Dataset:
     conn_mode: str = "extract"      # extract 抽取 / live 直连
     source_id: int | None = None    # live 模式下绑定的数据源
     is_sandbox: bool = False        # 「测试数据集」页自建的公共测试数据集
+    dept_id: int | None = None      # 归属部门；None = 全局
     updated_at: Any = None
     field_count: int = 0
     metric_count: int = 0
@@ -114,6 +115,7 @@ class Dataset:
             conn_mode=(m.get("conn_mode") or "extract"),
             source_id=m.get("source_id"),
             is_sandbox=bool(m.get("is_sandbox") or False),
+            dept_id=m.get("dept_id"),
             updated_at=m.get("updated_at"),
             field_count=int(m.get("field_count") or 0),
             metric_count=int(m.get("metric_count") or 0),
@@ -136,6 +138,7 @@ class Dataset:
             "conn_mode": self.conn_mode or "extract",
             "source_id": self.source_id,
             "is_sandbox": bool(self.is_sandbox),
+            "dept_id": self.dept_id,
             "updated_at": time_text(self.updated_at or ""),
             "field_count": self.field_count or len(self.fields),
             "metric_count": self.metric_count or len(self.metrics),

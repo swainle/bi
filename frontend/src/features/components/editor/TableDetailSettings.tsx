@@ -3,6 +3,7 @@
  *  弹窗内容 = 所选画板区域内的组件（画布上框出来的区域）。
  */
 
+import { useEffect } from "react";
 import { Box, MenuItem, Switch, TextField, ToggleButton, ToggleButtonGroup, Typography } from "@mui/material";
 import { PanelSection } from "./PanelSection";
 import type { ComponentSpec } from "../types";
@@ -25,6 +26,15 @@ export default function TableDetailSettings({ spec, onChange, columns, boards = 
   const patch = (next: Partial<typeof detail>) =>
     onChange({ ...spec, table_view: { ...view, detail: { ...detail, ...next } } });
 
+  const firstBoard = boards[0]?.key || "";
+  /* 「点击行弹出」开着但还没选画板 = 点了行什么都不发生（画板找不到，弹窗直接返回）。
+     页面上有画板就自动挂第一块，别让这个开关看起来像坏的。 */
+  useEffect(() => {
+    if (!detail.enabled || detail.board_key || !firstBoard) return;
+    patch({ board_key: firstBoard });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail.enabled, detail.board_key, firstBoard]);
+
   return (
     <PanelSection title="弹窗">
       <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: detail.enabled ? 1.5 : 0 }}>
@@ -32,9 +42,14 @@ export default function TableDetailSettings({ spec, onChange, columns, boards = 
         <Switch
           size="small" checked={!!detail.enabled}
           onChange={(e) => {
-            /* 打开弹窗顺手把行标识列补上（不补 = 点哪行都显示全量数据） */
+            /* 打开弹窗顺手把行标识列 / 画板补上（不补 = 点哪行都不弹、或弹出来跟当前行无关） */
+            const on = e.target.checked;
             const key = detail.key_field || columns[0] || "";
-            patch({ enabled: e.target.checked, ...(e.target.checked && key ? { key_field: key } : {}) });
+            patch({
+              enabled: on,
+              ...(on && key ? { key_field: key } : {}),
+              ...(on && !detail.board_key && firstBoard ? { board_key: firstBoard } : {}),
+            });
           }}
           sx={{ mr: -0.75 }}
         />
@@ -49,10 +64,11 @@ export default function TableDetailSettings({ spec, onChange, columns, boards = 
             FormHelperTextProps={{ sx: { fontSize: 10.5, mx: 0, mt: 0.5 } }}
             sx={{ mb: 1.5, ...fieldSx }}
           >
-            {boards.length === 0 && <MenuItem value="" disabled sx={{ fontSize: 12.5 }}>还没有画板</MenuItem>}
-            {boards.map((board) => (
-              <MenuItem key={board.key} value={board.key} sx={{ fontSize: 12.5 }}>{board.label}</MenuItem>
-            ))}
+            {boards.length === 0
+              ? <MenuItem value="" disabled sx={{ fontSize: 12.5 }}>还没有画板</MenuItem>
+              : boards.map((board) => (
+                <MenuItem key={board.key} value={board.key} sx={{ fontSize: 12.5 }}>{board.label}</MenuItem>
+              ))}
           </TextField>
 
           <Typography sx={{ fontSize: 11.5, color: "#94A3B8", mb: 0.75 }}>弹出位置</Typography>

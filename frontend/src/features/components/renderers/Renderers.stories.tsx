@@ -170,8 +170,8 @@ export const RankList: Story = {
           title: "品牌榜",
           items: [
             { name: "萌维兔", value: 34972, score: 96, tags: ["猫零食", "高增长"], quad: "blue" },
-            { name: "麦富迪", value: 31240, score: 91, tags: ["狗粮"], quad: "blue" },
-            { name: "网易严选", value: 22110, score: 83, tags: ["猫粮"], quad: "pot" },
+            { name: "示例品牌甲", value: 31240, score: 91, tags: ["狗粮"], quad: "blue" },
+            { name: "示例品牌乙", value: 22110, score: 83, tags: ["猫粮"], quad: "pot" },
           ],
           count: 3,
         })}

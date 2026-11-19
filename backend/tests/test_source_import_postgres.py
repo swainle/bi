@@ -26,10 +26,10 @@ def test_postgres_queue_locks_real_import_and_rollback(monkeypatch):
     migrations = Path(__file__).resolve().parents[1] / "schema" / "migrations"
     with eng.begin() as conn:
         conn.execute(text("CREATE TABLE bi_dataset (id serial primary key)"))
-        for filename in ["012_sources.sql", "013_source_dt.sql", "027_source_schema.sql", "028_source_sync.sql", "048_source_import_tasks.sql"]:
+        for filename in ["20261119162322_sources.sql", "20261119162323_source_dt.sql", "20261119162336_source_schema.sql", "20261119162337_source_sync.sql", "20261119162359_source_import_tasks.sql"]:
             conn.exec_driver_sql((migrations / filename).read_text(encoding="utf-8"))
         # 新迁移必须幂等。
-        conn.exec_driver_sql((migrations / "048_source_import_tasks.sql").read_text(encoding="utf-8"))
+        conn.exec_driver_sql((migrations / "20261119162359_source_import_tasks.sql").read_text(encoding="utf-8"))
         conn.execute(text("INSERT INTO bi_source(name,ds_type) VALUES ('导入测试','postgresql')"))
         conn.execute(text("CREATE TABLE source_orders (amount numeric)"))
         conn.execute(text("INSERT INTO source_orders VALUES (10.25),(20.5),(NULL)"))
@@ -98,7 +98,7 @@ def test_postgres_queue_locks_real_import_and_rollback(monkeypatch):
     from app.database import get_db
     from app.middleware.auth import get_current_user
     from app.sources.router import router
-    from app.security import nav_guard
+    from app.security.nav import guard as nav_guard
 
     with eng.begin() as conn:
         conn.execute(text("INSERT INTO bi_source(name,ds_type) VALUES ('接口测试','postgresql')"))

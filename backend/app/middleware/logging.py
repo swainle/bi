@@ -97,6 +97,8 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         # 生成请求 ID（用于链路追踪）
         request_id = request.headers.get("x-request-id", uuid.uuid4().hex[:12])
+        # 供导出水印 / 审计等端点读取（与响应头同值）
+        request.state.request_id = request_id
 
         # 注入 structlog 上下文变量
         structlog.contextvars.clear_contextvars()

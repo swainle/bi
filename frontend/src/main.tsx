@@ -1,6 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import App from "./App";
+import App from "./features/shell/App";
 import "./index.css";
 
 // 配了 VITE_SENTRY_DSN 才懒加载上报 SDK（没配时这段代码不会进主包、不发请求）

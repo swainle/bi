@@ -616,3 +616,10 @@ DATABASE_URL="postgresql://cavan-m4max@127.0.0.1:5432/mingzebi_dev" DEBUG=true \
 - `DATA-POLICY.md`、`THIRD-PARTY-NOTICES.md` 存放在 `docs/`，根目录保留 README / AGENTS / COPYRIGHT / LICENSE / CHANGELOG。
 
 - bcrypt 固定 4.1.1：4.1.0 的 Windows wheel 无法导入，不得退回；worker 默认 1 秒轮询，避免 Redis 客户端默认读超时与 5 秒阻塞轮询相撞。
+
+## 迁移文件命名（2026-11-19）
+
+- 新迁移统一使用 `YYYYMMDDHHMMSS_说明.sql`，例如 `20261119162312_formula_fields.sql`；时间戳按北京时间生成，须晚于已有迁移并避免重复，保证排序就是执行顺序。
+- 原 65 个历史文件按原有顺序分配连续时间戳（从 `20261119162312` 起）；这些前缀作为迁移编号，不代表历史 SQL 的真实创建时间。SQL 内容不变。
+- 完整旧名与新名对应关系保存在 `backend/schema/migrations/legacy_names.json`，随 SQL 文件一起交付。迁移器通过映射识别旧执行记录，不重写历史记录，也不重复执行已完成的 SQL。
+- 历史文件不得只改名而不维护映射；已经执行的 SQL 内容不要修改，需要调整时新增迁移。本文件中保留的旧迁移编号可通过映射查到新文件。

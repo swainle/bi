@@ -1,0 +1,437 @@
+{
+  "kind": "wordcloud",
+  "rows": [
+    {
+      "name": "详情描述简略/看不懂规格",
+      "value": 124918,
+      "出现次数": 18
+    },
+    {
+      "name": "包装破损/物流慢",
+      "value": 104232,
+      "出现次数": 15
+    },
+    {
+      "name": "味道重/家人不喜欢",
+      "value": 89238,
+      "出现次数": 14
+    },
+    {
+      "name": "粉末多/浪费",
+      "value": 86615,
+      "出现次数": 14
+    },
+    {
+      "name": "分量偏差/称重不准",
+      "value": 86242,
+      "出现次数": 14
+    },
+    {
+      "name": "粉末偏多 / 分量不足",
+      "value": 79924,
+      "出现次数": 13
+    },
+    {
+      "name": "价格偏高/性价比一般",
+      "value": 78987,
+      "出现次数": 13
+    },
+    {
+      "name": "保质期短/不敢囤货",
+      "value": 78412,
+      "出现次数": 11
+    },
+    {
+      "name": "粉末偏多/服务差",
+      "value": 71986,
+      "出现次数": 10
+    },
+    {
+      "name": "粉末偏多/不爱吃",
+      "value": 70825,
+      "出现次数": 10
+    },
+    {
+      "name": "颗粒偏大/幼宠难嚼",
+      "value": 68561,
+      "出现次数": 10
+    },
+    {
+      "name": "封口不严/易受潮",
+      "value": 46374,
+      "出现次数": 7
+    },
+    {
+      "name": "客服敷衍 / 受潮结块",
+      "value": 12850,
+      "出现次数": 2
+    },
+    {
+      "name": "包装漏气 / 物流慢",
+      "value": 12647,
+      "出现次数": 2
+    },
+    {
+      "name": "颜色发暗 / 油脂偏重",
+      "value": 12152,
+      "出现次数": 2
+    },
+    {
+      "name": "油脂偏重 / 有异味",
+      "value": 6810,
+      "出现次数": 1
+    },
+    {
+      "name": "油脂偏重 / 碎渣多",
+      "value": 6756,
+      "出现次数": 1
+    },
+    {
+      "name": "分量不足 / 粉末偏多",
+      "value": 6716,
+      "出现次数": 1
+    },
+    {
+      "name": "受潮结块 / 物流慢",
+      "value": 6648,
+      "出现次数": 1
+    },
+    {
+      "name": "有异味 / 受潮结块",
+      "value": 6437,
+      "出现次数": 1
+    },
+    {
+      "name": "客服敷衍 / 碎渣多",
+      "value": 6436,
+      "出现次数": 1
+    },
+    {
+      "name": "复水后发柴 / 性价比低",
+      "value": 6384,
+      "出现次数": 1
+    },
+    {
+      "name": "颜色发暗 / 粉末偏多",
+      "value": 6380,
+      "出现次数": 1
+    },
+    {
+      "name": "客服敷衍 / 分量不足",
+      "value": 6330,
+      "出现次数": 1
+    },
+    {
+      "name": "日期不新鲜 / 油脂偏重",
+      "value": 6194,
+      "出现次数": 1
+    },
+    {
+      "name": "有异味 / 适口性差",
+      "value": 6031,
+      "出现次数": 1
+    },
+    {
+      "name": "颜色发暗 / 碎渣多",
+      "value": 5951,
+      "出现次数": 1
+    },
+    {
+      "name": "油脂偏重 / 分量不足",
+      "value": 5926,
+      "出现次数": 1
+    },
+    {
+      "name": "宠物不爱吃 / 受潮结块",
+      "value": 5901,
+      "出现次数": 1
+    },
+    {
+      "name": "分量不足 / 狗不爱吃",
+      "value": 5888,
+      "出现次数": 1
+    },
+    {
+      "name": "复水后发柴 / 油脂偏重",
+      "value": 5784,
+      "出现次数": 1
+    },
+    {
+      "name": "狗不爱吃 / 适口性差",
+      "value": 5770,
+      "出现次数": 1
+    },
+    {
+      "name": "宠物不爱吃 / 适口性差",
+      "value": 5705,
+      "出现次数": 1
+    },
+    {
+      "name": "油脂偏重 / 客服敷衍",
+      "value": 5696,
+      "出现次数": 1
+    },
+    {
+      "name": "日期不新鲜 / 狗不爱吃",
+      "value": 5664,
+      "出现次数": 1
+    },
+    {
+      "name": "有异味 / 包装漏气",
+      "value": 5633,
+      "出现次数": 1
+    },
+    {
+      "name": "客服敷衍 / 狗不爱吃",
+      "value": 5611,
+      "出现次数": 1
+    },
+    {
+      "name": "分量不足 / 性价比低",
+      "value": 5423,
+      "出现次数": 1
+    },
+    {
+      "name": "宠物不爱吃 / 客服敷衍",
+      "value": 5332,
+      "出现次数": 1
+    },
+    {
+      "name": "狗不爱吃 / 日期不新鲜",
+      "value": 5253,
+      "出现次数": 1
+    }
+  ],
+  "series": [
+    {
+      "name": "粉末偏多",
+      "value": 235831.0,
+      "freq": 35.0
+    },
+    {
+      "name": "看不懂规格",
+      "value": 124918.0,
+      "freq": 18.0
+    },
+    {
+      "name": "详情描述简略",
+      "value": 124918.0,
+      "freq": 18.0
+    },
+    {
+      "name": "物流慢",
+      "value": 123527.0,
+      "freq": 18.0
+    },
+    {
+      "name": "分量不足",
+      "value": 110207.0,
+      "freq": 18.0
+    },
+    {
+      "name": "包装破损",
+      "value": 104232.0,
+      "freq": 15.0
+    },
+    {
+      "name": "味道重",
+      "value": 89238.0,
+      "freq": 14.0
+    },
+    {
+      "name": "家人不喜欢",
+      "value": 89238.0,
+      "freq": 14.0
+    },
+    {
+      "name": "浪费",
+      "value": 86615.0,
+      "freq": 14.0
+    },
+    {
+      "name": "粉末多",
+      "value": 86615.0,
+      "freq": 14.0
+    },
+    {
+      "name": "分量偏差",
+      "value": 86242.0,
+      "freq": 14.0
+    },
+    {
+      "name": "称重不准",
+      "value": 86242.0,
+      "freq": 14.0
+    },
+    {
+      "name": "价格偏高",
+      "value": 78987.0,
+      "freq": 13.0
+    },
+    {
+      "name": "性价比一般",
+      "value": 78987.0,
+      "freq": 13.0
+    },
+    {
+      "name": "不敢囤货",
+      "value": 78412.0,
+      "freq": 11.0
+    },
+    {
+      "name": "保质期短",
+      "value": 78412.0,
+      "freq": 11.0
+    },
+    {
+      "name": "服务差",
+      "value": 71986.0,
+      "freq": 10.0
+    },
+    {
+      "name": "不爱吃",
+      "value": 70825.0,
+      "freq": 10.0
+    },
+    {
+      "name": "幼宠难嚼",
+      "value": 68561.0,
+      "freq": 10.0
+    },
+    {
+      "name": "颗粒偏大",
+      "value": 68561.0,
+      "freq": 10.0
+    },
+    {
+      "name": "油脂偏重",
+      "value": 49318.0,
+      "freq": 8.0
+    },
+    {
+      "name": "封口不严",
+      "value": 46374.0,
+      "freq": 7.0
+    },
+    {
+      "name": "易受潮",
+      "value": 46374.0,
+      "freq": 7.0
+    },
+    {
+      "name": "客服敷衍",
+      "value": 42255.0,
+      "freq": 7.0
+    },
+    {
+      "name": "受潮结块",
+      "value": 31836.0,
+      "freq": 5.0
+    },
+    {
+      "name": "狗不爱吃",
+      "value": 28186.0,
+      "freq": 5.0
+    },
+    {
+      "name": "有异味",
+      "value": 24911.0,
+      "freq": 4.0
+    },
+    {
+      "name": "颜色发暗",
+      "value": 24483.0,
+      "freq": 4.0
+    },
+    {
+      "name": "包装漏气",
+      "value": 18280.0,
+      "freq": 3.0
+    },
+    {
+      "name": "日期不新鲜",
+      "value": 17111.0,
+      "freq": 3.0
+    }
+  ],
+  "total": 2271682.0,
+  "top_share": 0.10381338585242124,
+  "dimension_label": "痛点",
+  "metric_label": "热销指数",
+  "series_label": null,
+  "component_kind": "wordcloud",
+  "title": "词云",
+  "subtitle": "",
+  "unit": "",
+  "ui": {
+    "accent": "indigo",
+    "radius": 14,
+    "min_height": 260,
+    "show_unit": true,
+    "animate": true,
+    "align": "left",
+    "columns": 1,
+    "badge": "",
+    "edge": true,
+    "edge_px": 1.0,
+    "edge_alpha": 22,
+    "shadow_px": 16
+  },
+  "compute": {
+    "headline": "first",
+    "hint": "none",
+    "format": "int",
+    "bucket_size": null,
+    "bucket_start": null,
+    "bucket_count": 0,
+    "transform": "raw",
+    "scale": 1.0,
+    "offset": 0.0,
+    "decimals": 0,
+    "prefix": "",
+    "suffix": ""
+  },
+  "chart": {
+    "show_labels": true,
+    "show_legend": true,
+    "show_grid": true,
+    "show_title": true,
+    "show_meta": true,
+    "x_title": "",
+    "y_title": "",
+    "label_rotate": 0,
+    "y_min": null,
+    "y_max": null,
+    "bar_width": 26,
+    "hbar_threshold_key": "",
+    "hbar_threshold_gte": null,
+    "hbar_highlight": "violet",
+    "smooth": true,
+    "label_format": "auto",
+    "cloud_palette": "潮彩",
+    "scatter_mode": "point",
+    "trend_line": false,
+    "dot_size": 8,
+    "x_key": "",
+    "y_key": "",
+    "size_key": "",
+    "log_x": false,
+    "log_y": false,
+    "label_layout": "inside",
+    "single_slice": true,
+    "pie_inner": 46,
+    "pie_start": 90,
+    "pie_label": "name_pct",
+    "pie_gap": true,
+    "pie_rose": false
+  },
+  "combo": {
+    "bar_name": "",
+    "line_name": "",
+    "note": "",
+    "right_axis": true,
+    "smooth": true
+  },
+  "rls": false,
+  "top": null
+}

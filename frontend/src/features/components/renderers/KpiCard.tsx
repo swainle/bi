@@ -9,6 +9,8 @@ import type { RenderPayload, UiSpec } from "../types";
 interface Props {
   payload: RenderPayload;
   ui: UiSpec;
+  /** 右上角徽标可点（配了「徽标弹窗」时）：点了打开独立的 TOP N 榜单 */
+  onTopList?: () => void;
 }
 
 /** "2,000" / "1.2万" → 可滚动数值 */
@@ -21,7 +23,7 @@ function parseShown(value: string): { num: number; prefix: string; suffix: strin
   return { num, prefix: match[1], suffix: match[3], decimals };
 }
 
-export default function KpiCard({ payload, ui }: Props) {
+export default function KpiCard({ payload, ui, onTopList }: Props) {
   const token = accentOf(ui.accent);
   const shown = payload.value ?? "-";
   const fmt = payload.compute?.format;
@@ -77,39 +79,58 @@ export default function KpiCard({ payload, ui }: Props) {
         gap: hasSub ? 0.5 : 0.75,
         position: "relative",
         overflow: "hidden",
+        /* 右上角那团浅色圆：尺寸跟卡片走（小卡自动缩小），位置用自身尺寸的百分比偏移，
+           所以换任何尺寸都还是「只露一个角」。z-index 压在内容下面，别糊住 TOP10 徽标。 */
         "&::after": {
           content: '""',
           position: "absolute",
-          right: -26,
-          top: -30,
-          width: 92,
-          height: 92,
+          right: 0,
+          top: 0,
+          width: "min(92px, 45%)",
+          aspectRatio: "1 / 1",
           borderRadius: "50%",
           background: "rgba(255,255,255,0.5)",
+          transform: "translate(28%, -33%)",
+          zIndex: 0,
+          pointerEvents: "none",
         },
       }}
     >
-      <Box sx={{ display: "flex", alignItems: "center", gap: 1, position: "relative", width: "100%" }}>
+      <Box sx={{ display: "flex", alignItems: "center", gap: 1, position: "relative", zIndex: 1, width: "100%" }}>
         {payload.chart?.show_title !== false && (
           <Typography sx={{ fontSize: 12.5, color: "#64748B", fontWeight: 500, flex: 1, minWidth: 0 }} noWrap>
             {payload.title || ""}
           </Typography>
         )}
         {ui.badge ? (
-          <Box sx={{
-            display: "flex", alignItems: "center", gap: 0.25,
-            px: 0.875, height: 18, borderRadius: 999,
-            bgcolor: "rgba(255,255,255,0.85)",
-            border: "1px solid rgba(255,255,255,0.95)",
-            fontSize: 10, fontWeight: 600, color: "#64748B", whiteSpace: "nowrap",
-          }}>
+          <Box
+            role={payload.top?.enabled ? "button" : undefined}
+            title={payload.top?.enabled ? `点开看 TOP${payload.top.top_n} 明细` : undefined}
+            onClick={payload.top?.enabled ? (e) => { e.stopPropagation(); onTopList?.(); } : undefined}
+            sx={{
+              display: "flex", alignItems: "center", gap: 0.25,
+              px: 0.875, height: 18, borderRadius: 999,
+              bgcolor: "rgba(255,255,255,0.85)",
+              border: "1px solid rgba(255,255,255,0.95)",
+              fontSize: 10, fontWeight: 600, color: "#64748B", whiteSpace: "nowrap",
+              ...(payload.top?.enabled ? {
+                cursor: "pointer",
+                transition: "background .12s, border-color .12s, transform .12s",
+                "&:hover": { bgcolor: "#fff", borderColor: "rgba(79,70,229,0.35)", color: "#4F46E5" },
+                "&:active": { transform: "scale(0.97)" },
+              } : {}),
+            }}
+          >
             {ui.badge}
-            <Box component="span" sx={{ fontSize: 10, color: "#94A3B8" }}>›</Box>
+            {/* 只有真能点开的时候才画「›」：不能点的徽标不该有可点的暗示 */}
+            {payload.top?.enabled && (
+              <Box component="span" sx={{ fontSize: 10, color: "inherit" }}>›</Box>
+            )}
           </Box>
         ) : null}
       </Box>
 
-      <Box sx={{ display: "flex", alignItems: "baseline", gap: 0.5, position: "relative" }}>
+      <Box sx={{ display: "flex", alignItems: "baseline", gap: 0.5, position: "relative", zIndex: 1 }}>
         <Typography
           sx={{
             fontSize: 30, fontWeight: 800, lineHeight: 1.1, letterSpacing: -0.8,
@@ -127,7 +148,7 @@ export default function KpiCard({ payload, ui }: Props) {
 
       {/* 底部副标题：手填的「副标题」优先，没填才用生成规则的结果 */}
       {payload.chart?.show_meta !== false && (payload.subtitle || payload.hint) ? (
-        <Typography sx={{ fontSize: 11.5, color: "#94A3B8", position: "relative" }} noWrap>
+        <Typography sx={{ fontSize: 11.5, color: "#94A3B8", position: "relative", zIndex: 1 }} noWrap>
           {payload.subtitle || payload.hint}
         </Typography>
       ) : null}

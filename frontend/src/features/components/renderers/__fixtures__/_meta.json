@@ -1,0 +1,31 @@
+{
+  "captured_at": "2026-11-15T22:30:18+08:00",
+  "source": "POST /api/bi/components/preview-batch",
+  "dataset": "演示数据集 bi_demo_sku（已脱敏，可外发）",
+  "kinds": [
+    "area",
+    "banner",
+    "bar",
+    "combo",
+    "donut",
+    "filter",
+    "funnel",
+    "gauge",
+    "hbar",
+    "heatmap",
+    "insight",
+    "kpi",
+    "line",
+    "map",
+    "nav",
+    "pie",
+    "radar",
+    "rank_list",
+    "scatter",
+    "section",
+    "table",
+    "waterfall",
+    "wordcloud"
+  ],
+  "errors": {}
+}

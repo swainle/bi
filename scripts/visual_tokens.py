@@ -1,10 +1,10 @@
 """生成视觉回归用的 token 文件（不登录，避免把浏览器里的会话踢下线）.
 
 用法：
-    DATABASE_URL="postgresql://cavan-m4max@127.0.0.1:5432/mingzebi_dev" \
+    DATABASE_URL="postgresql://cavan-m4max@127.0.0.1:5432/mingcebi_dev" \
       backend/.venv/bin/python scripts/visual_tokens.py [输出路径]
 
-默认输出 /tmp/mzbi_tokens.json；frontend/e2e/visual.spec.ts 会读取它。
+默认输出 /tmp/mcbi_tokens.json；frontend/e2e/visual.spec.ts 会读取它。
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from app.services.auth import create_access_token, create_refresh_token  # noqa:
 
 
 def main() -> None:
-    out = sys.argv[1] if len(sys.argv) > 1 else "/tmp/mzbi_tokens.json"
+    out = sys.argv[1] if len(sys.argv) > 1 else "/tmp/mcbi_tokens.json"
     db = SessionLocal()
     try:
         row = db.execute(

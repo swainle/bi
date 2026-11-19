@@ -91,7 +91,7 @@ def print_pdf(html_path: str, pdf_path: str, timeout: float | None = None) -> st
     chrome = chrome_path()
     if not chrome:
         return "未找到 Chrome/Chromium（可设 BI_PDF_CHROME）"
-    profile = tempfile.mkdtemp(prefix="mzbi-chrome-")
+    profile = tempfile.mkdtemp(prefix="mcbi-chrome-")
     os.makedirs(os.path.dirname(pdf_path) or ".", exist_ok=True)
     try:
         result = subprocess.run(
@@ -162,7 +162,7 @@ def screenshot_png(html_path: str, png_path: str, timeout: float | None = None) 
     if not chrome:
         return "未找到 Chrome/Chromium（可设 BI_PDF_CHROME）"
     width, scale = _png_size()
-    profile = tempfile.mkdtemp(prefix="mzbi-chrome-")
+    profile = tempfile.mkdtemp(prefix="mcbi-chrome-")
     proc: subprocess.Popen | None = None
     ws = None
     try:

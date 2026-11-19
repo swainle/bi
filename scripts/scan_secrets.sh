@@ -56,7 +56,7 @@ done
 
 # 连接串里的明文口令（排除示例与本地开发默认）
 CONN=$(grep_src '://[^:/@[:space:]"]+:[^@[:space:]"$]{6,}@' \
-       | grep -viE "$ALLOW|user:password|mingzebi:mingzebi")
+       | grep -viE "$ALLOW|user:password|mingcebi:mingcebi")
 report "连接串明文口令" "$CONN"
 
 # 密钥文件本身不该被 Git 跟踪

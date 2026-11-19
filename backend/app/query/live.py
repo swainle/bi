@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import threading
 import time
 from typing import Any
@@ -33,16 +34,22 @@ from app.sources.repository import TYPE_DIALECT, SourceError, build_url
 MAX_ROWS = 5000
 STATEMENT_TIMEOUT_MS = 30000
 _TABLE_CACHE_TTL = 300
+# 数据源「连不上」的短缓存（秒，0 = 关闭）：不可达的源在大看板里会被十几张卡重复尝试，
+# 每张卡都要等满 8s 的 connect_timeout —— 666 主视图 13 张卡实测整页 30s+，
+# 前端 15s 超时掐断请求后用户只看到「暂无数据」。失败后这段时间内直接失败。
+_FAIL_TTL = float(os.getenv("BI_LIVE_FAIL_TTL", "60") or "0")
 
 # (source_id, 连接串指纹) → (engine, 建连时间)
 _engines: dict[tuple[int, str], tuple[Engine, float]] = {}
 _tables: dict[int, tuple[set[str], float]] = {}
-_lock = threading.Lock()
-
-# 直连结果缓存：(源 id, 用户 id, SQL, 参数) → (行, 列, 时间)
+# source_id → (失败时间, 失败原因)
+_failures: dict[int, tuple[float, str]] = {}
+# 直连结果缓存：(源 id, (用户 id, 数据集 id), SQL, 参数) → (行, 列, 时间)
+# 键里必须带 dataset_id：行级规则 / 列脱敏按数据集生效，同一条 SQL 换个数据集结果可能不同。
 _CACHE_TTL = 60
 _CACHE_MAX = 200
 _cache: dict[tuple, tuple[list[dict], list[str], float]] = {}
+_lock = threading.Lock()
 
 
 def _cache_key(src_id: int, user_id: Any, sql: str, params: dict) -> tuple:
@@ -58,6 +65,56 @@ def _cache_key(src_id: int, user_id: Any, sql: str, params: dict) -> tuple:
 def clear_cache() -> None:
     with _lock:
         _cache.clear()
+
+
+def _recent_failure(src_id: int) -> str | None:
+    """这个数据源刚刚连不上？返回当时的失败原因（过期自动清掉）."""
+    if _FAIL_TTL <= 0:
+        return None
+    with _lock:
+        hit = _failures.get(src_id)
+        if hit is None:
+            return None
+        at, reason = hit
+        if time.time() - at < _FAIL_TTL:
+            return reason
+        _failures.pop(src_id, None)
+    return None
+
+
+def _mark_failure(src_id: int, reason: str) -> str:
+    """记下失败原因（同一源短时间内不再重试），并返回给调用方展示的文案."""
+    with _lock:
+        _failures[src_id] = (time.time(), reason)
+    return reason
+
+
+def _clear_failure(src_id: int) -> None:
+    with _lock:
+        _failures.pop(src_id, None)
+
+
+def _connect_error_text(eng: Engine, exc: Exception) -> str:
+    """把驱动的长报错压成一句能看懂的话：哪台库 + 哪种失败.
+
+    卡片上要显示它（一张卡一行），所以刻意短：
+    「数据源连接失败：192.168.31.10:5432（超时）」。
+    """
+    host = getattr(eng.url, "host", None) or "未知主机"
+    port = getattr(eng.url, "port", None)
+    where = f"{host}:{port}" if port else str(host)
+    low = str(exc).lower()
+    if "timeout" in low or "timed out" in low:
+        reason = "超时"
+    elif "refused" in low:
+        reason = "连接被拒绝"
+    elif "does not exist" in low or "unknown database" in low:
+        reason = "库不存在"
+    elif "authentication" in low or "password" in low:
+        reason = "认证失败"
+    else:
+        reason = "无法连接"
+    return f"数据源连接失败：{where}（{reason}）"
 
 
 class LiveQueryError(Exception):
@@ -119,27 +176,45 @@ def engine_for_source(src: dict) -> Engine:
 
 
 def source_tables(eng: Engine, src_id: int) -> set[str]:
-    """源库里可见的 表 / 视图 名（含 schema 前缀），按数据源缓存."""
+    """源库里可见的 表 / 视图 名（含 schema 前缀），按数据源缓存.
+
+    ⚠️ `inspect(eng)` 在构造 Inspector 时**就会连库**，所以这句必须在 try 里：
+    以前它在 try 外面裸抛 OperationalError（等满 8s），既没有可读文案，
+    也不会被「连不上短缓存」记住 —— 大看板里十几张卡会各等一遍。
+    """
+    reason = _recent_failure(src_id)
+    if reason:
+        raise LiveQueryError(reason)
     now = time.time()
     with _lock:
         cached = _tables.get(src_id)
         if cached and now - cached[1] < _TABLE_CACHE_TTL:
             return cached[0]
-    insp = inspect(eng)
+    errors: list[Exception] = []
+    try:
+        insp = inspect(eng)
+    except Exception as exc:
+        raise LiveQueryError(_mark_failure(src_id, _connect_error_text(eng, exc))) from exc
     names: set[str] = set()
     try:
         schemas = [s for s in insp.get_schema_names() if not s.startswith("pg_")]
-    except Exception:
+    except Exception as exc:
+        errors.append(exc)
         schemas = ["public"]
     for schema in schemas:
         try:
             found = list(insp.get_table_names(schema=schema)) + list(insp.get_view_names(schema=schema))
-        except Exception:
+        except Exception as exc:
+            errors.append(exc)
             continue
         for name in found:
             names.add(f"{schema}.{name}")
             if schema == "public":
                 names.add(name)
+    if not names and errors:
+        # 连不上 / 权限不足：明确报错，别退化成「源库里没有这张表」
+        raise LiveQueryError(_mark_failure(src_id, _connect_error_text(eng, errors[-1])))
+    _clear_failure(src_id)
     with _lock:
         _tables[src_id] = (names, now)
     return names
@@ -156,10 +231,14 @@ def run_live(
     dataset_id: int | None = None,
 ) -> QueryResult:
     """在源库上执行一次契约查询."""
+    src_id = int(src["id"])
+    reason = _recent_failure(src_id)      # 刚连不上过：直接失败，别让每张卡再等 8s
+    if reason:
+        raise LiveQueryError(reason)
     eng = engine_for_source(src)
 
     table = query.table
-    if table not in source_tables(eng, int(src["id"])):
+    if table not in source_tables(eng, src_id):
         raise LiveQueryError(f"源库里没有这张表：{table}")
 
     dialect = TYPE_DIALECT.get(str(src.get("ds_type") or ""), "")
@@ -174,7 +253,7 @@ def run_live(
         # 数据集级行级规则（与表级同时 AND；模板副本也按 dataset_id 生效）
         from app.security import dataset_rules
 
-        rls_conditions.extend(dataset_rules.row_conditions(db, dataset_id, user))
+        rls_conditions.extend(dataset_rules.row_conditions(db, dataset_id, user, dialect))
 
     from app.semantic.formulas import check_formula_masks
 
@@ -199,8 +278,14 @@ def run_live(
             rows = [dict(r._mapping) for r in conn.execute(text(built.sql), built.params).fetchall()]
     except Exception as exc:
         metrics.incr("query.live_failed")
-        raise LiveQueryError(f"源库查询失败：{str(exc)[:180]}") from exc
+        name = type(exc).__name__
+        text_ = str(exc)
+        # 连接类失败记进短缓存（同一源的下几张卡立刻失败）；SQL 本身写错不缓存
+        if "OperationalError" in name or "InterfaceError" in name or "timeout expired" in text_:
+            raise LiveQueryError(_mark_failure(src_id, _connect_error_text(eng, exc))) from exc
+        raise LiveQueryError(f"源库查询失败：{text_[:180]}") from exc
     metrics.incr("query.live_ok")
+    _clear_failure(src_id)
     elapsed = (time.time() - started) * 1000
 
     slowlog.record(table=table, user_id=getattr(user, "id", None),

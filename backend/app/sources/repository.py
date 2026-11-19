@@ -351,7 +351,8 @@ def test_source(src: dict) -> dict:
     except SourceError:
         raise
     except Exception as exc:
-        raise SourceError(f"连接失败：{str(exc)[:180]}") from exc
+        # 先压成一句人话再落 180 字：驱动原文里的 SQLAlchemy 文档尾巴对用户没用
+        raise SourceError(f"连接失败：{clean_probe_error(exc)[:180]}") from exc
 
 
 def test_payload(payload: dict) -> dict:
@@ -866,6 +867,7 @@ def _public(row) -> dict:
         "id": m["id"], "name": m["name"], "ds_type": m["ds_type"],
         "host": m["host"] or "", "port": m["port"], "db_name": m["db_name"] or "",
         "username": m["username"] or "", "uri": bool(m["uri"]),
+        "dept_id": m.get("dept_id"),
         "created_at": time_text(m["created_at"] or ""), "updated_at": time_text(m["updated_at"] or ""),
     }
 
@@ -873,14 +875,17 @@ def _public(row) -> dict:
 def list_sources(db: Session) -> list[dict]:
     rows = db.execute(
         text(
-            "SELECT s.*, (SELECT count(*) FROM bi_source_table t WHERE t.source_id = s.id) AS table_count "
-            "FROM bi_source s ORDER BY s.id DESC"
+            "SELECT s.*, d.name AS dept_name, "
+            "  (SELECT count(*) FROM bi_source_table t WHERE t.source_id = s.id) AS table_count "
+            "FROM bi_source s LEFT JOIN departments d ON d.id = s.dept_id "
+            "ORDER BY s.id DESC"
         )
     ).fetchall()
     out = []
     for row in rows:
         item = _public(row)
         item["table_count"] = row._mapping["table_count"]
+        item["dept_name"] = row._mapping.get("dept_name") or ""
         out.append(item)
     return out
 
@@ -902,8 +907,9 @@ def create_source(db: Session, payload: dict, owner_id: int | None) -> dict:
         raise SourceError(f"数据源名称已存在：{name}")
     row = db.execute(
         text(
-            "INSERT INTO bi_source (name, ds_type, host, port, db_name, username, password, uri, owner_id) "
-            "VALUES (:n, :t, :h, :p, :d, :u, :pw, :uri, :o) RETURNING *"
+            "INSERT INTO bi_source (name, ds_type, host, port, db_name, username, password, uri, "
+            "  owner_id, dept_id) "
+            "VALUES (:n, :t, :h, :p, :d, :u, :pw, :uri, :o, :dept) RETURNING *"
         ),
         {
             "n": name, "t": ds_type,
@@ -914,17 +920,67 @@ def create_source(db: Session, payload: dict, owner_id: int | None) -> dict:
             "pw": encrypt(str(payload.get("password") or "")),
             "uri": str(payload.get("uri") or "").strip(),
             "o": owner_id,
+            "dept": payload.get("dept_id") or None,
         },
     ).fetchone()
     db.commit()
-    return _public(row)
+    row = db.execute(text(
+        "SELECT s.*, d.name AS dept_name FROM bi_source s "
+        "LEFT JOIN departments d ON d.id = s.dept_id WHERE s.id = :i"
+    ), {"i": int(row._mapping["id"])}).fetchone()
+    item = _public(row)
+    item["dept_name"] = row._mapping.get("dept_name") or ""
+    return item
+
+
+def clean_probe_error(text: object) -> str:
+    """把驱动的长报错压成一句能放进 tooltip 的话.
+
+    去掉三截噪音：SQLAlchemy 的 `(Background on this error at: …)` 尾巴、
+    `(psycopg2.OperationalError)` 这类驱动前缀、以及开头重复的状态词（tooltip 自己会写「连接失败」）。
+    """
+    msg = str(text or "").strip()
+    for marker in ("\n\n(Background on this error at:", "\n(Background on this error at:"):
+        if marker in msg:
+            msg = msg.split(marker)[0]
+    msg = re.sub(r"\([A-Za-z_][A-Za-z0-9_.]*Error\)\s*", "", msg)
+    msg = re.sub(r"^连接失败[：:]\s*", "", msg)
+    # 驱动的缩进换行（psycopg 的 "…\n\tIs the server running…"）压成一行，弹窗 / tooltip 都不跳行
+    msg = re.sub(r"\s+", " ", msg).strip()
+    return msg[:180] or "未知原因"
+
+
+def apply_source_overrides(src: dict, overrides: dict | None) -> dict:
+    """把「还没落库的修改」叠到已存配置上 —— 只给测连通 / 列表预览用，绝不写库.
+
+    - 没给（或给了 null）的键沿用原值：前端只送用户真正改过的字段；
+    - `password` 空串 / 缺省沿用已存密文，改主机时不必重新输密码；
+    - `uri` 显式给空串 = 清掉连接串、改回主机 + 端口模式。
+    """
+    merged = dict(src)
+    overrides = overrides or {}
+    for key in ("ds_type", "host", "db_name", "username", "uri"):
+        if overrides.get(key) is not None:
+            merged[key] = str(overrides[key]).strip()
+    if "port" in overrides and overrides.get("port") is not None:
+        port = overrides.get("port")
+        merged["port"] = int(port) if str(port).strip() else None
+    if overrides.get("password"):
+        merged["password"] = encrypt(str(overrides["password"]))
+    return merged
 
 
 def update_source(db: Session, source_id: int, payload: dict) -> dict:
+    """编辑数据源（改主机 / 端口 / 库名 / 账号 / 密码 / 连接串 / 名称 / 归属部门）.
+
+    `uri` 键缺席 = 保留原连接串；显式给空串 = 清空连接串、改用主机+端口。
+    """
     current = get_source(db, source_id)
     if current is None:
         raise SourceError("数据源不存在")
-    name = str(payload.get("name", current["name"])).strip()
+    name = str(payload.get("name", current["name"]) or "").strip()
+    if not name:
+        raise SourceError("数据源名称不能为空")
     dup = db.execute(
         text("SELECT 1 FROM bi_source WHERE name = :n AND id <> :id"), {"n": name, "id": source_id}
     ).fetchone()
@@ -933,11 +989,19 @@ def update_source(db: Session, source_id: int, payload: dict) -> dict:
     password = current["password"]
     if payload.get("password"):
         password = encrypt(str(payload["password"]))
-    row = db.execute(
+    uri = (
+        str(payload.get("uri") or "").strip()
+        if "uri" in payload
+        else str(current.get("uri") or "").strip()
+    )
+    dept_id = current.get("dept_id")
+    if "dept_id" in payload:
+        dept_id = payload.get("dept_id") or None
+    db.execute(
         text(
             "UPDATE bi_source SET name = :n, host = :h, port = :p, db_name = :d, "
-            " username = :u, password = :pw, uri = :uri, updated_at = now() "
-            "WHERE id = :id RETURNING *"
+            " username = :u, password = :pw, uri = :uri, dept_id = :dept, updated_at = now() "
+            "WHERE id = :id"
         ),
         {
             "n": name,
@@ -946,12 +1010,19 @@ def update_source(db: Session, source_id: int, payload: dict) -> dict:
             "d": str(payload.get("db_name", current["db_name"]) or "").strip(),
             "u": str(payload.get("username", current["username"]) or "").strip(),
             "pw": password,
-            "uri": str(payload.get("uri", current["uri"]) or "").strip(),
+            "uri": uri,
+            "dept": dept_id,
             "id": source_id,
         },
-    ).fetchone()
+    )
     db.commit()
-    return _public(row)
+    row = db.execute(text(
+        "SELECT s.*, d.name AS dept_name FROM bi_source s "
+        "LEFT JOIN departments d ON d.id = s.dept_id WHERE s.id = :i"
+    ), {"i": source_id}).fetchone()
+    item = _public(row)
+    item["dept_name"] = row._mapping.get("dept_name") or ""
+    return item
 
 
 def delete_source(db: Session, source_id: int) -> dict:
