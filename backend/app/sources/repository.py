@@ -25,7 +25,8 @@ from typing import Any
 from urllib.parse import quote_plus
 
 import pandas as pd
-from sqlalchemy import MetaData, Numeric, Table, create_engine, inspect, select, text
+from sqlalchemy import Column, MetaData, Numeric, Table, create_engine, inspect, select, text
+from sqlalchemy.schema import SetColumnComment, SetTableComment
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
@@ -179,7 +180,8 @@ def _remote_columns(eng: Engine, table: str) -> list[dict]:
     schema, name = table.rsplit(".", 1) if "." in table else (None, table)
     insp = inspect(eng)
     cols = insp.get_columns(name, schema=schema)
-    return [{"name": str(c["name"]), "type": str(c.get("type") or "")} for c in cols]
+    return [{"name": str(c["name"]), "type": str(c.get("type") or ""),
+             "comment": str(c.get("comment") or "")} for c in cols]
 
 
 # MySQL 家族：SQLAlchemy 的 `mysql://` 默认驱动是 MySQLdb（须编译安装），
@@ -750,6 +752,44 @@ def check_source_schema(db: Session, src_row: dict) -> dict:
     }
 
 
+def sync_table_metadata(db: Session, table_id: int) -> dict:
+    """只将源表与匹配字段的注释写入本地表，不重建表、不读写业务行。"""
+    row = db.execute(text("SELECT source_id, source_table, local_table, kind "
+                          "FROM bi_source_table WHERE id = :id"), {"id": table_id}).first()
+    if row is None:
+        raise SourceError("已接入表不存在")
+    source_id, source_table, local_table, kind = row
+    if kind != "db" or not source_id:
+        raise SourceError("文件导入的表没有可同步的源库注释，请重新上传文件")
+    source = get_source(db, int(source_id))
+    if source is None:
+        raise SourceError("数据源已不存在")
+    remote_engine = engine_for(source)
+    schema, name = source_table.rsplit(".", 1) if "." in source_table else (None, source_table)
+    try:
+        columns = _remote_columns(remote_engine, source_table)
+        comment = inspect(remote_engine).get_table_comment(name, schema=schema).get("text")
+    except Exception as exc:
+        raise SourceError("读取源库表和字段注释失败，未修改本地注释") from exc
+    with local_engine.begin() as conn:
+        local_columns = inspect(conn).get_columns(local_table, schema="public")
+        table = Table(local_table, MetaData(), *(Column(col["name"]) for col in local_columns),
+                      schema="public", comment=comment or None)
+        conn.execute(SetTableComment(table))
+        synced = 0
+        missing = []
+        for column in columns:
+            if column["name"] not in table.c:
+                missing.append(column["name"])
+                continue
+            local_column = table.c[column["name"]]
+            local_column.comment = column.get("comment") or None
+            conn.execute(SetColumnComment(local_column))
+            synced += 1
+    return {"table_id": table_id, "local_table": local_table,
+            "columns_synced": synced, "missing_columns": missing}
+
+
 def resync_table(db: Session, table_id: int, owner_id: int | None) -> dict:
     """重新同步单张已接入表（重拉数据 + 刷新结构快照 + 清空漂移）."""
     row = db.execute(
@@ -962,7 +1002,7 @@ __all__ = [
     "test_source", "test_payload", "list_remote_tables", "sync_tables", "import_file",
     "list_sources", "get_source", "create_source", "update_source", "delete_source",
     "list_source_tables", "drop_source_table", "build_url",
-    "check_source_schema", "resync_table", "diff_columns", "snapshot_hash", "freshness_of",
+    "check_source_schema", "resync_table", "sync_table_metadata", "diff_columns", "snapshot_hash", "freshness_of",
     "normalize_interval", "next_sync_at", "set_sync_interval", "record_sync_result",
     "due_tables", "SYNC_INTERVALS",
 ]

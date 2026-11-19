@@ -5,12 +5,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert, Box, Button, Checkbox, Chip, CircularProgress, Dialog,
   DialogActions, DialogContent, DialogTitle, FormControlLabel, IconButton, InputAdornment,
-  LinearProgress, MenuItem, Paper, Select, Snackbar, Table, TableBody, TableCell, TableContainer,
+  LinearProgress, Menu, MenuItem, Paper, Select, Snackbar, Table, TableBody, TableCell, TableContainer,
   TableHead, TableRow, TextField, Tooltip, Typography,
 } from "@mui/material";
 import {
   Add, DeleteOutline, ExpandLess, ExpandMore, FileUpload, Link as LinkIcon, Refresh,
-  Rule, Search, Storage, TableChart, UploadFile,
+  MoreHoriz, Rule, Search, Storage, TableChart, UploadFile,
 } from "@mui/icons-material";
 import client from "../../api/client";
 import { CreateDatasetDialog, type PhysTable } from "./DatasetPanel";
@@ -126,6 +126,9 @@ export default function DataSources() {
   const [testing, setTesting] = useState<number | null>(null);
   const [checking, setChecking] = useState<number | null>(null);
   const [resyncing, setResyncing] = useState<number | null>(null);
+  const [metadataSyncing, setMetadataSyncing] = useState<number | null>(null);
+  const [tableMenu, setTableMenu] = useState<{ anchor: HTMLElement; table: SyncedTable } | null>(null);
+  const [confirmTable, setConfirmTable] = useState<{ action: "sync" | "metadata" | "remove"; table: SyncedTable } | null>(null);
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const [keyword, setKeyword] = useState("");
@@ -273,7 +276,6 @@ export default function DataSources() {
   };
 
   const resyncTable = async (t: SyncedTable) => {
-    if (!window.confirm(`重新同步「${t.source_table}」？会重拉整张表数据并覆盖本地表。`)) return;
     setResyncing(t.id);
     try {
       const res = await client.post(`/bi/sources/files/${t.id}/resync`);
@@ -285,6 +287,17 @@ export default function DataSources() {
     } finally {
       setResyncing(null);
     }
+  };
+
+  const syncMetadata = async (t: SyncedTable) => {
+    setMetadataSyncing(t.id);
+    try {
+      const res = await client.post(`/bi/sources/files/${t.id}/sync-metadata`);
+      const missing = res.data?.missing_columns?.length || 0;
+      setOk(`已同步表注释及 ${res.data?.columns_synced ?? 0} 个字段注释${missing ? `；${missing} 个源字段尚未接入，请先同步本地表` : ""}`);
+    } catch (e: any) {
+      setError(e?.response?.data?.detail || "元数据同步失败");
+    } finally { setMetadataSyncing(null); }
   };
 
   const setSchedule = async (t: SyncedTable, minutes: number) => {
@@ -567,20 +580,12 @@ export default function DataSources() {
                         sx={{ fontSize: 11.5, whiteSpace: "nowrap" }}>
                         创建数据集
                       </Button>
-                      {t.kind === "db" && (
-                        <Tooltip title="重新同步（重拉数据）">
-                          <IconButton size="small" aria-label="重新同步" onClick={() => resyncTable(t)}
-                            disabled={resyncing === t.id} sx={{ p: 0.6 }}>
-                            {resyncing === t.id
-                              ? <CircularProgress size={14} />
-                              : <Refresh sx={{ fontSize: 16 }} />}
-                          </IconButton>
-                        </Tooltip>
-                      )}
-                      <Tooltip title="移除（会删本地表）">
-                        <IconButton size="small" onClick={() => removeTable(t)} sx={{ p: 0.6, color: "error.main" }}>
-                          <DeleteOutline sx={{ fontSize: 16 }} />
-                        </IconButton>
+                      <Tooltip title="更多操作">
+                        <span><IconButton size="small" aria-label={`${t.local_table} 更多操作`}
+                          aria-haspopup="menu" disabled={resyncing === t.id || metadataSyncing === t.id}
+                          onClick={(e) => setTableMenu({ anchor: e.currentTarget, table: t })} sx={{ p: 0.6 }}>
+                          {resyncing === t.id || metadataSyncing === t.id ? <CircularProgress size={14} /> : <MoreHoriz sx={{ fontSize: 18 }} />}
+                        </IconButton></span>
                       </Tooltip>
                     </TableCell>
                   </TableRow>
@@ -590,6 +595,48 @@ export default function DataSources() {
           </TableContainer>
         </>
       )}
+
+      <Menu anchorEl={tableMenu?.anchor} open={!!tableMenu} onClose={() => setTableMenu(null)}
+        MenuListProps={{ sx: { color: "#475569", "& .MuiMenuItem-root": { fontSize: td.fontSize, fontWeight: 400, py: td.py } } }}>
+        <MenuItem disabled={tableMenu?.table.kind !== "db"} onClick={() => {
+          setConfirmTable({ action: "sync", table: tableMenu!.table }); setTableMenu(null);
+        }}>同步本地表</MenuItem>
+        <MenuItem disabled={tableMenu?.table.kind !== "db"} onClick={() => {
+          setConfirmTable({ action: "metadata", table: tableMenu!.table }); setTableMenu(null);
+        }}>同步本地表元数据</MenuItem>
+        {tableMenu?.table.kind === "file" && <Typography sx={{ px: 2, py: 0.5, fontSize: 11, color: "text.secondary" }}>文件表需重新上传，无法从源库同步</Typography>}
+        <MenuItem sx={{ color: "error.main" }} onClick={() => {
+          setConfirmTable({ action: "remove", table: tableMenu!.table }); setTableMenu(null);
+        }}>移除本地表</MenuItem>
+      </Menu>
+
+      <Dialog open={!!confirmTable} onClose={() => setConfirmTable(null)} maxWidth="xs" fullWidth
+        aria-labelledby="table-action-title" aria-describedby="table-action-description">
+        <DialogTitle id="table-action-title" sx={{ fontSize: 16, fontWeight: 700 }}>
+          {confirmTable?.action === "remove" ? "移除本地表" : confirmTable?.action === "metadata" ? "同步本地表元数据" : "同步本地表"}
+        </DialogTitle>
+        <DialogContent>
+          <Typography id="table-action-description" sx={{ fontSize: 13, color: "text.secondary" }}>
+            {confirmTable?.action === "remove"
+              ? `确定移除本地表「${confirmTable.table.local_table}」？将删除本地副本，不影响源库。`
+              : confirmTable?.action === "metadata"
+                ? `以源库注释覆盖「${confirmTable.table.local_table}」的表和字段注释？不会修改字段结构或业务数据。`
+                : confirmTable ? `同步「${confirmTable.table.source_table}」到本地？会完整读取源表，按现有日期替换或整表覆盖策略更新本地数据。` : ""}
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button autoFocus onClick={() => setConfirmTable(null)}>取消</Button>
+          <Button variant="contained" color={confirmTable?.action === "remove" ? "error" : "primary"}
+            onClick={() => {
+              if (!confirmTable) return;
+              const { action, table } = confirmTable;
+              setConfirmTable(null);
+              if (action === "remove") void removeTable(table);
+              else if (action === "metadata") void syncMetadata(table);
+              else void resyncTable(table);
+            }}>确认</Button>
+        </DialogActions>
+      </Dialog>
 
       {datasetFor && (
         <CreateDatasetDialog tables={[datasetFor.table]}

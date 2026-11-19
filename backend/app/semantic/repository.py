@@ -202,6 +202,70 @@ def add_field(
     return DatasetField.from_row(row)
 
 
+def sync_comment_names(db: Session, dataset: Dataset, columns: list[dict]) -> dict:
+    """用非空数据库注释改显示名；来源列不变，冲突及在用字段跳过。"""
+    from collections import Counter
+    from app.dashboards.sources import usages_of_field
+    from app.query.contract import DimensionSpec
+
+    if db.get_bind().dialect.name == "postgresql":
+        db.execute(text("SELECT id FROM bi_dataset WHERE id = :d FOR UPDATE"), {"d": dataset.id})
+    fields = list_fields(db, dataset.id)
+    comments = {col["name"]: str(col.get("comment") or "").strip() for col in columns}
+    targets = Counter(comments.get(field.source_column) for field in fields
+                      if not field.expression and comments.get(field.source_column))
+    names = {field.name for field in fields} | {metric.name for metric in list_metrics(db, dataset.id)}
+    usages = usages_of_field(db, dataset.id, [field.name for field in fields])
+    masked = {row[0] for row in db.execute(text(
+        "SELECT column_name FROM bi_dataset_column_mask WHERE dataset_id = :d"
+    ), {"d": dataset.id}).fetchall()}
+    masked.update(row[0] for row in db.execute(text(
+        "SELECT column_name FROM bi_column_masks WHERE table_name = :t"
+    ), {"t": dataset.physical_table}).fetchall())
+    renamed, skipped = [], []
+    unchanged = 0
+    try:
+        for field in fields:
+            name = comments.get(field.source_column, "") if not field.expression else ""
+            if name and name == field.name:
+                unchanged += 1
+                continue
+            reason = ""
+            if not name:
+                reason = "没有非空数据库注释"
+            elif len(name.encode("utf-8")) > 63:
+                reason = "注释过长，字段名不能超过 63 字节"
+            elif targets[name] > 1 or name in names:
+                reason = "注释名称重复或与已有字段、指标重名"
+            elif usages.get(field.name):
+                reason = "字段已被图表引用"
+            elif field.name in masked or field.source_column in masked:
+                reason = "字段关联了脱敏配置"
+            else:
+                try:
+                    if "." in name:
+                        raise ValueError("字段别名不支持点号")
+                    DimensionSpec(column=field.source_column, alias=name)
+                except ValueError:
+                    reason = "注释含有字段名不支持的字符"
+            if reason:
+                skipped.append({"field_id": field.id, "name": field.name, "reason": reason})
+                continue
+            result = db.execute(text(
+                "UPDATE bi_dataset_field SET name = :name "
+                "WHERE dataset_id = :d AND id = :id AND name = :old"
+            ), {"d": dataset.id, "id": field.id, "old": field.name, "name": name})
+            if result.rowcount != 1:
+                raise SemanticError("字段已被其他操作修改，请刷新后重试")
+            renamed.append({"field_id": field.id, "old_name": field.name, "name": name})
+        if renamed:
+            _touch(db, dataset.id)
+    except Exception:
+        db.rollback()
+        raise
+    return {"renamed": len(renamed), "changes": renamed, "skipped": skipped, "unchanged": unchanged}
+
+
 def delete_field(db: Session, dataset_id: int, field_id: int) -> bool:
     result = db.execute(
         text("DELETE FROM bi_dataset_field WHERE id = :id AND dataset_id = :d"),
@@ -560,12 +624,14 @@ _TEMPORAL = {"timestamp without time zone", "timestamp with time zone", "date", 
 def physical_columns_typed(db: Session, table: str) -> list[dict]:
     rows = db.execute(
         text(
-            "SELECT column_name, data_type FROM information_schema.columns "
+            "SELECT column_name, data_type, pg_catalog.col_description("
+            "pg_catalog.to_regclass(format('%I.%I', table_schema, table_name)), ordinal_position) "
+            "FROM information_schema.columns "
             "WHERE table_schema = 'public' AND table_name = :t ORDER BY ordinal_position"
         ),
         {"t": table},
     ).fetchall()
-    return [{"name": r[0], "type": r[1]} for r in rows]
+    return [{"name": r[0], "type": r[1], "comment": r[2] or ""} for r in rows]
 
 
 def _infer_role_type(pg_type: str) -> tuple[str, str]:
@@ -673,7 +739,7 @@ def list_physical_tables(db: Session, *, include_counts: bool = True) -> list[di
 
 __all__ = [
     "list_datasets", "get_dataset", "create_dataset", "update_dataset", "delete_dataset",
-    "list_fields", "add_field", "update_field", "delete_field", "sync_fields",
+    "list_fields", "add_field", "update_field", "delete_field", "sync_fields", "sync_comment_names",
     "list_metrics", "add_metric", "update_metric", "delete_metric",
     "list_physical_tables", "physical_columns_typed",
 ]

@@ -685,7 +685,12 @@ function DatasetEditor({
   const [metricDialog, setMetricDialog] = useState<Metric | "new" | null>(null);
   const [versionsFor, setVersionsFor] = useState<Metric | null>(null);
   const [usagesFor, setUsagesFor] = useState<Metric | null>(null);
-  const [physColumns, setPhysColumns] = useState<{ name: string; type: string }[]>([]);
+  const [physColumns, setPhysColumns] = useState<{ name: string; type: string; comment?: string }[]>([]);
+  const [columnsError, setColumnsError] = useState("");
+  const [syncingNames, setSyncingNames] = useState(false);
+  const [nameSyncResult, setNameSyncResult] = useState<{
+    renamed: number; unchanged: number; skipped: { name: string; reason: string }[];
+  } | null>(null);
   const [fieldUsage, setFieldUsage] = useState<{
     counts: Record<string, number>; usages: Record<string, MetricUsage[]>;
   } | null>(null);
@@ -712,27 +717,19 @@ function DatasetEditor({
   // 物理表的列（添加字段时直接挑，不用手打列名）
   useEffect(() => {
     if (!data?.physical_table) return;
+    let active = true;
+    setColumnsError("");
+    setPhysColumns([]);
     if (data.is_virtual) {
       setPhysColumns(data.fields.filter((f) => !f.expression)
         .map((f) => ({ name: f.source_column, type: f.data_type })));
       return;
     }
-    if (data.conn_mode === "live" && data.source_id) {
-      // 直连：物理列来自源库，不是本地 information_schema
-      client.get(`/bi/sources/${data.source_id}/tables`).then((res) => {
-        const hit = (res.data?.tables || []).find((t: RemoteTable) => t.table === data.physical_table);
-        setPhysColumns(((hit?.columns || []) as string[]).map((col: string) => {
-          const n = String(col);
-          return { name: n, type: hit?.column_types?.[n] || "" };
-        }));
-      }).catch(() => setPhysColumns([]));
-      return;
-    }
-    client.get("/bi/semantic/tables").then((res) => {
-      const hit = (res.data?.tables || []).find((t: PhysTable) => t.table === data.physical_table);
-      setPhysColumns(hit?.columns || []);
-    }).catch(() => setPhysColumns([]));
-  }, [data?.physical_table, data?.conn_mode, data?.source_id, data?.fields, data?.is_virtual]);
+    client.get(`/bi/semantic/datasets/${datasetId}/columns`)
+      .then((res) => { if (active) setPhysColumns(res.data?.columns || []); })
+      .catch((e) => { if (active) setColumnsError(e?.response?.data?.detail || "数据库字段和注释读取失败"); });
+    return () => { active = false; };
+  }, [datasetId, data?.physical_table, data?.conn_mode, data?.source_id, data?.fields, data?.is_virtual]);
 
   const toast = (msg: string, good = false) => { if (good) setOk(msg); else setError(msg); };
 
@@ -751,6 +748,17 @@ function DatasetEditor({
     } finally {
       setBusy(false);
     }
+  };
+
+  const syncCommentNames = async () => {
+    setSyncingNames(true);
+    try {
+      const res = await client.post(`/bi/semantic/datasets/${datasetId}/sync-comment-names`);
+      await load(); onChanged();
+      setNameSyncResult(res.data);
+    } catch (e: any) {
+      toast(e?.response?.data?.detail || "同步注释名称失败");
+    } finally { setSyncingNames(false); }
   };
 
   const syncColumns = async () => {
@@ -825,7 +833,7 @@ function DatasetEditor({
   };
 
   return (
-    <Drawer anchor="right" open onClose={onClose} PaperProps={{ sx: { width: 940, maxWidth: "96vw" } }}>
+    <Drawer anchor="right" open onClose={onClose} PaperProps={{ sx: { width: 1128, maxWidth: "96vw" } }}>
       <Box sx={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
         {/* 头 */}
         <Box sx={{ px: 3, pt: 2.5, pb: 1.5, borderBottom: "1px solid #EEF3FB" }}>
@@ -866,6 +874,9 @@ function DatasetEditor({
             <>
               <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1.25 }}>
                 <Box sx={{ flex: 1 }} />
+                <Button size="small" startIcon={syncingNames ? <CircularProgress size={14} /> : <Refresh sx={{ fontSize: 15 }} />}
+                  onClick={syncCommentNames} disabled={syncingNames || busy || !!data.is_virtual || !!columnsError}
+                  sx={{ textTransform: "none", fontSize: 12, color: "#475569" }}>同步注释名称</Button>
                 <Button size="small" startIcon={<Refresh sx={{ fontSize: 15 }} />} onClick={syncColumns}
                   sx={{ textTransform: "none", fontSize: 12, color: "#475569" }}>同步物理列</Button>
                 <Button size="small" variant="outlined" startIcon={<Add sx={{ fontSize: 15 }} />}
@@ -873,11 +884,17 @@ function DatasetEditor({
                   sx={{ textTransform: "none", fontSize: 12, borderRadius: 1.5 }}>添加公式字段</Button>
               </Box>
               <MiniTable
-                head={["字段名", "来源列 / 公式", "角色", "类型", "筛选", "分组", "使用", ""]}
+                resizable
+                head={["字段名", "注释", "来源列 / 公式", "角色", "类型", "筛选", "分组", "使用", ""]}
                 rows={data.fields.map((f) => {
                   const count = fieldUsage?.counts?.[f.name] || 0;
+                  const comment = !f.expression && !data.is_virtual
+                    ? physColumns.find((column) => column.name === f.source_column)?.comment : "";
                   return [
                     <span key="n" style={{ fontWeight: 600 }}>{f.name}</span>,
+                    comment?.trim()
+                      ? <span key="comment" title={comment}>{comment}</span>
+                      : <span key="comment" style={{ color: "#94A3B8", fontStyle: "italic" }}>(空)</span>,
                     <code key="c" style={{ fontSize: 11.5, color: "#64748B" }}>{f.expression || f.source_column}</code>,
                     ROLES.find((r) => r.v === f.role)?.l || f.role,
                     f.data_type,
@@ -911,6 +928,7 @@ function DatasetEditor({
                 })}
                 empty="还没有字段，点「同步物理列」从表里导入"
               />
+              {columnsError && <Alert severity="warning" sx={{ mt: 1 }}>{columnsError}</Alert>}
             </>
           ) : tab === 1 ? (
             <>
@@ -1034,6 +1052,15 @@ function DatasetEditor({
           onImported={async () => { await load(); onChanged(); }} />
       )}
 
+      <Dialog open={!!nameSyncResult} onClose={() => setNameSyncResult(null)} maxWidth="sm" fullWidth aria-labelledby="comment-name-sync-title">
+        <DialogTitle id="comment-name-sync-title" sx={{ fontSize: 16, fontWeight: 700 }}>同步注释名称结果</DialogTitle>
+        <DialogContent>
+          <Typography sx={{ mb: 2, fontSize: 13 }}>已更新 {nameSyncResult?.renamed || 0} 个字段名，{nameSyncResult?.unchanged || 0} 个无需修改，跳过 {nameSyncResult?.skipped.length || 0} 个。</Typography>
+          <MiniTable head={["字段", "跳过原因"]}
+            rows={(nameSyncResult?.skipped || []).map((item) => [item.name, item.reason])} empty="没有跳过的字段" />
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}><Button onClick={() => setNameSyncResult(null)}>关闭</Button></DialogActions>
+      </Dialog>
       <Toast msg={error} onClose={() => setError("")} />
       <Snackbar open={!!ok} autoHideDuration={2600} onClose={() => setOk("")}
         anchorOrigin={{ vertical: "bottom", horizontal: "center" }}>
@@ -1043,17 +1070,50 @@ function DatasetEditor({
   );
 }
 
+const FIELD_COLUMN_WIDTHS = [150, 220, 200, 90, 90, 64, 64, 100, 80];
+const FIELD_WIDTHS_KEY = "mzbi.dataset.fieldWidths";
+
 function MiniTable({
-  head, rows, empty,
-}: { head: string[]; rows: React.ReactNode[][]; empty: string }) {
+  head, rows, empty, resizable = false,
+}: { head: string[]; rows: React.ReactNode[][]; empty: string; resizable?: boolean }) {
+  const [widths, setWidths] = useState<number[]>(() => {
+    if (resizable) {
+      try {
+        const saved = JSON.parse(localStorage.getItem(FIELD_WIDTHS_KEY) || "null");
+        if (Array.isArray(saved) && saved.length === head.length
+          && saved.every((width) => Number.isFinite(width) && width >= 64 && width <= 2000)) return saved;
+      } catch { /* 无有效设置时使用默认列宽 */ }
+    }
+    return FIELD_COLUMN_WIDTHS;
+  });
+  const drag = useRef<{ index: number; x: number; width: number; latest: number } | null>(null);
+  const changeWidth = (index: number, width: number, persist = false) => {
+    const next = widths.map((value, i) => i === index ? Math.max(64, Math.min(2000, width)) : value);
+    setWidths(next);
+    if (drag.current) drag.current.latest = next[index];
+    if (persist) {
+      try { localStorage.setItem(FIELD_WIDTHS_KEY, JSON.stringify(next)); } catch { /* 禁用存储时仍可调整 */ }
+    }
+  };
   return (
     <TableContainer component={Paper} elevation={0}
       sx={{ borderRadius: 2, border: "1px solid", borderColor: "#EEF3FB" }}>
-      <Table size="small" sx={{ minWidth: "100%" }}>
+      <Table size="small" sx={{ minWidth: "100%", ...(resizable && { tableLayout: "fixed", width: widths.reduce((sum, width) => sum + width, 0) }) }}>
+        {resizable && <colgroup>{widths.map((width, i) => <col key={i} style={{ width }} />)}</colgroup>}
         <TableHead>
           <TableRow>
             {head.map((h, i) => (
-              <TableCell key={i} sx={{ ...th, textAlign: i === head.length - 1 ? "right" : "left" }}>{h}</TableCell>
+              <TableCell key={i} sx={{ ...th, position: "relative", textAlign: i === head.length - 1 ? "right" : "left" }}>
+                {h}
+                {resizable && <Box role="separator" aria-label={`调整${h || "操作"}列宽`} aria-orientation="vertical"
+                  tabIndex={0} aria-valuemin={64} aria-valuemax={2000} aria-valuenow={Math.round(widths[i])}
+                  onPointerDown={(e) => { e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); drag.current = { index: i, x: e.clientX, width: widths[i], latest: widths[i] }; }}
+                  onPointerMove={(e) => { if (drag.current?.index === i) changeWidth(i, drag.current.width + e.clientX - drag.current.x); }}
+                  onPointerUp={() => { if (drag.current) changeWidth(i, drag.current.latest, true); drag.current = null; }}
+                  onPointerCancel={() => { drag.current = null; }}
+                  onKeyDown={(e) => { if (e.key === "ArrowLeft" || e.key === "ArrowRight") { e.preventDefault(); changeWidth(i, widths[i] + (e.key === "ArrowRight" ? 20 : -20), true); } }}
+                  sx={{ position: "absolute", right: 0, top: 0, bottom: 0, width: 6, cursor: "col-resize", touchAction: "none", "&:hover, &:focus-visible": { bgcolor: "primary.light" } }} />}
+              </TableCell>
             ))}
           </TableRow>
         </TableHead>
@@ -1067,7 +1127,7 @@ function MiniTable({
           ) : rows.map((cells, i) => (
             <TableRow key={i} hover>
               {cells.map((c, j) => (
-                <TableCell key={j} sx={{ ...td, textAlign: j === head.length - 1 ? "right" : "left" }}>{c}</TableCell>
+                <TableCell key={j} sx={{ ...td, ...(resizable && { overflow: "hidden", overflowWrap: "anywhere" }), textAlign: j === head.length - 1 ? "right" : "left" }}>{c}</TableCell>
               ))}
             </TableRow>
           ))}

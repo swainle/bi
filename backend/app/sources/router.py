@@ -9,6 +9,7 @@
     POST   /api/bi/sources/{id}/sync      选表同步成本地物理表
     POST   /api/bi/sources/{id}/schema-check  检查已接入表的字段是否变了
     POST   /api/bi/sources/files/{id}/resync  重新同步单张表
+    POST   /api/bi/sources/files/{id}/sync-metadata  同步源库注释到本地表
     POST   /api/bi/sources/upload         上传 CSV / Excel / JSON
     GET    /api/bi/sources/files          已接入表（含文件上传）
     DELETE /api/bi/sources/files/{id}     移除已接入表
@@ -201,6 +202,15 @@ def resync_table(
     """重新同步单张已接入表（重拉数据 + 刷新结构快照）."""
     try:
         return repo.resync_table(db, table_id, current_user.id)
+    except Exception as exc:
+        raise _guard(exc) from exc
+
+
+@router.post("/files/{table_id}/sync-metadata", dependencies=[Depends(require_nav("bi:nav:datasources"))])
+def sync_table_metadata(table_id: int, current_user: User = Depends(get_current_user),
+                        db: Session = Depends(get_db)):
+    try:
+        return repo.sync_table_metadata(db, table_id)
     except Exception as exc:
         raise _guard(exc) from exc
 
