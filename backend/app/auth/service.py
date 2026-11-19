@@ -1,5 +1,7 @@
 """认证服务 —— 注册、登录、密码哈希、JWT 生成/验证、刷新令牌."""
 
+from app.timezone import time_text
+
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
@@ -45,7 +47,7 @@ def verify_refresh_token(token: str, db: Session) -> int:
     """验证 refresh token 并返回 user_id.
 
     Raises:
-        ValueError: token 无效、已过期、或已被新登录覆盖.
+        ValueError: token 无效、已过期、或已被撤销.
     """
     try:
         payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
@@ -54,11 +56,11 @@ def verify_refresh_token(token: str, db: Session) -> int:
         user_id = int(payload.get("sub", 0))
         if not user_id:
             raise ValueError("无效令牌")
-        # 验证 token_version：如果被其他设备登录覆盖，旧 refresh token 也失效
+        # 版本号变化后，旧 refresh token 也失效
         token_ver = payload.get("ver", 0)
         user = db.query(User).filter(User.id == user_id).first()
         if not user or (user.token_version or 0) != token_ver:
-            raise ValueError("账号已在其他设备登录，请重新登录")
+            raise ValueError("登录凭证已失效，请重新登录")
         return user_id
     except JWTError as e:
         raise ValueError(f"令牌无效") from e
@@ -149,25 +151,13 @@ def login_user(db: Session, data: UserLogin) -> dict:
     if not user.is_active:
         raise ValueError("账号已被停用")
 
-    # 每次登录递增 token_version，使旧 token 失效（单设备登录）
-    user.token_version = (user.token_version or 0) + 1
-    db.commit()
-    db.refresh(user)
-
-    # 清除 Redis 用户缓存，使新 token_version 立即生效
-    try:
-        from app.services.cache import cache_delete
-        cache_delete(f"user:{user.id}")
-    except Exception:
-        pass
-
     return {
         "id": user.id,
         "username": user.username,
         "email": user.email,
         "role": user.role or "user",
-        "access_token": create_access_token(user.id, user.token_version),
-        "refresh_token": create_refresh_token(user.id, user.token_version),
+        "access_token": create_access_token(user.id, user.token_version or 0),
+        "refresh_token": create_refresh_token(user.id, user.token_version or 0),
     }
 
 
@@ -177,7 +167,7 @@ def get_current_user_info(user: User) -> dict:
         "id": user.id,
         "username": user.username,
         "email": user.email,
-        "created_at": user.created_at.isoformat(),
+        "created_at": time_text(user.created_at),
     }
 
 

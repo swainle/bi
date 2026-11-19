@@ -5,9 +5,9 @@
   "type": "module",
   "description": "明策BI 前端 — 自研 BI 画布引擎 / 看板设计器 / AI 生成",
   "scripts": {
-    "dev": "bash dev.sh",
+    "dev": "vite",
     "dev:base": "vite",
-    "dev:me": "bash dev.sh",
+    "dev:me": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
@@ -24,6 +24,7 @@
     "audit:config": "node scripts/audit-config.mjs"
   },
   "dependencies": {
+    "@codemirror/lang-sql": "^6.10.0",
     "@emotion/react": "^11.11.0",
     "@emotion/styled": "^11.11.0",
     "@hello-pangea/dnd": "^18.0.1",
@@ -31,6 +32,7 @@
     "@mui/material": "^5.15.0",
     "@mylayout/core": "file:./packages/mylayout",
     "@sentry/react": "^8.45.0",
+    "@uiw/react-codemirror": "^4.25.12",
     "axios": "^1.7.0",
     "echarts": "^6.1.0",
     "echarts-for-react": "^3.0.6",
@@ -41,7 +43,9 @@
     "react-dnd": "^16.0.1",
     "react-dnd-html5-backend": "^16.0.1",
     "react-dom": "^18.3.1",
+    "react-markdown": "^10.1.0",
     "react-router-dom": "^6.23.0",
+    "remark-gfm": "^4.0.1",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

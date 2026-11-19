@@ -9,9 +9,10 @@
 
 from __future__ import annotations
 
+from app.timezone import china_now
+
 import os
 import secrets
-from datetime import datetime
 from typing import Any
 
 from jinja2 import Template
@@ -358,12 +359,12 @@ def generate_files(db: Session, subscription: dict, user: Any,
 
     folder = os.path.join(REPORT_DIR, str(subscription["dashboard_id"]))
     os.makedirs(folder, exist_ok=True)
-    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    stamp = china_now().strftime("%Y%m%d-%H%M%S")
     token = secrets.token_hex(4)
     html_rel = f"{subscription['dashboard_id']}/{stamp}-{token}.html"
     xlsx_rel = f"{subscription['dashboard_id']}/{stamp}-{token}.xlsx"
     pdf_rel = f"{subscription['dashboard_id']}/{stamp}-{token}.pdf"
-    generated_at = datetime.now().strftime("%Y-%m-%d %H:%M")
+    generated_at = china_now().strftime("%Y-%m-%d %H:%M")
 
     _write_html(os.path.join(REPORT_DIR, html_rel), board_name, title, blocks, summary, generated_at, info)
     _write_xlsx(os.path.join(REPORT_DIR, xlsx_rel), board_name, title, blocks, summary, generated_at, info)
@@ -392,11 +393,11 @@ def export_dashboard(db: Session, board: Any, user: Any, *, view_key: str = "",
 
     folder = os.path.join(EXPORT_DIR, str(board.id))
     os.makedirs(folder, exist_ok=True)
-    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    stamp = china_now().strftime("%Y%m%d-%H%M%S")
     token = secrets.token_hex(4)
     html_abs = os.path.join(folder, f"{stamp}-{token}.html")
     xlsx_abs = os.path.join(folder, f"{stamp}-{token}.xlsx")
-    generated_at = datetime.now().strftime("%Y-%m-%d %H:%M")
+    generated_at = china_now().strftime("%Y-%m-%d %H:%M")
     name = subscription["name"]
 
     _write_html(html_abs, board.name, name, blocks, summary, generated_at, info)

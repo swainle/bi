@@ -31,6 +31,8 @@ if _is_sqlite:
         os.makedirs(data_dir, exist_ok=True)
     _engine_kwargs["connect_args"] = {"check_same_thread": False}
 else:
+    # 历史无时区字段存的是 UTC，连接时区固定，避免部署环境改变写入含义。
+    _engine_kwargs["connect_args"] = {"options": "-c timezone=UTC"}
     # PostgreSQL 企业级连接池配置（可环境变量调；多 worker 时记得按 worker 数对齐 PG 的 max_connections）
     def _env_int(name: str, default: int) -> int:
         try:

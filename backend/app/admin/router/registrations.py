@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.timezone import time_text, utc_now
+
 from datetime import datetime
 from fastapi import Body, Depends, HTTPException, Query
 from sqlalchemy import text
@@ -68,10 +70,10 @@ def list_registrations(
                 "role": r[3] or "user",
                 "department_id": r[4],
                 "department_name": r[5] or "未分配",
-                "created_at": str(r[6] or ""),
+                "created_at": time_text(r[6] or ""),
                 "approval_status": r[7] or "approved",
                 "reject_reason": r[8] or "",
-                "approved_at": str(r[9] or ""),
+                "approved_at": time_text(r[9] or ""),
             }
             for r in rows
         ],
@@ -90,7 +92,7 @@ def approve_registration(
     target.approval_status = "approved"
     target.is_active = True
     target.approved_by = current_user.id
-    target.approved_at = datetime.utcnow()
+    target.approved_at = utc_now()
     target.reject_reason = None
     target.token_version = (target.token_version or 0) + 1
     db.commit()
@@ -114,7 +116,7 @@ def reject_registration(
     target.approval_status = "rejected"
     target.is_active = False
     target.approved_by = current_user.id
-    target.approved_at = datetime.utcnow()
+    target.approved_at = utc_now()
     target.reject_reason = reason or None
     target.token_version = (target.token_version or 0) + 1
     db.commit()

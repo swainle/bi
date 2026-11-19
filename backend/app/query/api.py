@@ -26,7 +26,7 @@ from app.query import async_jobs, running, slowlog
 from app.query.contract import QueryObject
 from app.query.executor import run as execute_query
 from app.query.grain import supported_grains
-from app.query.whitelist import ALLOWED_TABLES
+from app.query.table_catalog import BUILTIN_TABLES, is_queryable
 from app.security.errors import RlsBlockedError, SecurityError
 
 router = APIRouter(prefix="/bi/query", tags=["BI查询契约"])
@@ -69,7 +69,7 @@ def run_query(
     """按 QueryObject 执行一次查询."""
     query = _parse(payload)
     try:
-        result = execute_query(db, query, current_user, allowed_tables=ALLOWED_TABLES)
+        result = execute_query(db, query, current_user)
     except RlsBlockedError as exc:
         raise HTTPException(exc.http_status, exc.message) from exc
     except Exception as exc:

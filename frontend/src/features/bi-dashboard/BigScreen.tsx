@@ -1,3 +1,4 @@
+import { formatChinaTime } from "../../utils/time";
 /** 数据大屏编辑器 — 全屏模式、自动轮播、动画装饰 */
 
 import { useState, useEffect, useRef, useCallback } from "react";
@@ -31,7 +32,7 @@ export default function BigScreen({ rows, panels, title, onClose }: BigScreenPro
   useEffect(() => {
     const t = setInterval(() => {
       const now = new Date();
-      setTimeStr(now.toLocaleString("zh-CN", { hour12: false }));
+      setTimeStr(formatChinaTime(now));
     }, 1000);
     return () => clearInterval(t);
   }, []);

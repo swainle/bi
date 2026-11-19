@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+from app.timezone import china_now, time_text
+
 from fastapi import Depends, HTTPException, Query, Body
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.middleware.auth import get_current_user
 from app.models.user import User
-from app.query.whitelist import ALLOWED_TABLES
+from app.query.table_catalog import BUILTIN_TABLES, is_queryable
 
 from fastapi import APIRouter
 
@@ -24,7 +26,7 @@ def list_dataset_versions(
     rows = db.execute(text(
         "SELECT id, version_name, row_count, created_at FROM bi_dataset_versions WHERE table_name=:t ORDER BY id DESC LIMIT 20"
     ), {"t": table}).fetchall()
-    return {"versions": [{"id": r[0], "name": r[1], "rows": r[2], "created_at": str(r[3])} for r in rows]}
+    return {"versions": [{"id": r[0], "name": r[1], "rows": r[2], "created_at": time_text(r[3])} for r in rows]}
 
 
 @router.post("/datasets/snapshot/{table}")
@@ -34,7 +36,7 @@ def create_dataset_snapshot(
     db: Session = Depends(get_db),
 ):
     """创建数据集快照"""
-    if table not in ALLOWED_TABLES:
+    if not is_queryable(table):
         raise HTTPException(404)
     count = db.execute(text(f"SELECT count(*) FROM {table}")).scalar()
     db.execute(text(
@@ -124,7 +126,7 @@ def execute_metric(metric_id: int, payload: dict = Body(...),
     except SemanticError as exc:
         raise HTTPException(400, f"指标公式不合法：{exc}") from exc
     table = payload.get("table", "")
-    if table not in ALLOWED_TABLES: raise HTTPException(404, f"表 {table} 不在白名单中")
+    if not is_queryable(table): raise HTTPException(404, f"表 {table} 不是可访问的业务表")
     try:
         result = db.execute(text(f"SELECT {formula} AS result FROM {table}")).scalar()
         return {"metric_id": metric_id, "formula": formula, "table": table, "result": result}

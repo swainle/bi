@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.timezone import time_text, utc_now
+
 import os
 import re
 from fastapi import Depends, HTTPException
@@ -447,7 +449,7 @@ def _model_rows(db: Session) -> list[dict]:
                 "max_tokens": int(m["max_tokens"] or 4096),
                 "enabled": bool(m["enabled"]),
                 "is_default": bool(m["is_default"]),
-                "last_test_at": str(m["last_test_at"] or ""),
+                "last_test_at": time_text(m["last_test_at"] or ""),
                 "last_test_ok": m["last_test_ok"],
                 "last_test_ms": m["last_test_ms"],
                 "last_test_error": m["last_test_error"] or "",

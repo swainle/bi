@@ -1,3 +1,5 @@
+import { formatChinaTime } from "../../utils/time";
+import { MenuBookOutlined as DocsIcon } from "@mui/icons-material";
 /** 顶部导航栏 —— 明策BI（Apple 风极简：白底、细分隔线、胶囊导航） */
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
@@ -65,7 +67,7 @@ const NAV: { label: string; path: string; icon: ReactNode; perm?: string }[] = [
   { label: "MCP 授权", path: "/bi/mcp", icon: <SmartToyIcon sx={{ fontSize: 16 }} />, perm: "bi:mcp:use" },
 ];
 
-export default function TopBar() {
+export default function TopBar({ hideLogo = false }: { hideLogo?: boolean }) {
   const nav = useNavigate();
   const { pathname } = useLocation();
   const { user, logout, hasPerm } = useAuth();
@@ -226,16 +228,21 @@ export default function TopBar() {
       position="sticky"
       elevation={0}
       sx={{
-        bgcolor: "background.paper",
+        background: (theme) => theme.palette.background.paper,
+        height: 56,
+        boxSizing: "border-box",
         borderBottom: "1px solid",
         borderColor: "divider",
+        boxShadow: "0 2px 4px rgba(0,0,0,0.06)",
+        clipPath: "inset(0 0 -8px 0)",
         backdropFilter: "blur(12px)",
         color: "text.primary",
+        flexShrink: 0,
       }}
     >
-      <Toolbar sx={{ minHeight: 56, gap: 2 }}>
+      <Toolbar sx={{ "&.MuiToolbar-root": { minHeight: 0, height: "100%" }, gap: 2 }}>
         {/* Logo */}
-        <Stack
+        {!hideLogo && <Stack
           direction="row"
           spacing={1}
           alignItems="center"
@@ -258,10 +265,11 @@ export default function TopBar() {
           <Typography sx={{ fontSize: 15, fontWeight: 650, letterSpacing: 0.2 }}>
             明策BI
           </Typography>
-        </Stack>
+        </Stack>}
 
         {/* 导航 */}
-        <Stack direction="row" spacing={0.5}>
+        <Stack direction="row" spacing={0.5}
+          sx={{ display: pathname.startsWith("/help") ? { xs: "none", sm: "flex" } : "flex" }}>
           {NAV.filter((item) => !item.perm || hasPerm(item.perm)).map((item) => {
             const active =
               item.path === "/bi"
@@ -296,6 +304,12 @@ export default function TopBar() {
         <Box sx={{ flexGrow: 1 }} />
 
         {/* 右侧操作 */}
+        <Tooltip title="使用文档">
+          <IconButton component="a" href="/help" target="_blank" rel="noopener noreferrer"
+            aria-label="使用文档" size="small">
+            <DocsIcon sx={{ fontSize: 18 }} />
+          </IconButton>
+        </Tooltip>
         <Tooltip title="通知">
           <IconButton
             size="small"
@@ -460,7 +474,7 @@ export default function TopBar() {
                           {item.username}
                         </Typography>
                         <Typography noWrap sx={{ fontSize: 10.5, color: "#94A3B8" }}>
-                          {item.department_name} · {(item.created_at || "").slice(5, 16)}
+                          {item.department_name} · {formatChinaTime(item.created_at).slice(5, 16)}
                         </Typography>
                       </Box>
                       <Button
@@ -542,7 +556,7 @@ export default function TopBar() {
                       {event.message}
                     </Typography>
                     <Typography sx={{ fontSize: 10.5, color: "#B0B8C4", mt: 0.25 }}>
-                      {(event.created_at || "").slice(5, 16)}
+                      {formatChinaTime(event.created_at).slice(5, 16)}
                     </Typography>
                   </Box>
                 </Box>

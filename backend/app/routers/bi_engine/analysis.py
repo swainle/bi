@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+from app.timezone import china_now, time_text
+
 from fastapi import Depends, HTTPException, Body
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.middleware.auth import get_current_user
 from app.models.user import User
-from app.query.whitelist import ALLOWED_TABLES
+from app.query.table_catalog import BUILTIN_TABLES, is_queryable
 
 from fastapi import APIRouter
 
@@ -78,8 +80,8 @@ def compute_analysis(
     metric_col = payload.get("metric_col", "")
     func_type = payload.get("func", "")
 
-    if table not in ALLOWED_TABLES and not table.startswith("bi_ai_"):
-        raise HTTPException(404, f"表 {table} 不在白名单中")
+    if not is_queryable(table):
+        raise HTTPException(404, f"表 {table} 不是可访问的业务表")
     if not func_type or func_type not in FUNC_META:
         raise HTTPException(400, f"无效函数类型，支持: {list(FUNC_META)}")
 

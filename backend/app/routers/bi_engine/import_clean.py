@@ -534,7 +534,7 @@ def _ai_profile(rows: list[dict], columns: list[str]) -> dict:
 
 def _ai_smart_repair(rows: list[dict], profile: dict) -> list[str]:
     """AI 智能修补：基于列统计画像修正异常值。
-    
+
     策略：
     - 负值收入/订单 → 转正
     - 远超 3σ 的异常值 → IQR 边界裁剪
@@ -572,7 +572,7 @@ def _ai_smart_repair(rows: list[dict], profile: dict) -> list[str]:
 
 def _ai_deep_clean(rows: list[dict]) -> list[str]:
     """AI 深度清洗：利用列间关系智能推断和修正。
-    
+
     关系规则：
     - gross = revenue - cost
     - gross_rate = gross / revenue
@@ -622,7 +622,7 @@ def _ai_deep_clean(rows: list[dict]) -> list[str]:
 
 def _ai_generate_insights(rows: list[dict], profile: dict) -> dict:
     """AI 数据洞察：基于统计画像生成业务洞察摘要。
-    
+
     返回: {
       summary: "整体概括",
       top_stores: [{store, metric}],

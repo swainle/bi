@@ -9,6 +9,7 @@
     POST   /api/bi/sources/{id}/sync      选表同步成本地物理表
     POST   /api/bi/sources/{id}/schema-check  检查已接入表的字段是否变了
     POST   /api/bi/sources/files/{id}/resync  重新同步单张表
+    POST   /api/bi/sources/files/{id}/sync-metadata  同步源库注释到本地表
     POST   /api/bi/sources/upload         上传 CSV / Excel / JSON
     GET    /api/bi/sources/files          已接入表（含文件上传）
     DELETE /api/bi/sources/files/{id}     移除已接入表
@@ -31,6 +32,30 @@ from app.sources import repository as repo
 from app.sources import types_catalog
 
 router = APIRouter(prefix="/bi/sources", tags=["BI数据源"])
+
+
+@router.get("/import-jobs", dependencies=[Depends(require_nav("bi:nav:datasources"))])
+def list_import_jobs(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    from app.sources import import_jobs
+
+    return {"jobs": import_jobs.list_jobs(db, current_user.id), "active_tables": import_jobs.active_tables(db)}
+
+
+@router.post("/{source_id}/import-jobs", status_code=202,
+             dependencies=[Depends(require_nav("bi:nav:datasources"))])
+def create_import_job(source_id: int, payload: dict = Body(...),
+                      current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    from app.sources import import_jobs
+
+    try:
+        job_id = import_jobs.create(db, source_id, payload.get("tables"), current_user.id)
+    except import_jobs.ImportConflict as exc:
+        db.rollback()
+        raise HTTPException(409, str(exc)) from exc
+    except Exception as exc:
+        db.rollback()
+        raise _guard(exc) from exc
+    return {"job_id": job_id}
 
 
 def _guard(exc: Exception) -> HTTPException:
@@ -275,6 +300,15 @@ def resync_table(
     """重新同步单张已接入表（重拉数据 + 刷新结构快照）."""
     try:
         return repo.resync_table(db, table_id, current_user.id)
+    except Exception as exc:
+        raise _guard(exc) from exc
+
+
+@router.post("/files/{table_id}/sync-metadata", dependencies=[Depends(require_nav("bi:nav:datasources"))])
+def sync_table_metadata(table_id: int, current_user: User = Depends(get_current_user),
+                        db: Session = Depends(get_db)):
+    try:
+        return repo.sync_table_metadata(db, table_id)
     except Exception as exc:
         raise _guard(exc) from exc
 

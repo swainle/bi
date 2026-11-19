@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.timezone import china_now, time_text
+
 from fastapi import Depends, HTTPException, Body
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -13,7 +15,7 @@ from app.security.errors import RlsBlockedError, SecurityError
 from app.security.rls import decide as rls_decide
 from app.security.rls.injector import inject_conditions
 from app.security.sql_guard import guard_readonly, referenced_tables
-from app.query.whitelist import ALLOWED_TABLES
+from app.query.table_catalog import BUILTIN_TABLES, is_queryable
 
 from fastapi import APIRouter
 
@@ -39,8 +41,8 @@ def query_builder(
     自动生成 SQL 并执行。
     """
     table = payload["table"]
-    if table not in ALLOWED_TABLES and not table.startswith("bi_ai_"):
-        raise HTTPException(404, f"表 {table} 不在白名单中")
+    if not is_queryable(table):
+        raise HTTPException(404, f"表 {table} 不是可访问的业务表")
 
     # 多表 JOIN 支持
     joins = payload.get("joins", [])
@@ -51,8 +53,8 @@ def query_builder(
             j_type = str(j.get("type", "INNER")).strip().upper()
             if j_type not in _JOIN_TYPES:
                 raise HTTPException(400, f"不支持的 JOIN 类型: {j.get('type')}")
-            if jt not in ALLOWED_TABLES:
-                raise HTTPException(404, f"JOIN 表 {jt} 不在白名单中")
+            if not is_queryable(jt):
+                raise HTTPException(404, f"JOIN 表 {jt} 不是可访问的业务表")
             j_on = _validate_join_on(j.get("on"))
             from_clause += f" {j_type} JOIN {jt} ON {j_on}"
 
@@ -161,63 +163,24 @@ def query_builder(
         raise HTTPException(status_code=400, detail=f"查询错误: {str(e)}\nSQL: {sql}")
 
 
-def _validate_sql(sql: str):
-    """只读校验 —— 交给安全内核（sqlglot AST），不再用正则黑名单。
-
-    返回 AST 供调用方复用（表白名单 + 行级权限都要用它）。
-    兼容旧口径：至少引用一张受管辖表（白名单 或 bi_ai_* 前缀）。
-    """
-    try:
-        root = guard_readonly(sql)
-    except SecurityError as exc:
-        raise HTTPException(status_code=exc.http_status, detail=exc.message) from exc
-
-    tables = referenced_tables(root)
-    if not (tables & ALLOWED_TABLES) and not any(
-        t.startswith("bi_ai_") for t in tables
-    ):
-        raise HTTPException(
-            400, f"查询表必须在白名单内: {', '.join(sorted(ALLOWED_TABLES))}"
-        )
-    return root
-
-
-def _query_rls_conditions(db: Session, tables: set[str], user: User) -> list[str]:
-    """把多张表的行级规则合并（用于手拼 SQL 的查询入口）."""
-    conditions: list[str] = []
-    for table in sorted(tables):
-        if table not in ALLOWED_TABLES and not table.startswith("bi_ai_"):
-            continue
-        decision = rls_decide(db, table, user)
-        conditions.extend(decision.conditions)
-    return conditions
-
-
 @router.post("/query", dependencies=[Depends(require_nav("bi:nav:sql"))])
 def execute_sql(
     payload: dict = Body(...),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """执行 SQL 查询（仅限 SELECT，白名单表）"""
-    sql = payload.get("sql", "").strip()
-    if not sql:
+    """SQL Lab：有限预览，仅允许本地受管辖表的只读查询。"""
+    from app.query.sql_lab import preview
+
+    sql = payload.get("sql")
+    if not isinstance(sql, str) or not sql.strip():
         raise HTTPException(400, "SQL 不能为空")
-    root = _validate_sql(sql)
-
-    # 行级权限：把受管辖表的规则 AND 进 WHERE（fail-closed）
     try:
-        conditions = _query_rls_conditions(db, referenced_tables(root), current_user)
-    except RlsBlockedError as exc:
+        return preview(db, sql, current_user, payload.get("limit", 500))
+    except SecurityError as exc:
         raise HTTPException(exc.http_status, exc.message) from exc
-    if conditions:
-        sql = inject_conditions(sql, conditions)
-
-    try:
-        rows = db.execute(text(sql), {"uid": current_user.id}).fetchall()
-        if not rows:
-            return {"columns": [], "rows": [], "count": 0}
-        columns = list(rows[0]._mapping.keys())
-        return {"columns": columns, "rows": [dict(r._mapping) for r in rows], "count": len(rows)}
     except Exception as e:
+        db.rollback()
+        if "statement timeout" in str(e).lower():
+            raise HTTPException(408, "查询超时，请缩小范围或增加筛选条件") from e
         raise HTTPException(status_code=400, detail=f"SQL 错误: {str(e)}")

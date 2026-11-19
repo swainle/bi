@@ -23,10 +23,83 @@ from sqlglot import exp
 from sqlalchemy.orm import Session
 
 from app.semantic.models import Dataset, DatasetField, DatasetMetric
-from app.semantic.repository import add_metric, update_field, update_metric
-from app.semantic.validator import SemanticError, validate_metric_expression
+from app.semantic.repository import add_field, add_metric, update_field, update_metric
+from app.semantic.validator import SemanticError, validate_metric_expression, validate_role
+from app.semantic.formulas import validate_formula
 
-SUPPORTED = ("dbt", "lookml")
+SUPPORTED = ("dbt", "lookml", "mingce")
+
+
+def export_config(dataset: Dataset) -> dict:
+    return {
+        "version": 1,
+        "fields": [{k: v for k, v in f.to_dict().items() if k != "id"} for f in dataset.fields],
+        "metrics": [{k: m.to_dict()[k] for k in ("name", "expression", "format", "description")}
+                    for m in dataset.metrics],
+    }
+
+
+def _plan_config(content: str, existing_metrics: list[DatasetMetric],
+                 existing_fields: list[DatasetField], source_columns: set[str]) -> dict:
+    from app.query.contract import OrderSpec
+
+    try:
+        payload = json.loads(content)
+        if not isinstance(payload, dict) or payload.get("version") != 1:
+            raise ValueError("不支持的配置版本")
+        fields, metrics, seen = [], [], set()
+        for raw in payload.get("fields", []):
+            name = str(raw["name"]).strip()
+            OrderSpec(column=name)
+            if name in seen:
+                raise ValueError(f"字段名重复：{name}")
+            seen.add(name)
+            expression = str(raw.get("expression") or "").strip()
+            current = next((f for f in existing_fields if f.name == name), None)
+            column = name if expression else str(raw["source_column"])
+            if expression:
+                if "." in name or len(name.encode("utf-8")) > 63:
+                    raise ValueError("公式字段名不能含点号或超过 63 字节")
+                if name in source_columns or (current and not current.expression):
+                    raise ValueError(f"公式字段名与源列冲突：{name}")
+                expression = validate_formula(expression, source_columns)
+            elif column not in source_columns or (current and current.expression):
+                raise ValueError(f"来源列不存在或字段类型冲突：{column}")
+            dtype = raw.get("data_type", "text")
+            if dtype not in {"text", "integer", "numeric", "date", "datetime", "bool"}:
+                raise ValueError(f"不支持的字段类型：{dtype}")
+            item = {"name": name, "source_column": column, "expression": expression,
+                    "role": validate_role(raw.get("role", "dimension")), "data_type": dtype,
+                    "is_filterable": bool(raw.get("is_filterable", True)),
+                    "is_groupable": bool(raw.get("is_groupable", True)),
+                    "default_grain": raw.get("default_grain"), "description": str(raw.get("description") or "")}
+            unchanged = current and all(current.to_dict().get(k) == v for k, v in item.items())
+            fields.append({**item, "field_id": current.id if current else None,
+                           "action": "unchanged" if unchanged else "update" if current else "new"})
+        known = source_columns | {f["source_column"] for f in fields} | {f.source_column for f in existing_fields}
+        for raw in payload.get("metrics", []):
+            name = str(raw["name"]).strip()
+            if not name or any(m["name"] == name for m in metrics):
+                raise ValueError("指标名称不能为空或重复")
+            expression = validate_metric_expression(str(raw["expression"]))
+            missing = _unknown_columns(expression, known)
+            if missing:
+                raise ValueError(f"指标引用的列不存在：{', '.join(missing)}")
+            from app.semantic.validator import validate_format
+            fmt = validate_format(raw.get("format", "number"))
+            current = next((m for m in existing_metrics if m.name == name), None)
+            description = str(raw.get("description") or "")
+            unchanged = current and current.expression == expression and current.format == fmt and current.description == description
+            metrics.append({"name": name, "expression": expression, "format": fmt, "description": description,
+                            "metric_id": current.id if current else None, "note": "",
+                            "action": "unchanged" if unchanged else "update" if current else "new"})
+        return {"format": "mingce", "fields": fields, "metrics": metrics, "skipped": [],
+                "summary": {"new": sum(m["action"] == "new" for m in metrics),
+                            "update": sum(m["action"] == "update" for m in metrics),
+                            "unchanged": sum(m["action"] == "unchanged" for m in metrics),
+                            "fields": sum(f["action"] != "unchanged" for f in fields), "skipped": 0}}
+    except (ValueError, TypeError, KeyError, AttributeError) as exc:
+        raise SemanticError(f"配置无法导入：{exc}") from exc
 
 # dbt manifest 动辄十几 MB；再大基本是塞了 catalog，直接拒绝比解析到一半崩掉好
 MAX_CHARS = 12_000_000
@@ -350,6 +423,7 @@ def plan(
     content: str,
     existing_metrics: list[DatasetMetric],
     existing_fields: list[DatasetField],
+    source_columns: set[str] | None = None,
 ) -> dict:
     """只读：给出导入计划（不写库）."""
     key = (fmt or "").strip().lower()
@@ -360,6 +434,10 @@ def plan(
     if len(content) > MAX_CHARS:
         raise SemanticError(f"内容过大（{len(content)} 字符），请只上传 manifest.json 本身")
 
+    if key == "mingce":
+        return _plan_config(content, existing_metrics, existing_fields,
+                            source_columns if source_columns is not None else
+                            {f.source_column for f in existing_fields if not f.expression})
     defs, columns, skipped = _parse_dbt(content) if key == "dbt" else _parse_lookml(content)
 
     known_columns = {f.source_column for f in existing_fields} | {f.name for f in existing_fields}
@@ -443,6 +521,15 @@ def apply_plan(
 ) -> dict:
     """执行计划（只处理 new / update；unchanged 跳过）."""
     created = updated = fields_updated = 0
+    if result.get("format") == "mingce":
+        for item in result.get("fields") or []:
+            definition = {k: v for k, v in item.items() if k not in ("field_id", "action")}
+            if item["action"] == "new":
+                add_field(db, dataset, **definition)
+                fields_updated += 1
+            elif item["action"] == "update":
+                update_field(db, dataset, item["field_id"], definition)
+                fields_updated += 1
     for item in result.get("metrics") or []:
         if item["action"] == "new":
             add_metric(
@@ -462,6 +549,8 @@ def apply_plan(
             )
             updated += 1
     for item in result.get("fields") or []:
+        if result.get("format") == "mingce":
+            continue
         if item["action"] == "update" and item.get("field_id"):
             update_field(db, dataset, int(item["field_id"]), {"description": item["description"]})
             fields_updated += 1

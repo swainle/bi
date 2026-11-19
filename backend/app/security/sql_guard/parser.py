@@ -3,7 +3,7 @@
 职责边界（单一）：
     把一段字符串变成 AST，并保证它是「单条、只读、无危险函数」的查询。
 
-不做的事：表白名单（tables.py）、行级权限注入（rls 包）。
+不做的事：源表识别（tables.py）、行级权限注入（rls 包）。
 """
 
 from __future__ import annotations

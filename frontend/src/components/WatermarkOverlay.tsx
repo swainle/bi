@@ -1,3 +1,4 @@
+import { formatChinaTime } from "../utils/time";
 // components/WatermarkOverlay.tsx — 数据水印叠加层
 import { useEffect, useRef } from 'react';
 
@@ -15,7 +16,7 @@ interface Props {
  */
 export default function WatermarkOverlay({ text, visible = true }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const watermarkText = text || `${new Date().toLocaleDateString()}`;
+  const watermarkText = text || `${formatChinaTime(new Date()).slice(0, 10)}`;
 
   useEffect(() => {
     if (!visible) return;

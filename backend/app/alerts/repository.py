@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.timezone import time_text
+
 from decimal import Decimal
 from typing import Any
 
@@ -46,10 +48,10 @@ def _rule_dict(row) -> dict:
         "cooldown_minutes": int(m["cooldown_minutes"] or 0),
         "created_by": m["created_by"],
         "last_value": _num(m["last_value"]),
-        "last_checked_at": str(m["last_checked_at"] or ""),
-        "last_triggered_at": str(m["last_triggered_at"] or ""),
-        "created_at": str(m["created_at"] or ""),
-        "updated_at": str(m["updated_at"] or ""),
+        "last_checked_at": time_text(m["last_checked_at"] or ""),
+        "last_triggered_at": time_text(m["last_triggered_at"] or ""),
+        "created_at": time_text(m["created_at"] or ""),
+        "updated_at": time_text(m["updated_at"] or ""),
     }
 
 
@@ -69,7 +71,7 @@ def _event_dict(row) -> dict:
         "notified": m["notified"],
         "notify_error": m["notify_error"],
         "link": m.get("link") or "",
-        "created_at": str(m["created_at"] or ""),
+        "created_at": time_text(m["created_at"] or ""),
     }
 
 

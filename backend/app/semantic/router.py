@@ -28,8 +28,8 @@ from app.models.user import User
 from app.query.contract import QueryObject
 from app.query.executor import run as execute_query
 from app.query.live import run_live
-from app.query.whitelist import ALLOWED_TABLES, SOURCE_TABLE_PREFIXES, is_allowed
-from app.security.sql_guard import guard_readonly, to_sql
+from app.query.table_catalog import is_queryable
+from app.security.sql_guard import to_sql
 from app.semantic import repository as repo
 from app.semantic.compiler import compile_query
 from app.semantic.validator import SemanticError
@@ -71,13 +71,13 @@ def _infer_field(sample: str | None) -> tuple[str, str]:
 
 
 def _validate_virtual_sql(sql_text: str) -> str:
-    """只读网关 + 表白名单：虚拟数据集只能是「查白名单表」的 SELECT."""
+    """虚拟数据集只允许读取业务表的只读 SQL。"""
     cleaned = (sql_text or "").strip().rstrip(";").strip()
     if not cleaned:
         raise HTTPException(400, "SQL 不能为空")
     try:
-        root = guard_readonly(cleaned, allowed_tables=ALLOWED_TABLES,
-                              allow_prefixes=SOURCE_TABLE_PREFIXES)
+        from app.query.sql_lab import validate
+        root = validate(cleaned)
     except SecurityError as exc:
         raise HTTPException(exc.http_status, exc.message) from exc
     return to_sql(root)
@@ -85,11 +85,12 @@ def _validate_virtual_sql(sql_text: str) -> str:
 
 @router.get("/tables")
 def list_tables(
+    include_counts: bool = True,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """白名单里的物理表 + 列 + 行数（新建数据集时挑表、自动导入列）."""
-    return {"tables": repo.list_physical_tables(db)}
+    """本地业务表 + 列 + 行数（新建数据集时挑表、自动导入列）."""
+    return {"tables": repo.list_physical_tables(db, include_counts=include_counts)}
 
 
 @router.get("/datasets")
@@ -238,7 +239,7 @@ def create_dataset(
         raise HTTPException(403, "「测试数据集」是公共数据，只有管理员可以新建")
 
     if mode == "live":
-        # 直连：表名按源库原样写（可带 schema），白名单交给源库存在性校验
+        # 直连：表名按源库原样写（可带 schema），表名交给源库存在性校验
         sql_text = ""
         table = str(payload.get("physical_table", "")).strip()
         if not table:
@@ -249,8 +250,8 @@ def create_dataset(
     else:
         sql_text = ""
         table = str(payload.get("physical_table", "")).strip()
-        if not is_allowed(table):
-            raise HTTPException(404, f"物理表不在白名单中：{table}")
+        if not is_queryable(table):
+            raise HTTPException(404, f"不是可访问的业务表：{table}")
 
     from app.semantic.access import validate_dept_choice
 
@@ -264,6 +265,10 @@ def create_dataset(
             dept_id = int(row[0])
 
     try:
+        probed = None
+        if sql_text:
+            from app.query.sql_lab import preview
+            probed = preview(db, sql_text, current_user, 1)
         dataset = repo.create_dataset(
             db,
             name=str(payload.get("name", "")).strip(),
@@ -278,15 +283,19 @@ def create_dataset(
         )
         if sql_text and not payload.get("fields"):
             # 虚拟数据集：按 SQL 的输出列自动建字段
-            for col in repo.probe_sql_columns(db, sql_text):
-                role, data_type = _infer_field(col.get("value"))
+            for column in probed["columns"]:
+                sample = probed["rows"][0].get(column) if probed["rows"] else None
+                role, data_type = _infer_field(str(sample) if sample is not None else None)
+                data_type = probed["column_types"].get(column, data_type)
+                role = "measure" if data_type in ("integer", "numeric") else "time" if data_type in ("date", "datetime") else "dimension"
                 repo.add_field(
-                    db, dataset, name=col["name"], source_column=col["name"],
+                    db, dataset, name=column, source_column=column,
                     role=role, data_type=data_type, validate=False,
                 )
         for item in payload.get("fields", []) or []:
             repo.add_field(
                 db, dataset, name=item["name"], source_column=item["source_column"],
+                expression=str(item.get("expression") or ""),
                 role=item.get("role", "dimension"),
                 data_type=item.get("data_type", "text"),
                 default_grain=item.get("default_grain"),
@@ -315,6 +324,12 @@ def create_dataset(
                 repo.delete_dataset(db, dataset.id)
         finally:
             raise _guard(exc) from exc
+
+    except Exception as exc:
+        db.rollback()
+        if "dataset" in locals():
+            repo.delete_dataset(db, dataset.id)
+        raise HTTPException(400, "虚拟数据集创建失败，请检查 SQL 和输出字段") from exc
 
     full = repo.get_dataset(db, dataset.id)
     log_audit(current_user.id, "dataset.create", "dataset", dataset.id,
@@ -480,7 +495,7 @@ def query_dataset(
             src = _live_source(db, dataset)
             result = run_live(db, query, current_user, src, dataset_id=dataset.id)
         else:
-            result = execute_query(db, query, current_user, allowed_tables=ALLOWED_TABLES,
+            result = execute_query(db, query, current_user,
                                    dataset_id=dataset.id)
     except RlsBlockedError as exc:
         raise HTTPException(exc.http_status, exc.message) from exc

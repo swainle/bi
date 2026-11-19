@@ -3,7 +3,7 @@
 与 `app/query/executor.py` 的区别只有一个：**SQL 在源库执行，而不是本地库**。
 
 安全口径与抽取模式保持一致，缺一不可：
-    1. 白名单：查询的表必须真实存在于该数据源（按源缓存，5 分钟）
+    1. 存在性校验：查询的表必须真实存在于该数据源（按源缓存，5 分钟）
     2. 行级权限：仍由 `security.rls` 生成 WHERE 条件拼进去（fail-closed）
     3. 列脱敏：结果集落到 BI 侧之后再脱敏（源库不参与）
     4. 只读：QueryObject 只能生成 SELECT；语句超时由驱动层限死
@@ -255,7 +255,10 @@ def run_live(
 
         rls_conditions.extend(dataset_rules.row_conditions(db, dataset_id, user, dialect))
 
-    built = build(query, allowed_tables=None, rls_conditions=rls_conditions, column_types={})
+    from app.semantic.formulas import check_formula_masks
+
+    check_formula_masks(db, query, dataset_id)
+    built = build(query, rls_conditions=rls_conditions, column_types={})
 
     user_id = getattr(user, "id", None)
     # 数据集不同 → 行级条件 / 脱敏可能不同，缓存键必须带 dataset_id

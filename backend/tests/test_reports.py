@@ -3,36 +3,38 @@
 from __future__ import annotations
 
 from datetime import datetime
+import sys
 
 import pytest
 
 from app.reports import browser, generate, scheduler, tokens
+from app.timezone import CHINA_TZ, as_china
 
 
 def test_daily_next_run_before_time() -> None:
-    now = datetime(2026, 11, 13, 8, 0)
-    assert scheduler.next_run_at("daily", "09:30", after=now) == datetime(2026, 11, 13, 9, 30)
+    now = datetime(2026, 11, 13, 8, 0).replace(tzinfo=CHINA_TZ)
+    assert as_china(scheduler.next_run_at("daily", "09:30", after=now)) == datetime(2026, 11, 13, 9, 30).replace(tzinfo=CHINA_TZ)
 
 
 def test_daily_next_run_after_time_rolls_to_tomorrow() -> None:
-    now = datetime(2026, 11, 13, 9, 30)
-    assert scheduler.next_run_at("daily", "09:30", after=now) == datetime(2026, 11, 14, 9, 30)
+    now = datetime(2026, 11, 13, 9, 30).replace(tzinfo=CHINA_TZ)
+    assert as_china(scheduler.next_run_at("daily", "09:30", after=now)) == datetime(2026, 11, 14, 9, 30).replace(tzinfo=CHINA_TZ)
 
 
 def test_weekly_same_day_future() -> None:
     # 2026-11-13 是周五（isoweekday=5）
-    now = datetime(2026, 11, 13, 8, 0)
-    assert scheduler.next_run_at("weekly", "10:00", 5, after=now) == datetime(2026, 11, 13, 10, 0)
+    now = datetime(2026, 11, 13, 8, 0).replace(tzinfo=CHINA_TZ)
+    assert as_china(scheduler.next_run_at("weekly", "10:00", 5, after=now)) == datetime(2026, 11, 13, 10, 0).replace(tzinfo=CHINA_TZ)
 
 
 def test_weekly_same_day_passed_rolls_one_week() -> None:
-    now = datetime(2026, 11, 13, 11, 0)
-    assert scheduler.next_run_at("weekly", "10:00", 5, after=now) == datetime(2026, 11, 20, 10, 0)
+    now = datetime(2026, 11, 13, 11, 0).replace(tzinfo=CHINA_TZ)
+    assert as_china(scheduler.next_run_at("weekly", "10:00", 5, after=now)) == datetime(2026, 11, 20, 10, 0).replace(tzinfo=CHINA_TZ)
 
 
 def test_weekly_next_day() -> None:
-    now = datetime(2026, 11, 13, 11, 0)
-    assert scheduler.next_run_at("weekly", "09:00", 1, after=now) == datetime(2026, 11, 16, 9, 0)
+    now = datetime(2026, 11, 13, 11, 0).replace(tzinfo=CHINA_TZ)
+    assert as_china(scheduler.next_run_at("weekly", "09:00", 1, after=now)) == datetime(2026, 11, 16, 9, 0).replace(tzinfo=CHINA_TZ)
 
 
 def test_parse_time_fallback() -> None:
@@ -64,6 +66,7 @@ def test_chrome_missing_returns_error(tmp_path, monkeypatch) -> None:
     assert "Chrome" in browser.print_pdf(str(tmp_path / "a.html"), str(tmp_path / "a.pdf"))
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX shell fixture; covered by Linux CI")
 def test_print_pdf_invokes_chrome(tmp_path, monkeypatch) -> None:
     """用一个假的浏览器脚本验证参数拼装与成功判定（不依赖本机 Chrome）."""
     fake = tmp_path / "fake-chrome"

@@ -10,6 +10,8 @@
 
 from __future__ import annotations
 
+from app.timezone import time_text
+
 import copy
 import json
 
@@ -163,6 +165,12 @@ def _live_rows(db: Session, dataset, fields: list) -> tuple[list[dict], list[str
 
     columns: list[str] = []
     for field in fields:
+        if field.expression:
+            from sqlglot import exp, parse_one
+            for column in parse_one(field.expression, read="postgres").find_all(exp.Column):
+                if column.name not in columns:
+                    columns.append(column.name)
+            continue
         if field.source_column and field.source_column not in columns:
             columns.append(field.source_column)
     if not columns:
@@ -195,10 +203,19 @@ def _copy_dataset(db: Session, src, template_id: int, template_name: str) -> int
 
     if mode == "live":
         rows, columns = _live_rows(db, src, fields)
+        from app.sources import repository as sources_repo
+        source = sources_repo.get_source(db, int(src.source_id))
+        source_types = {c["name"]: str(c["type"]).lower().split("(", 1)[0]
+                        for c in sources_repo._remote_columns(sources_repo.engine_for(source), src.physical_table)}
         column_sql: list[str] = []
         for column in columns:
             field = next((f for f in fields if f.source_column == column), None)
-            column_sql.append(f"{_q(column)} {_TYPE_SQL.get((field.data_type if field else 'text'), 'text')}")
+            source_type = source_types.get(column, "")
+            source_type = {"number": "numeric", "float": "double precision", "double": "double precision",
+                           "timestamp": "timestamp without time zone", "datetime": "timestamp without time zone",
+                           "datetime2": "timestamp without time zone"}.get(source_type, source_type)
+            dtype = field.data_type if field else sem_repo._infer_role_type(source_type)[1]
+            column_sql.append(f"{_q(column)} {_TYPE_SQL.get(dtype, 'text')}")
         db.execute(text(f"DROP TABLE IF EXISTS {_q(table)}"))
         db.execute(text(f"CREATE TABLE {_q(table)} ({', '.join(column_sql)})"))
         if rows:
@@ -238,14 +255,15 @@ def _copy_dataset(db: Session, src, template_id: int, template_name: str) -> int
         text(
             "INSERT INTO bi_dataset_field "
             "(dataset_id, name, source_column, role, data_type, is_filterable, "
-            " is_groupable, default_grain, description) "
-            "VALUES (:did, :name, :col, :role, :dtype, :filterable, :groupable, :grain, :desc)"
+            " is_groupable, default_grain, description, expression) "
+            "VALUES (:did, :name, :col, :role, :dtype, :filterable, :groupable, :grain, :desc, :expr)"
         ),
         [
             {
                 "did": dataset_id, "name": f.name, "col": f.source_column, "role": f.role,
                 "dtype": f.data_type, "filterable": f.is_filterable, "groupable": f.is_groupable,
                 "grain": f.default_grain, "desc": f.description or "",
+                "expr": f.expression,
             }
             for f in fields
         ],
@@ -414,7 +432,7 @@ def list_templates(db: Session, user, category: str = "") -> list[dict]:
         row["dataset_count"] = len(dataset_ids)
         row["kind"] = row.get("kind") or "engine"
         if isinstance(row.get("created_at"), str) is False and row.get("created_at") is not None:
-            row["created_at"] = str(row["created_at"])
+            row["created_at"] = time_text(row["created_at"])
         row.pop("doc", None)
         result.append(row)
     return result

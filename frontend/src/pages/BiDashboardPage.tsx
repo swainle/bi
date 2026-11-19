@@ -1,6 +1,6 @@
 /** 明策BI — ECharts 自研引擎，模板卡片 + 数据从 PostgreSQL 实时查询 */
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { lazy, Suspense, useState, useEffect, useCallback, useMemo } from "react";
 import {
   Box, Typography, Button, CircularProgress,
   Card, CardContent, IconButton, TextField, Avatar, Chip,
@@ -16,7 +16,6 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import client from "../api/client";
 import { useAuth } from "../features/auth/useAuth";
 import DataSources from "../features/bi-dashboard/DataSources";
-import SqlQueryPanel from "../features/bi-dashboard/SqlQueryPanel";
 import DatasetPanel from "../features/bi-dashboard/DatasetPanel";
 import TestDataPanel from "../features/bi-dashboard/TestDataPanel";
 import TeamBoardsPanel from "../features/bi-dashboard/TeamBoardsPanel";
@@ -24,8 +23,11 @@ import TeamShareDialog from "../features/bi-dashboard/TeamShareDialog";
 import AlertRulesDialog from "../features/bi-dashboard/AlertRulesDialog";
 import ReportSubscriptionsDialog from "../features/bi-dashboard/ReportSubscriptionsDialog";
 import BiSideNav, { BI_NAV_ITEMS, type SideNavItem } from "../features/shell/BiSideNav";
+import TopBar from "../features/shell/TopBar";
 import BoardThumb from "../features/bi-dashboard/BoardThumb";
 import type { DashboardDoc } from "../features/components/types";
+
+const SqlQueryPanel = lazy(() => import("../features/bi-dashboard/SqlQueryPanel"));
 
 /** 与「项目」页同一套视觉令牌，保证两页看起来是一家人 */
 const CARD_BORDER = "#E8E8ED";
@@ -448,7 +450,7 @@ export default function BiDashboardPage() {
       case "datasource":
         return <DataSources />;
       case "sql":
-        return <SqlQueryPanel />;
+        return <Suspense fallback={<Box sx={{ p: 3 }}><CircularProgress size={24} /></Box>}><SqlQueryPanel /></Suspense>;
       case "templates":
         return (
           <Box sx={{ p: 4 }}>
@@ -671,7 +673,10 @@ export default function BiDashboardPage() {
       />
 
       {/* 主内容区 */}
-      <Box sx={{ flex: 1, overflow: "auto" }}>{renderContent()}</Box>
+      <Box sx={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column" }}>
+        <TopBar hideLogo />
+        <Box sx={{ flex: 1, minHeight: 0, overflow: "auto" }}>{renderContent()}</Box>
+      </Box>
 
       {/* 卡片 ⋯ 操作菜单 */}
       <Menu

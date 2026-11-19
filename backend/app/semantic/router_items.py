@@ -44,6 +44,37 @@ def list_fields(
     return {"fields": [f.to_dict() for f in repo.list_fields(db, dataset_id)]}
 
 
+@router.get("/datasets/{dataset_id}/columns")
+def database_columns(dataset_id: int, current_user: User = Depends(get_current_user),
+                     db: Session = Depends(get_db)):
+    """数据库原始列类型和注释，不覆盖语义层字段描述。"""
+    dataset = _dataset_or_404(db, dataset_id)
+    if dataset.sql_text:
+        return {"columns": []}
+    if dataset.conn_mode == "live":
+        from app.sources import repository as sources
+        source = sources.get_source(db, dataset.source_id)
+        if source is None:
+            raise HTTPException(404, "数据集绑定的数据源不存在")
+        try:
+            return {"columns": sources._remote_columns(sources.engine_for(source), dataset.physical_table)}
+        except Exception as exc:
+            raise HTTPException(400, "读取源库字段和注释失败，请检查数据源连接") from exc
+    return {"columns": repo.physical_columns_typed(db, dataset.physical_table)}
+
+
+@router.post("/datasets/{dataset_id}/sync-comment-names", dependencies=[Depends(require_nav("bi:nav:datasets"))])
+def sync_comment_names(dataset_id: int, current_user: User = Depends(get_current_user),
+                       db: Session = Depends(get_db)):
+    dataset = _require_dataset_owner(db, dataset_id, current_user)
+    columns = database_columns(dataset_id, current_user, db)["columns"]
+    try:
+        return repo.sync_comment_names(db, dataset, columns)
+    except Exception as exc:
+        db.rollback()
+        raise _guard(exc) from exc
+
+
 @router.get("/datasets/{dataset_id}/fields/usages")
 def field_usages(
     dataset_id: int,
@@ -75,7 +106,8 @@ def add_field(
         field = repo.add_field(
             db, dataset,
             name=str(payload["name"]).strip(),
-            source_column=str(payload["source_column"]).strip(),
+            source_column=str(payload.get("source_column") or payload["name"]).strip(),
+            expression=str(payload.get("expression") or "").strip(),
             role=payload.get("role", "dimension"),
             data_type=payload.get("data_type", "text"),
             default_grain=payload.get("default_grain"),
@@ -88,6 +120,33 @@ def add_field(
     except (SemanticError, SecurityError) as exc:
         raise _guard(exc) from exc
     return field.to_dict()
+
+
+@router.get("/datasets/{dataset_id}/formula-columns")
+def formula_columns(dataset_id: int, current_user: User = Depends(get_current_user),
+                    db: Session = Depends(get_db)):
+    from sqlalchemy.dialects.postgresql import dialect
+
+    dataset = _dataset_or_404(db, dataset_id)
+    try:
+        quote = dialect().identifier_preparer.quote
+        return {"columns": [{"name": name, "identifier": quote(name)}
+                            for name in sorted(repo.formula_columns(db, dataset))]}
+    except (SemanticError, SecurityError) as exc:
+        raise _guard(exc) from exc
+
+
+@router.post("/datasets/{dataset_id}/formula-test", dependencies=[Depends(require_nav("bi:nav:datasets"))])
+def test_formula(dataset_id: int, payload: dict = Body(...),
+                 current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    from app.semantic.formulas import validate_formula
+
+    dataset = _dataset_or_404(db, dataset_id)
+    try:
+        validate_formula(str(payload.get("expression") or ""), repo.formula_columns(db, dataset))
+    except (SemanticError, SecurityError) as exc:
+        raise _guard(exc) from exc
+    return {"valid": True, "message": "语法、引用列和函数检查通过"}
 
 
 @router.patch("/datasets/{dataset_id}/fields/{field_id}", dependencies=[Depends(require_nav("bi:nav:datasets"))])
@@ -198,8 +257,20 @@ def _plan_import(db: Session, dataset_id: int, payload: dict) -> tuple:
         str(payload.get("content") or ""),
         dataset.metrics,
         dataset.fields,
+        source_columns=repo.formula_columns(db, dataset) if payload.get("format") == "mingce" else None,
     )
     return dataset, result
+
+
+@router.get("/datasets/{dataset_id}/model-export")
+def export_model(dataset_id: int, current_user: User = Depends(get_current_user),
+                 db: Session = Depends(get_db)):
+    from app.semantic.importer import export_config
+
+    dataset = repo.get_dataset(db, dataset_id)
+    if dataset is None:
+        raise HTTPException(404, "数据集不存在")
+    return export_config(dataset)
 
 
 @router.post("/datasets/{dataset_id}/model-preview")
@@ -231,12 +302,22 @@ def run_model_import(
         dataset, result = _plan_import(db, dataset_id, payload or {})
         if not result["metrics"] and not result["fields"]:
             raise SemanticError("没有可导入的定义（全部被跳过，原因见预览）")
-        applied = importer.apply_plan(
-            db, dataset, result,
-            user_id=current_user.id,
-            user_name=getattr(current_user, "username", "") or "",
-        )
+        if result["format"] == "mingce":
+            # 仓储逐条 commit；借用外层事务，配置必须整批成功后才提交。
+            with Session(bind=db.connection(), join_transaction_mode="rollback_only") as import_db:
+                applied = importer.apply_plan(
+                    import_db, dataset, result, user_id=current_user.id,
+                    user_name=getattr(current_user, "username", "") or "",
+                )
+            db.commit()
+        else:
+            applied = importer.apply_plan(
+                db, dataset, result,
+                user_id=current_user.id,
+                user_name=getattr(current_user, "username", "") or "",
+            )
     except (SemanticError, SecurityError) as exc:
+        db.rollback()
         raise _guard(exc) from exc
     return applied
 

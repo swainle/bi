@@ -3,7 +3,8 @@
 from datetime import datetime
 
 from typing import Optional
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, field_serializer
+from app.timezone import time_text
 
 
 class UserCreate(BaseModel):
@@ -59,6 +60,10 @@ class UserResponse(BaseModel):
     is_active: bool = True
     avatar_url: Optional[str] = None
     created_at: datetime
+
+    @field_serializer("created_at")
+    def serialize_created_at(self, value: datetime) -> str:
+        return time_text(value)
     # 有效权限码（由「角色 → 权限」现算；管理员为全部）。用户表里那列是历史字段，别混用
     effective_permissions: list[str] = Field(default_factory=list)
     # 注册审批状态 / 本人负责的部门（部门负责人可审批本部门注册）

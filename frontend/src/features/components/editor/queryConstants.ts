@@ -21,4 +21,3 @@ export const dash = {
 } as const;
 
 export const OPS = ["=", "!=", ">", "<", ">=", "<=", "LIKE", "IN"];
-

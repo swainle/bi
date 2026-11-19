@@ -39,4 +39,3 @@ export function ToolbarButton({ icon, label, onClick }: { icon: ReactNode; label
     </Button>
   );
 }
-

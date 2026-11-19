@@ -97,4 +97,3 @@ export function LayersPanel({ items, selected, onSelect, viewTitle }: {
     </Box>
   );
 }
-

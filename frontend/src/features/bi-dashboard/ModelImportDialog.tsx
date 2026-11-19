@@ -18,7 +18,7 @@ interface PlannedMetric {
   action: "new" | "update" | "unchanged"; note: string;
 }
 interface PlannedField {
-  name: string; description: string; action: "update" | "unchanged";
+  name: string; description: string; expression?: string; action: "new" | "update" | "unchanged";
 }
 interface SkipItem { name: string; reason: string; }
 interface PlanResult {
@@ -50,7 +50,7 @@ export default function ModelImportDialog({
   onClose: () => void;
   onImported: () => void;
 }) {
-  const [format, setFormat] = useState<"dbt" | "lookml">("dbt");
+  const [format, setFormat] = useState<"dbt" | "lookml" | "mingce">("mingce");
   const [content, setContent] = useState("");
   const [fileName, setFileName] = useState("");
   const [plan, setPlan] = useState<PlanResult | null>(null);
@@ -99,7 +99,7 @@ export default function ModelImportDialog({
       );
       const parts = [`新建 ${data.created} 个指标`];
       if (data.updated) parts.push(`更新 ${data.updated} 个`);
-      if (data.fields_updated) parts.push(`补充 ${data.fields_updated} 条字段说明`);
+      if (data.fields_updated) parts.push(`更新 ${data.fields_updated} 个字段配置`);
       setDone(parts.join(" · "));
       setPlan(data.plan || null);
       onImported();
@@ -112,15 +112,33 @@ export default function ModelImportDialog({
 
   const importable = plan ? plan.summary.new + plan.summary.update + plan.summary.fields : 0;
 
+  const exportConfig = async () => {
+    setBusy(true); setErr("");
+    try {
+      const { data } = await client.get(`/bi/semantic/datasets/${datasetId}/model-export`);
+      const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }));
+      const link = document.createElement("a");
+      link.href = url; link.download = `dataset-${datasetId}.json`;
+      document.body.appendChild(link); link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e: any) {
+      setErr(e?.response?.data?.detail || "导出失败");
+    } finally { setBusy(false); }
+  };
+
   return (
     <Dialog open onClose={onClose} maxWidth="md" fullWidth>
-      <DialogTitle sx={{ fontSize: 15.5, fontWeight: 700 }}>导入语义模型</DialogTitle>
+      <DialogTitle sx={{ fontSize: 15.5, fontWeight: 700 }}>导入 / 导出配置</DialogTitle>
       <DialogContent sx={{ pt: 0.5 }}>
         <Tabs value={format} onChange={(_e, v) => { setFormat(v); reset(); }}
           sx={{ minHeight: 34, mb: 1.25, "& .MuiTab-root": { minHeight: 34, fontSize: 12.5, textTransform: "none" } }}>
           <Tab value="dbt" label="dbt manifest.json" />
           <Tab value="lookml" label="Looker LookML" />
+          <Tab value="mingce" label="明策配置 JSON" />
         </Tabs>
+        {format === "mingce" && <Alert severity="info" sx={{ mb: 1.25, fontSize: 12 }}>
+          导入字段、公式和指标配置到当前数据集，按名称新增或更新，不删除已有字段，也不复制数据。引用的源列必须存在。
+        </Alert>}
 
         <Box sx={{ display: "flex", alignItems: "center", gap: 1.25, mb: 1.25 }}>
           <Button size="small" variant="outlined" startIcon={<UploadFileOutlined sx={{ fontSize: 15 }} />}
@@ -129,16 +147,16 @@ export default function ModelImportDialog({
             选择文件
           </Button>
           <Typography sx={{ fontSize: 11.5, color: "text.secondary" }}>
-            {fileName || (format === "dbt" ? "target/manifest.json" : "*.view.lkml")}
+            {fileName || (format === "mingce" ? "dataset.json" : format === "dbt" ? "target/manifest.json" : "*.view.lkml")}
           </Typography>
           <input ref={fileRef} type="file" hidden
-            accept={format === "dbt" ? ".json,application/json" : ".lkml,.lookml,.view,.txt"}
+            accept={format !== "lookml" ? ".json,application/json" : ".lkml,.lookml,.view,.txt"}
             onChange={(e) => pickFile(e.target.files?.[0])} />
         </Box>
 
         <TextField fullWidth multiline minRows={7} maxRows={12} value={content}
           onChange={(e) => { setContent(e.target.value); reset(); }}
-          placeholder={format === "dbt"
+          placeholder={format === "mingce" ? '{"version": 1, "fields": [], "metrics": []}' : format === "dbt"
             ? '{"metrics": {...}, "semantic_models": {...}}'
             : "view: order_fact { measure: gmv_total { type: sum sql: ${gmv} ;; } }"}
           InputProps={{ sx: { fontFamily: "ui-monospace", fontSize: 12 } }}
@@ -157,6 +175,11 @@ export default function ModelImportDialog({
               <Chip size="small" label={`跳过 ${plan.summary.skipped}`} sx={{ height: 20, fontSize: 11 }} />
             </Stack>
 
+            {plan.fields.length > 0 && <Box sx={{ mb: 1.25, maxHeight: 160, overflow: "auto" }}>
+              {plan.fields.map((f) => <Typography key={f.name} sx={{ fontSize: 12, py: 0.25 }}>
+                {f.name} · {ACTION_LABEL[f.action]}{f.expression ? ` · ${f.expression}` : ""}
+              </Typography>)}
+            </Box>}
             {plan.metrics.length > 0 && (
               <TableContainer sx={{ maxHeight: 240, border: "1px solid #EEF3FB", borderRadius: 1.5, mb: 1.25 }}>
                 <Table size="small" stickyHeader>
@@ -210,6 +233,7 @@ export default function ModelImportDialog({
         )}
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2.5 }}>
+        <Button onClick={exportConfig} disabled={busy} sx={{ mr: "auto", textTransform: "none" }}>导出当前配置</Button>
         <Button onClick={onClose} sx={{ textTransform: "none" }}>关闭</Button>
         <Button variant="outlined" onClick={preview} disabled={busy || !content.trim()}
           sx={{ textTransform: "none", borderRadius: 2 }}>预览</Button>

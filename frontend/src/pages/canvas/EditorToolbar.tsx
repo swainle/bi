@@ -2,6 +2,7 @@
 
 import type { Dispatch, SetStateAction } from "react";
 import type { NavigateFunction, SetURLSearchParams } from "react-router-dom";
+import { formatChinaTime } from "../../utils/time";
 import {
   Box, Button, Chip, CircularProgress, Divider, IconButton, TextField, Typography,
 } from "@mui/material";
@@ -114,7 +115,7 @@ export default function EditorToolbar({
           <Chip key={d.id} size="small" label={d.name}
             title={d.id === docId
               ? "点击改名"
-              : (d.updated_at ? `最近编辑 ${d.updated_at.slice(0, 16)}` : undefined)}
+              : (d.updated_at ? `最近编辑 ${formatChinaTime(d.updated_at).slice(0, 16)}` : undefined)}
             onDoubleClick={() => { if (d.id === docId) { setRenameDraft(d.name); setRenaming(true); } }}
             onClick={() => {
               if (d.id === docId) { setRenameDraft(d.name); setRenaming(true); return; }

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.timezone import china_now, time_text
+
 from fastapi import Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy import text
@@ -17,7 +19,7 @@ from app.security import watermark
 from app.security.rls import decide as rls_decide, where_sql as rls_where
 from app.admin.permissions import require
 import time as _time
-from app.query.whitelist import ALLOWED_TABLES
+from app.query.table_catalog import BUILTIN_TABLES, is_queryable
 
 from fastapi import APIRouter
 
@@ -32,8 +34,10 @@ def list_tables(
     db: Session = Depends(get_db),
 ):
     """返回所有可用 BI 表及其列信息"""
+    names = db.execute(text("SELECT table_name FROM information_schema.tables "
+                            "WHERE table_schema = 'public' AND table_type IN ('BASE TABLE','VIEW')")).fetchall()
     tables = []
-    for tbl in sorted(ALLOWED_TABLES):
+    for tbl in sorted(row[0] for row in names if is_queryable(row[0])):
         try:
             cols = db.execute(text(f"""
                 SELECT column_name, data_type
@@ -71,7 +75,7 @@ def refresh_materialized_views(
 ):
     """刷新物化视图。table 为空则刷新全部。"""
     refreshed = []
-    targets = [table] if table else [t for t in ALLOWED_TABLES]
+    targets = [table] if table else [t for t in BUILTIN_TABLES]
     for t in targets:
         mv = ACCEL_MAP.get(t, "")
         if not mv:
@@ -118,8 +122,8 @@ def get_table_data(
     precomputed: bool = Query(default=True),
 ):
     """查询 BI 业务表数据。precomputed=true 自动走物化视图加速。"""
-    if table not in ALLOWED_TABLES and not table.startswith("bi_ai_"):
-        raise HTTPException(status_code=404, detail=f"表 {table} 不在白名单中")
+    if not is_queryable(table):
+        raise HTTPException(status_code=404, detail=f"表 {table} 不是可访问的业务表")
 
     # 行级权限：先算结论（fail-closed）
     try:
@@ -204,8 +208,8 @@ def export_excel(
     db: Session = Depends(get_db),
 ):
     """导出 BI 表数据为 Excel（需要明细导出权限）"""
-    if table not in ALLOWED_TABLES:
-        raise HTTPException(status_code=404, detail=f"表 {table} 不在白名单中")
+    if not is_queryable(table):
+        raise HTTPException(status_code=404, detail=f"表 {table} 不是可访问的业务表")
 
     # 行级权限：导出与查询必须同口径，否则「查不到但导出得到」就是漏洞
     try:

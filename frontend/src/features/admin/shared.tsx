@@ -1,3 +1,4 @@
+import { formatChinaTime } from "../../utils/time";
 /** 管理后台共用视觉令牌与小件 —— 与「我的看板 / 项目」页同一套，保证是一家人 */
 
 import { useCallback, useState, type ReactNode } from "react";
@@ -189,8 +190,7 @@ export function friendlyError(err: any, fallback = "操作失败"): string {
 
 export function fmtTime(value?: string | null) {
   if (!value) return "—";
-  const text = String(value).replace("T", " ");
-  return text.slice(0, 19);
+  return formatChinaTime(value) || "—";
 }
 
 export function fmtUptime(seconds?: number) {

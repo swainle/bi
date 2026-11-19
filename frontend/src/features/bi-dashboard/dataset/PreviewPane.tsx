@@ -1,3 +1,4 @@
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions,
@@ -82,7 +83,13 @@ export function PreviewPane({ dataset }: { dataset: Dataset & { fields: Field[];
                 {result.rows.map((row, i) => (
                   <TableRow key={i} hover>
                     {result.columns.map((c) => (
-                      <TableCell key={c} sx={td}>{String(row[c] ?? "—")}</TableCell>
+                      <TableCell key={c} sx={td}>
+                        {row[c] == null || row[c] === "" ? (
+                          <Box component="span" sx={{ color: "text.secondary", fontStyle: "italic" }}>
+                            {row[c] == null ? "NULL" : "（空字符串）"}
+                          </Box>
+                        ) : String(row[c])}
+                      </TableCell>
                     ))}
                   </TableRow>
                 ))}

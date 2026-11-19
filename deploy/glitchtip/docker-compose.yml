@@ -6,7 +6,7 @@
 #   然后给后端配 SENTRY_DSN（compose 里是 backend.environment，本地开发是启动命令前的环境变量）
 #
 # 说明：
-#   · 这里自带的 Postgres / Redis 专供 GlitchTip，不碰业务库（业务库是 mingcebi_dev）；
+#   · 这里自带的 Postgres / Redis 专供 GlitchTip，不碰业务库（业务库是 mingzebi_dev）；
 #   · 端口用 8070，避开后端 8300 / 前端 5300；
 #   · 数据卷 glitchtip-pg-data / glitchtip-uploads 删掉就等于清空错误历史。
 

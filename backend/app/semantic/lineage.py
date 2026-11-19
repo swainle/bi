@@ -16,6 +16,8 @@
 
 from __future__ import annotations
 
+from app.timezone import time_text
+
 from typing import Any, Iterable
 
 from sqlalchemy import text
@@ -133,7 +135,7 @@ def list_for(db: Session, dashboard_id: int) -> list[dict]:
         {
             "view_key": r[0], "item_key": r[1], "item_kind": r[2], "item_type": r[3],
             "dataset_id": r[4], "role": r[5], "metric": r[6], "dimension": r[7],
-            "dataset_name": r[8] or "", "updated_at": str(r[9] or ""),
+            "dataset_name": r[8] or "", "updated_at": time_text(r[9] or ""),
         }
         for r in result.fetchall()
     ]
@@ -200,12 +202,24 @@ def field_hits_in_doc(
                     if isinstance(value, str) and value:
                         dims.append(value)
                 metric = str(binding.get("metric") or "")
+                expression_fields = set()
+                expression = binding.get("agg_expression")
+                if binding.get("agg") == "CUSTOM" and isinstance(expression, str) and expression:
+                    from sqlglot import exp, parse_one
+                    from sqlglot.errors import ParseError
+
+                    try:
+                        expression_fields = {c.name for c in parse_one(
+                            expression, read="postgres"
+                        ).find_all(exp.Column)}
+                    except ParseError:
+                        pass  # 编辑中的未完成表达式仍保留主指标引用。
                 for name in wanted:
-                    if name in dims or metric == name:
+                    if name in dims or metric == name or name in expression_fields:
                         out[name].append({
                             "dashboard_id": dashboard_id, "dashboard_name": dashboard_name,
                             "view_key": view_key, "item_key": item_key, "item_kind": kind,
-                            "role": "metric" if metric == name else "dimension",
+                            "role": "metric" if metric == name or name in expression_fields else "dimension",
                         })
 
             for field in (spec.get("filter") or {}).get("fields") or []:

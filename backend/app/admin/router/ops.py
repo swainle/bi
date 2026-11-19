@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.timezone import time_text, utc_now
+
 import os
 import time
 from fastapi import Body, Depends, HTTPException
@@ -57,7 +59,7 @@ def ops_status(
                 "table_name": r[0] or "—",
                 "elapsed_ms": float(r[1] or 0),
                 "source": r[2] or "internal",
-                "created_at": str(r[3] or ""),
+                "created_at": time_text(r[3] or ""),
             }
             for r in rows
         ]

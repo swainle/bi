@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.timezone import time_text, utc_now
+
 from datetime import datetime
 from fastapi import Depends, HTTPException
 from sqlalchemy import text
@@ -95,7 +97,7 @@ def update_model(
     data = payload.model_dump(exclude_unset=True)
 
     sets: list[str] = []
-    params: dict = {"id": model_id, "updated_at": datetime.utcnow()}
+    params: dict = {"id": model_id, "updated_at": utc_now()}
     if "name" in data and data["name"]:
         sets.append("name = :name")
         params["name"] = data["name"].strip()

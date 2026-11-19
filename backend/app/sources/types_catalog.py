@@ -4,7 +4,7 @@
 requirements 又只装了 4 类驱动，于是出现「界面能选、点测试连接报不支持」的花架子。
 现在统一由本目录给出类型与驱动可用性，前端只负责渲染，不再维护第二份清单。
 
-新增一种数据源 = 这里加一条 + `repository.TYPE_DIALECT` 加方言 + requirements 加驱动 +
+新增一种数据源 = 这里加一条 + `repository.TYPE_DIALECT` 加方言 + pyproject.toml 加驱动 +
 真机验证（建连接 / 读表结构 / 查询 / 方言 SQL），缺一不可。
 """
 
@@ -192,7 +192,7 @@ def list_types(find_spec: FindSpec | None = None) -> list[dict]:
             "default_port": item["default_port"],
             "available": not missing,
             "reason": "" if not missing else f"未安装驱动：{item['pip']}",
-            "install": "" if not missing else f"pip install {item['pip']}",
+            "install": "" if not missing else f"uv add {item['pip']}",
         })
     out.sort(key=lambda t: not t["available"])
     return out

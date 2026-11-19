@@ -219,6 +219,7 @@ export interface BindingSpec {
   metric: string | null;
   metrics: (string | { name: string; agg?: string; fmt?: string })[];
   agg: string;
+  agg_expression?: string;
   top_n: number;
   sort: "desc" | "asc";
   order_by_dimension?: boolean;

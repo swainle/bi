@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.timezone import time_text
+
 from fastapi import APIRouter, Body, Depends, HTTPException
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy import text
@@ -138,7 +140,7 @@ def list_dashboards(
          "views": r.view_count, "items": r.item_count, "charts": r.chart_count,
          "published": (r.doc or {}).get("published") is not False,
          "agent_generated": r.id in agent_ids,
-         "updated_at": str(r.updated_at or ""),
+         "updated_at": time_text(r.updated_at or ""),
          "team_shared": bool(r.team_shared), "team_editors": editor_counts.get(r.id, 0),
          "owner_id": r.owner_id, "can_manage": _can_manage(r, current_user)}
         for r in rows
@@ -188,7 +190,7 @@ def list_team_dashboards(
             "id": row.id, "name": row.name, "owner_id": row.owner_id,
             "owner_name": names.get(row.owner_id or 0, ""),
             "charts": row.chart_count, "views": row.view_count,
-            "updated_at": str(row.updated_at or ""),
+            "updated_at": time_text(row.updated_at or ""),
             "team_editors": editor_counts.get(row.id, 0),
         }
         if row.owner_id == current_user.id:
@@ -456,7 +458,7 @@ def rename_dashboard(
     saved = repo.rename(db, dashboard_id, name)
     if saved is None:
         raise HTTPException(404, "看板不存在")
-    return {"id": saved.id, "name": saved.name, "updated_at": str(saved.updated_at or "")}
+    return {"id": saved.id, "name": saved.name, "updated_at": time_text(saved.updated_at or "")}
 
 
 @router.delete("/{dashboard_id}", dependencies=[Depends(require_nav("bi:nav:editor"))])

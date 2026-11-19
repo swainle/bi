@@ -572,6 +572,7 @@ export default function QueryPanel({
           dimension={b.dimension}
           metric={b.metric}
           agg={b.agg}
+          expression={b.agg_expression}
           transform={spec.compute?.transform}
           kind={kind}
           fields={kind === "table" ? tableFields : undefined}
@@ -682,7 +683,7 @@ export default function QueryPanel({
             <Box sx={{ display: "flex", flexWrap: "nowrap", gap: 1, alignItems: "center", mb: 1 }}>
               <TextField select size="small" value={b.metric}
                 onChange={(e) => patch("metric", e.target.value)}
-                sx={{ flex: "1 1 auto", minWidth: 92, "& .MuiOutlinedInput-root": { borderRadius: 2, fontSize: 12.5 } }}>
+                sx={{ flex: "1 1 auto", minWidth: b.agg === "CUSTOM" ? 80 : 92, "& .MuiOutlinedInput-root": { borderRadius: 2, fontSize: 12.5 } }}>
                 {metricOptions.map((f) => (
                   <MenuItem key={f.name} value={f.name} sx={{ fontSize: 12.5 }}>{f.name}</MenuItem>
                 ))}
@@ -691,11 +692,16 @@ export default function QueryPanel({
                 )}
               </TextField>
               <TextField select size="small" label="聚合" value={b.agg}
-                onChange={(e) => patch("agg", e.target.value)}
-                sx={{ width: 96, flexShrink: 0, "& .MuiOutlinedInput-root": { borderRadius: 2, fontSize: 12.5 } }}>
+                onChange={(e) => onChange({ ...spec, binding: {
+                  ...b, agg: e.target.value,
+                  ...(e.target.value === "CUSTOM" && !b.agg_expression
+                    ? { agg_expression: `SUM("${b.metric?.replace(/"/g, '""')}")` } : {}),
+                } })}
+                sx={{ width: b.agg === "CUSTOM" ? 120 : 96, flexShrink: 0, "& .MuiOutlinedInput-root": { borderRadius: 2, fontSize: 12.5 } }}>
                 {AGG.map((a) => (
                   <MenuItem key={a} value={a} sx={{ fontSize: 12.5 }}>{a}</MenuItem>
                 ))}
+                <MenuItem value="CUSTOM" sx={{ fontSize: 12.5 }}>自定义 SQL</MenuItem>
               </TextField>
               <IconButton size="small" sx={{ flexShrink: 0 }} onClick={() => patch("metric", null)}>
                 <Close sx={{ fontSize: 15 }} />
@@ -705,6 +711,16 @@ export default function QueryPanel({
             <Box sx={dash}>把左侧「指标」拖到这里（或点击）</Box>
           )}
           </Box>
+
+          {b.metric && b.agg === "CUSTOM" && (
+            <TextField size="small" fullWidth multiline minRows={3} label="聚合表达式"
+              value={b.agg_expression ?? ""}
+              onChange={(e) => patch("agg_expression", e.target.value)}
+              error={Boolean(payload?.error)}
+              helperText={payload?.error || '使用数据集字段名，例如 MEDIAN("销售额")；无需 SELECT / FROM，随当前筛选和分组计算。'}
+              inputProps={{ maxLength: 4000, spellCheck: false }}
+              sx={{ mt: 1, "& .MuiInputBase-input": { fontFamily: "monospace", fontSize: 12.5 } }} />
+          )}
 
           {kind === "wordcloud" && (
             <Slot label="颜色（分类）">
@@ -939,4 +955,3 @@ export default function QueryPanel({
     </Box>
   );
 }
-

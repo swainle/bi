@@ -1,3 +1,4 @@
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions,
@@ -17,16 +18,18 @@ import ModelImportDialog from "../ModelImportDialog";
 import { ROLES, TYPES, FORMATS, Field, Metric, MetricVersion, MetricUsage, Dataset, PhysTable, RemoteTable, SourceBrief, remoteField, td, th, DEMO_TABLE, _NUM, inferType, inferRole, RowRule, ColumnMask, DeptScopeRule, DEPT_MODES, RULE_ROLES, MASK_OPTIONS, FIELD_ROLE_LABEL } from "./types";
 
 export function CreateDatasetDialog({
-  tables, onClose, onCreated, onError,
+  tables, initialTable = "", initialName = "", onClose, onCreated, onError,
 }: {
   tables: PhysTable[];
+  initialTable?: string;
+  initialName?: string;
   onClose: () => void;
   onCreated: (id: number) => void;
   onError: (msg: string) => void;
 }) {
   const [mode, setMode] = useState<"extract" | "live" | "sql">("extract");
-  const [name, setName] = useState("");
-  const [table, setTable] = useState("");
+  const [name, setName] = useState(initialName);
+  const [table, setTable] = useState(initialTable);
   const [sqlText, setSqlText] = useState("");
   const [description, setDescription] = useState("");
   const [importColumns, setImportColumns] = useState(true);
@@ -48,12 +51,13 @@ export function CreateDatasetDialog({
   const [loadingTables, setLoadingTables] = useState(false);
 
   useEffect(() => {
+    if (initialTable) return;
     client.get("/bi/sources").then((r) => {
       const list: SourceBrief[] = r.data?.sources || [];
       setSources(list);
       setSourceId(list.length ? list[0].id : "");
     }).catch(() => setSources([]));
-  }, []);
+  }, [initialTable]);
 
   useEffect(() => {
     if (mode !== "live" || sourceId === "") { setRemoteTables([]); return; }
@@ -117,12 +121,12 @@ export function CreateDatasetDialog({
     <Dialog open onClose={onClose} maxWidth="sm" fullWidth>
       <DialogTitle sx={{ fontSize: 16, fontWeight: 700 }}>新建数据集</DialogTitle>
       <DialogContent sx={{ pt: 1 }}>
-        <Tabs value={mode} onChange={(_, v) => setMode(v)} sx={{ mt: 1, minHeight: 32 }}
+        {!initialTable && <Tabs value={mode} onChange={(_, v) => setMode(v)} sx={{ mt: 1, minHeight: 32 }}
           TabIndicatorProps={{ sx: { height: 2, borderRadius: 1 } }}>
           <Tab value="extract" label="抽取 · 物理表" sx={{ textTransform: "none", fontSize: 12.5, minHeight: 32, fontWeight: 600 }} />
           <Tab value="live" label="直连 · 源库" sx={{ textTransform: "none", fontSize: 12.5, minHeight: 32, fontWeight: 600 }} />
           <Tab value="sql" label="自定义 SQL" sx={{ textTransform: "none", fontSize: 12.5, minHeight: 32, fontWeight: 600 }} />
-        </Tabs>
+        </Tabs>}
         <TextField fullWidth size="small" label="数据集名称" value={name} autoFocus
           onChange={(e) => setName(e.target.value)}
           sx={{ mt: 2, "& .MuiOutlinedInput-root": { borderRadius: 2 } }} />
@@ -130,6 +134,7 @@ export function CreateDatasetDialog({
         {mode === "extract" && (
           <>
             <TextField fullWidth select size="small" label="物理表" value={table}
+              disabled={!!initialTable}
               onChange={(e) => setTable(e.target.value)}
               sx={{ mt: 2, "& .MuiOutlinedInput-root": { borderRadius: 2 } }}>
               {tables.map((t) => (

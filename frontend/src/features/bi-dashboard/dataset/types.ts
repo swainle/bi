@@ -1,3 +1,4 @@
+
 /** 数据集面板 · 共享类型与常量 */
 
 export const ROLES = [
@@ -17,6 +18,7 @@ export interface Field {
   id: number; name: string; source_column: string; role: string;
   data_type: string; is_filterable: boolean; is_groupable: boolean;
   default_grain: string | null; description: string;
+  expression?: string;
 }
 export interface Metric {
   id: number; name: string; expression: string; format: string; description: string;
@@ -127,4 +129,3 @@ export const FIELD_ROLE_LABEL: Record<string, string> = {
   dimension: "维度",
   metric: "指标",
 };
-

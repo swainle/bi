@@ -1,3 +1,4 @@
+import { formatChinaTime } from "../../utils/time";
 /** 指标告警 —— 给看板里的指标卡设阈值 / 波动告警，触发后进顶栏「告警通知」 */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -112,7 +113,7 @@ function fmtNum(value: number | null | undefined): string {
 }
 
 function fmtTime(value: string): string {
-  return value ? value.slice(5, 16) : "";
+  return formatChinaTime(value).slice(5, 16);
 }
 
 export default function AlertRulesDialog({ board, onClose }: Props) {

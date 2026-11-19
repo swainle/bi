@@ -9,6 +9,7 @@ interface Props {
   dimension: string | null;
   metric: string | null;
   agg: string;
+  expression?: string;
   transform?: string;
   /** 明细表：不聚合，口径改成「有哪些列 + 多少行」 */
   fields?: string[];
@@ -22,7 +23,7 @@ const row = { display: "flex", alignItems: "baseline", gap: 0.75, minWidth: 0 } 
 const label = { fontSize: 11, color: "#94A3B8", flexShrink: 0 } as const;
 const value = { fontSize: 11.5, color: "#334155", fontWeight: 600 } as const;
 
-export default function DataCheckPanel({ payload, dimension, metric, agg, transform, fields, kind, dimensionLabel, metricLabel }: Props) {
+export default function DataCheckPanel({ payload, dimension, metric, agg, expression, transform, fields, kind, dimensionLabel, metricLabel }: Props) {
   const [openSql, setOpenSql] = useState(false);
   const total = payload?.total;
   const count = payload?.count ?? payload?.rows?.length ?? payload?.series?.length ?? 0;
@@ -61,8 +62,9 @@ export default function DataCheckPanel({ payload, dimension, metric, agg, transf
           )}
           <Box sx={{ ...row, mt: kind === "kpi" ? 0 : 0.5 }}>
             <Typography sx={label}>{metricLabel || "指标"}</Typography>
-            <Typography sx={{ ...value, flex: 1, minWidth: 0 }} noWrap>
-              {metric ? `${agg}(${metric})` : "—"}
+            <Typography sx={{ ...value, flex: 1, minWidth: 0 }} noWrap
+              title={agg === "CUSTOM" ? expression : undefined}>
+              {agg === "CUSTOM" ? expression || "自定义 SQL" : metric ? `${agg}(${metric})` : "—"}
             </Typography>
             {kind === "kpi" && <Typography sx={label}>{count} 行</Typography>}
             {typeof total === "number" && (

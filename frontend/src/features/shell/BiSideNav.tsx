@@ -24,7 +24,7 @@ export const BI_NAV_ITEMS: SideNavItem[] = [
   { key: "team", label: "我的团队", icon: <Group />, color: "#10B981" },
   { key: "datasets", label: "数据集", icon: <TableChart />, color: "#0891B2", perm: "bi:nav:datasets" },
   { key: "datasource", label: "数据源", icon: <Storage />, color: "#EC4899", perm: "bi:nav:datasources" },
-  { key: "sql", label: "SQL 查询", icon: <Code />, color: "#8B5CF6", perm: "bi:nav:sql" },
+  { key: "sql", label: "SQL Lab", icon: <Code />, color: "#8B5CF6", perm: "bi:nav:sql" },
   { key: "components", label: "组件库", icon: <Widgets />, color: "#0EA5E9", path: "/bi/components", perm: "bi:nav:components" },
   { key: "editor", label: "编辑设计", icon: <DesignServices />, color: "#EC4899", path: "/bi/projects", perm: "bi:nav:editor" },
 ];
@@ -53,18 +53,22 @@ export default function BiSideNav({
       bgcolor: alpha(theme.palette.background.paper, 0.7),
       backdropFilter: "blur(12px)",
     }}>
-      <Box sx={{ px: 2.5, py: 2.5, borderBottom: "1px solid", borderColor: "divider" }}>
-        <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
-          <Avatar sx={{ width: 38, height: 38, borderRadius: 2.5,
+      <Box sx={{ px: 2.5, height: 56, boxSizing: "border-box", flexShrink: 0,
+        display: "flex", alignItems: "center", borderBottom: "1px solid", borderColor: "divider",
+        background: theme.palette.background.paper, boxShadow: "0 2px 4px rgba(0,0,0,0.06)",
+        clipPath: "inset(0 0 -8px 0)", zIndex: 1 }}>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1.25, minWidth: 0 }}>
+          <Avatar sx={{ width: 32, height: 32, flexShrink: 0, borderRadius: 2.5,
             background: "linear-gradient(135deg, #6366F1, #8B5CF6)",
             fontSize: 18, fontWeight: 800,
             boxShadow: "0 4px 12px rgba(99,102,241,0.35)", }}>BI</Avatar>
-          <Box>
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 0.25, minWidth: 0 }}>
             <Typography variant="h6" fontWeight={800} fontSize={18} letterSpacing={-0.5}
-              sx={{ background: "linear-gradient(135deg, #6366F1, #8B5CF6)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
+              noWrap sx={{ lineHeight: "22px", background: "linear-gradient(135deg, #6366F1, #8B5CF6)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
               明策BI
             </Typography>
-            <Typography variant="caption" color="text.secondary" fontSize={11}>{subtitle}</Typography>
+            <Typography variant="caption" color="text.secondary" fontSize={11}
+              noWrap sx={{ lineHeight: "14px" }}>{subtitle}</Typography>
           </Box>
         </Box>
       </Box>

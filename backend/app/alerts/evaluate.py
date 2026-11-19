@@ -13,6 +13,7 @@ import os
 import threading
 import time
 from datetime import datetime, timedelta
+from app.timezone import as_china, china_now
 from types import SimpleNamespace
 from typing import Any
 
@@ -169,10 +170,10 @@ def _in_cooldown(rule: dict) -> bool:
     if not last or minutes <= 0:
         return False
     try:
-        moment = datetime.fromisoformat(last)
+        moment = as_china(datetime.fromisoformat(last))
     except ValueError:
         return False
-    return datetime.now() - moment < timedelta(minutes=minutes)
+    return china_now() - moment < timedelta(minutes=minutes)
 
 
 def notify_webhook(rule: dict, value: float | None, message: str) -> tuple[str, str]:
@@ -194,7 +195,7 @@ def notify_webhook(rule: dict, value: float | None, message: str) -> tuple[str, 
         "item_key": rule.get("item_key"),
         "value": value,
         "message": message,
-        "sent_at": datetime.now().isoformat(timespec="seconds"),
+        "sent_at": china_now().isoformat(timespec="seconds"),
     }
     return notifications.send(
         channel if channel in notifications.CHANNELS else "webhook",

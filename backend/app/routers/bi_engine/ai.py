@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.timezone import china_now, time_text
+
 from fastapi import Depends, HTTPException, Query, Body, File, UploadFile
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -15,7 +17,7 @@ from app.middleware.auth import get_current_user
 from app.models.user import User
 import re as _re
 import time as _time
-from app.query.whitelist import ALLOWED_TABLES
+from app.query.table_catalog import BUILTIN_TABLES, is_queryable
 from app.services.bi_ai_engine import collect_metadata, search_knowledge, run_ai_pipeline, validate_sql
 from app.services.bi_ai_phase2 import create_task, get_task, update_task, auto_build_model, analyze_data_quality, compute_layout, kb_list_metrics, kb_upsert_metric, kb_delete_metric, kb_list_templates, kb_upsert_template, chat_iterate
 from app.services.bi_ai_phase3 import ai_root_cause_analysis, ai_large_screen_layout, batch_generate_dashboards, ai_generate_alert_rules
@@ -35,8 +37,8 @@ def nl_to_sql(payload: dict = Body(...), db: Session = Depends(get_db)):
     table = payload.get("table", "").strip()
     if not question or not table:
         raise HTTPException(400, "question 和 table 不能为空")
-    if table not in ALLOWED_TABLES and not table.startswith("bi_ai_"):
-        raise HTTPException(404, f"表 {table} 不在白名单中")
+    if not is_queryable(table):
+        raise HTTPException(404, f"表 {table} 不是可访问的业务表")
 
     # 获取表结构
     cols = db.execute(text(f"SELECT column_name, data_type FROM information_schema.columns WHERE table_name='{table}' AND table_schema='public' ORDER BY ordinal_position")).fetchall()
@@ -101,7 +103,7 @@ def nl_to_sql(payload: dict = Body(...), db: Session = Depends(get_db)):
 @router.get("/ai/diagnose/{table}", dependencies=_AI_USE)
 def ai_diagnose(table: str, db: Session = Depends(get_db)):
     """AI 数据诊断：检测空值/异常/重复"""
-    if table not in ALLOWED_TABLES: raise HTTPException(404)
+    if not is_queryable(table): raise HTTPException(404)
     issues = []
     cols = db.execute(text(f"SELECT column_name, data_type FROM information_schema.columns WHERE table_name='{table}' AND table_schema='public' ORDER BY ordinal_position")).fetchall()
     total = db.execute(text(f"SELECT count(*) FROM {table}")).scalar() or 0
@@ -128,7 +130,7 @@ def ai_diagnose(table: str, db: Session = Depends(get_db)):
 @router.get("/ai/recommend/{table}", dependencies=_AI_USE)
 def ai_recommend(table: str, db: Session = Depends(get_db)):
     """智能推荐：根据表结构推荐维度×指标组合 + 图表类型"""
-    if table not in ALLOWED_TABLES: raise HTTPException(404)
+    if not is_queryable(table): raise HTTPException(404)
     cols = db.execute(text(f"SELECT column_name, data_type FROM information_schema.columns WHERE table_name='{table}' AND table_schema='public' ORDER BY ordinal_position")).fetchall()
     dims = [c[0] for c in cols if c[1] in ("text","character varying","date")]
     metrics = [c[0] for c in cols if c[1] in ("integer","bigint","numeric","double precision","real")]
@@ -187,7 +189,7 @@ def auto_model(payload: dict = Body(...), db: Session = Depends(get_db)):
     if not tables: raise HTTPException(400, "至少提供一张表")
     relations = []
     for t in tables[:5]:
-        if t not in ALLOWED_TABLES: continue
+        if not is_queryable(t): continue
         # 检测外键模式（列名包含 _id 或与另一表名匹配）
         cols = db.execute(text(f"SELECT column_name FROM information_schema.columns WHERE table_name='{t}' AND table_schema='public'")).fetchall()
         for c in cols:
@@ -247,7 +249,7 @@ def smart_alert(payload: dict = Body(...), db: Session = Depends(get_db)):
     """时序智能预警：移动平均检测环比异常"""
     table = payload.get("table", "")
     metric_col = payload.get("metric_col", "")
-    if table not in ALLOWED_TABLES or not metric_col: raise HTTPException(400)
+    if not is_queryable(table) or not metric_col: raise HTTPException(400)
 
     rows = db.execute(text(f"SELECT {metric_col} FROM {table} ORDER BY updated_at DESC LIMIT 30")).fetchall()
     if len(rows) < 7: return {"status": "insufficient_data", "message": "至少需要7期数据"}
@@ -290,7 +292,7 @@ def search_knowledge(q: str = Query(default=""), db: Session = Depends(get_db)):
 def ai_pre_aggregate(payload: dict = Body(...), db: Session = Depends(get_db)):
     """AI 预聚合调度：分析慢查询模式，自动创建物化视图"""
     table = payload.get("table", "")
-    if table and table not in ALLOWED_TABLES: raise HTTPException(404)
+    if table and not is_queryable(table): raise HTTPException(404)
     # 统计最近SQL缓存中的高频查询模式
     where = f"WHERE table_name='{table}'" if table else ""
     patterns = db.execute(text(
@@ -299,7 +301,7 @@ def ai_pre_aggregate(payload: dict = Body(...), db: Session = Depends(get_db)):
     suggestions = []
     seen = set()
     for t, sql in patterns:
-        if t not in ALLOWED_TABLES: continue
+        if not is_queryable(t): continue
         key = f"{t}_monthly"
         if key not in seen:
             seen.add(key)
@@ -319,7 +321,7 @@ def ai_root_cause(payload: dict = Body(...), db: Session = Depends(get_db)):
     metric = payload.get("metric", "")
     dims = payload.get("dimensions", [])
     limit = payload.get("limit", 5)
-    if table not in ALLOWED_TABLES: raise HTTPException(404)
+    if not is_queryable(table): raise HTTPException(404)
     if not metric: raise HTTPException(400, "metric 不能为空")
 
     drill_results = []
@@ -374,7 +376,7 @@ def ai_generate_screen(payload: dict = Body(...)):
 def ai_interpret(payload: dict = Body(...), db: Session = Depends(get_db)):
     """AI 报表解读：输入看板数据→输出经营分析报告"""
     table = payload.get("table", "")
-    if table not in ALLOWED_TABLES: raise HTTPException(404)
+    if not is_queryable(table): raise HTTPException(404)
     cols = db.execute(text(f"SELECT column_name, data_type FROM information_schema.columns WHERE table_name='{table}' AND table_schema='public'")).fetchall()
     numeric = [c[0] for c in cols if c[0] != "id" and c[1] in ("integer","bigint","numeric","double precision","real")]
     if not numeric: raise HTTPException(400, "无可用数值列")
@@ -417,7 +419,7 @@ def ai_security_scan(db: Session = Depends(get_db)):
         alerts.append({"type": "sensitive_access", "table": t, "column": c, "severity": "info",
                        "message": f"敏感列 {t}.{c} 已配置脱敏规则"})
 
-    return {"scan_time": _time.strftime("%Y-%m-%d %H:%M:%S"), "alerts": alerts, "total": len(alerts)}
+    return {"scan_time": china_now().strftime("%Y-%m-%d %H:%M:%S"), "alerts": alerts, "total": len(alerts)}
 
 
 @router.post("/ai/analyze", dependencies=_AI_USE)

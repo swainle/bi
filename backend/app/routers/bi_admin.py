@@ -1,5 +1,7 @@
 # routers/bi_admin.py — 权限管理 + 操作审计 独立路由
 """看板权限、操作审计日志"""
+
+from app.timezone import time_text
 import json
 from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy import text
@@ -67,6 +69,6 @@ def get_audit_logs(
     """), params).fetchall()
     return {
         "logs": [{"id": r[0], "user_id": r[1], "action": r[2], "resource_type": r[3],
-                   "resource_id": r[4], "detail": r[5], "ip": r[6], "created_at": str(r[7])}
+                   "resource_id": r[4], "detail": r[5], "ip": r[6], "created_at": time_text(r[7])}
                   for r in rows]
     }

@@ -27,7 +27,7 @@ ADMIN_ROLES = {"admin", "super_admin"}
 NAV_PERMISSIONS: list[tuple[str, str, str]] = [
     ("bi:nav:datasets", "数据集入口", "业务入口"),
     ("bi:nav:datasources", "数据源入口", "业务入口"),
-    ("bi:nav:sql", "SQL 查询入口", "业务入口"),
+    ("bi:nav:sql", "SQL Lab 入口", "业务入口"),
     ("bi:nav:components", "组件库入口", "业务入口"),
     ("bi:nav:editor", "编辑设计入口", "业务入口"),
 ]

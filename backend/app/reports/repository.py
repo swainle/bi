@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.timezone import time_text
+
 import json
 from typing import Any
 
@@ -38,12 +40,12 @@ def _sub_dict(row) -> dict:
         "email_to": m.get("email_to") or "",
         "enabled": bool(m["enabled"]),
         "created_by": m["created_by"],
-        "last_run_at": str(m["last_run_at"] or ""),
+        "last_run_at": time_text(m["last_run_at"] or ""),
         "last_status": m["last_status"],
         "last_error": m["last_error"],
-        "next_run_at": str(m["next_run_at"] or ""),
-        "created_at": str(m["created_at"] or ""),
-        "updated_at": str(m["updated_at"] or ""),
+        "next_run_at": time_text(m["next_run_at"] or ""),
+        "created_at": time_text(m["created_at"] or ""),
+        "updated_at": time_text(m["updated_at"] or ""),
     }
 
 
@@ -59,7 +61,7 @@ def _run_dict(row) -> dict:
         "error": m["error"],
         "delivered": m["delivered"],
         "triggered_by": m["triggered_by"],
-        "created_at": str(m["created_at"] or ""),
+        "created_at": time_text(m["created_at"] or ""),
         "has_html": bool(m["html_path"]),
         "has_xlsx": bool(m["xlsx_path"]),
         "has_pdf": bool(m.get("pdf_path")),
@@ -203,7 +205,7 @@ def get_run_files(db: Session, run_id: int) -> dict | None:
         "html_path": m["html_path"],
         "xlsx_path": m["xlsx_path"],
         "pdf_path": m.get("pdf_path") or "",
-        "created_at": str(m["created_at"] or ""),
+        "created_at": time_text(m["created_at"] or ""),
     }
 
 

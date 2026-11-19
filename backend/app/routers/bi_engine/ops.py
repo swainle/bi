@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.timezone import china_now, time_text
+
 from fastapi import Depends, HTTPException, Query
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -9,7 +11,7 @@ from app.database import get_db
 from app.middleware.auth import get_current_user
 from app.models.user import User
 import time as _time
-from app.query.whitelist import ALLOWED_TABLES
+from app.query.table_catalog import BUILTIN_TABLES, is_queryable
 
 from fastapi import APIRouter
 
@@ -58,8 +60,8 @@ def sync_table(
     db: Session = Depends(get_db),
 ):
     """执行数据同步：full=全量 / incremental=增量（基于 updated_at）"""
-    if table not in ALLOWED_TABLES and not table.startswith("bi_ai_"):
-        raise HTTPException(404, f"表 {table} 不在白名单中")
+    if not is_queryable(table):
+        raise HTTPException(404, f"表 {table} 不是可访问的业务表")
 
     t0 = _time.time()
     if sync_type == "full":
@@ -84,7 +86,7 @@ def sync_table(
             "INSERT INTO bi_sync_logs (table_name, sync_type, rows_synced, duration_ms, status, started_at, finished_at) VALUES (:t,:st,:r,:d,'success',NOW(),NOW())"),
             {"t": table, "st": sync_type, "r": rows, "d": int((_time.time()-t0)*1000)})
         db.commit()
-        SYNC_STATE[table] = _time.strftime("%Y-%m-%d %H:%M:%S")
+        SYNC_STATE[table] = china_now().strftime("%Y-%m-%d %H:%M:%S")
         # 增量同步后自动刷物化视图
         try:
             mv = ACCEL_MAP.get(table, "")

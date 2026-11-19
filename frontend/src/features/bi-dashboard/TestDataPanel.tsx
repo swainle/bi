@@ -1,3 +1,4 @@
+import { formatChinaTime } from "../../utils/time";
 /** 测试数据集（数据集页的子页面，跟「数据集」同一个大页面布局）
  *  列表只有「测试数据集」一条；点「查看」进明细：字段信息可改 + 数据
  */
@@ -299,7 +300,7 @@ export default function TestDataPanel() {
                     </TableCell>
                     <TableCell sx={{ ...td, textAlign: "right", color: "#475569" }}>{d.field_count}</TableCell>
                     <TableCell sx={{ ...td, textAlign: "right", color: "#475569" }}>{d.metric_count}</TableCell>
-                    <TableCell sx={{ ...td, color: "text.secondary" }}>{d.updated_at?.slice(0, 16) || ""}</TableCell>
+                    <TableCell sx={{ ...td, color: "text.secondary" }}>{formatChinaTime(d.updated_at).slice(0, 16) || ""}</TableCell>
                     <TableCell sx={{ ...td, pr: 2, textAlign: "right", whiteSpace: "nowrap" }}>
                       {d.is_sandbox && isAdmin && (
                         <Tooltip title="删除这个测试数据集（物理表保留在数据源里）">
@@ -455,7 +456,11 @@ export default function TestDataPanel() {
                               ...(numeric ? { textAlign: "right", fontVariantNumeric: "tabular-nums" } : {}),
                               ...(column === activeField?.name ? { color: "#4F46E5", fontWeight: 600, bgcolor: "rgba(79,70,229,0.03)" } : {}),
                             }}>
-                              {row[column] === null || row[column] === undefined ? "—" : String(row[column])}
+                              {row[column] == null || row[column] === "" ? (
+                                <Box component="span" sx={{ color: "text.secondary", fontStyle: "italic" }}>
+                                  {row[column] == null ? "NULL" : "（空字符串）"}
+                                </Box>
+                              ) : String(row[column])}
                             </TableCell>
                           );
                         })}

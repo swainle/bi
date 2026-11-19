@@ -104,4 +104,3 @@ export function buildSearch(view: string, params: Record<string, unknown>): stri
   const query = search.toString();
   return `${window.location.pathname}${query ? `?${query}` : ""}`;
 }
-

@@ -53,4 +53,3 @@ export function HeadingElement({ item }: { item: DocItem }) {
     </Box>
   );
 }
-

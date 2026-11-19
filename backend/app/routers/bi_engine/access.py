@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.timezone import china_now, time_text
+
 from fastapi import Depends, HTTPException, Body
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -9,7 +11,7 @@ from app.database import get_db
 from app.middleware.auth import get_current_user
 from app.models.user import User
 from app.security.errors import SecurityError
-from app.query.whitelist import ALLOWED_TABLES
+from app.query.table_catalog import BUILTIN_TABLES, is_queryable
 
 from fastapi import APIRouter
 
@@ -115,8 +117,8 @@ def set_row_permission(
         raise HTTPException(403, "仅管理员可设置行权限")
 
     table_name = str(payload.get("table_name", "")).strip()
-    if table_name not in ALLOWED_TABLES:
-        raise HTTPException(404, f"表 {table_name} 不在白名单中")
+    if not is_queryable(table_name):
+        raise HTTPException(404, f"表 {table_name} 不是可访问的业务表")
 
     # 存库前把关：非法规则直接拒绝，避免把坏规则留到查询期（那时只能 fail-closed）
     from app.security.rls import compile_rule_text

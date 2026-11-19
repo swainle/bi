@@ -1,3 +1,4 @@
+import { formatChinaTime } from "../utils/time";
 /** 统一编辑画布 —— 在自由画布上编辑业务看板（组件实例 + 页面元素 + 页面参数） */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -108,7 +109,7 @@ export default function CanvasBoardPage() {
   /** 三栏折叠状态（PS 式收起面板，给画布腾地方），记在本地 */
   const paneAnimTimer = useRef<number>(0);
   const [collapsed, setCollapsed] = useState<{ left?: boolean; mid?: boolean; right?: boolean }>(() => {
-    try { return JSON.parse(localStorage.getItem("mcbi.editor.collapsed") || "{}"); } catch { return {}; }
+    try { return JSON.parse(localStorage.getItem("mcbi.editor.collapsed") ?? localStorage.getItem("mzbi.editor.collapsed") ?? "{}"); } catch { return {}; }
   });
   const togglePane = useCallback((key: "left" | "mid" | "right") => {
     paneAnimating.active = true;

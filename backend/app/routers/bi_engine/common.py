@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.timezone import china_now, time_text
+
 from fastapi import Depends, HTTPException
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -11,7 +13,7 @@ import os as _os
 import re as _re
 import time as _time
 import threading
-from app.query.whitelist import ALLOWED_TABLES
+from app.query.table_catalog import BUILTIN_TABLES, is_queryable
 from app.security.masking import apply_masks as _mask_impl
 
 # AI 端点统一鉴权（S0）：登录 + 权限码；此前多数端点匿名可调用
@@ -222,11 +224,11 @@ def _refresh_once() -> dict:
     db = SessionLocal()
     try:
         incremental = _incremental_tables(db)
-        # 只刷新真实存在的物化视图：ACCEL_MAP 是按白名单拼的 <table>_agg，多数并没有建
+        # 只刷新真实存在的物化视图：ACCEL_MAP 是按内置演示表拼的 <table>_agg，多数并没有建
         existing_mv = {r[0] for r in db.execute(text(
             "SELECT matviewname FROM pg_matviews WHERE schemaname = current_schema()"
         )).fetchall()}
-        for tbl in ALLOWED_TABLES:
+        for tbl in BUILTIN_TABLES:
             if tbl not in incremental:
                 skipped.append(tbl)
                 continue
@@ -241,7 +243,7 @@ def _refresh_once() -> dict:
                         "INSERT INTO bi_sync_logs (table_name, sync_type, rows_synced, duration_ms, status, started_at, finished_at) "
                         "VALUES (:t, 'incremental', :r, 0, 'success', NOW(), NOW())"
                     ), {"t": tbl, "r": rows})
-                    SYNC_STATE[tbl] = time.strftime("%Y-%m-%d %H:%M:%S")
+                    SYNC_STATE[tbl] = china_now().strftime("%Y-%m-%d %H:%M:%S")
                 db.commit()
                 synced.append(tbl)
             except Exception as exc:
@@ -301,7 +303,7 @@ def _cache_key(table: str, limit: int = 500, offset: int = 0, func: str = "", rl
     return hashlib.md5(raw.encode()).hexdigest()
 
 
-ACCEL_MAP = {tbl: f"{tbl}_agg" for tbl in ALLOWED_TABLES}
+ACCEL_MAP = {tbl: f"{tbl}_agg" for tbl in BUILTIN_TABLES}
 
 
 def _apply_masks(table: str, rows: list[dict], db: Session) -> list[dict]:

@@ -4,7 +4,7 @@ set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 API_PORT=8300
 WEB_PORT=5300
-DB_URL="${DATABASE_URL:-postgresql://cavan-m4max@127.0.0.1:5432/mingcebi_dev}"
+DB_URL="${DATABASE_URL:-postgresql://cavan-m4max@127.0.0.1:5432/mingzebi_dev}"
 # 前端用已加入 macOS 防火墙白名单的 node（否则局域网访问会被 ALF 静默拦截）
 NODE_BIN="${NODE_BIN:-/usr/local/bin/node}"
 [ -x "$NODE_BIN" ] || NODE_BIN="$(command -v node)"
@@ -23,16 +23,15 @@ status() {
 }
 start() {
   cd "$ROOT/backend"
-  DATABASE_URL="$DB_URL" DEBUG=true nohup ./.venv/bin/python -m uvicorn \
-    app.main:app --port $API_PORT --host 127.0.0.1 > /tmp/mcbi_api.log 2>&1 &
+  DATABASE_URL="$DB_URL" DEBUG=true nohup uv run dev --port $API_PORT --host 127.0.0.1 > /tmp/mzbi_api.log 2>&1 &
   sleep 6
   cd "$ROOT/frontend"
-  nohup "$NODE_BIN" ./node_modules/vite/bin/vite.js > /tmp/mcbi_web.log 2>&1 &
+  nohup "$NODE_BIN" ./node_modules/vite/bin/vite.js > /tmp/mzbi_web.log 2>&1 &
   sleep 8
   status
 }
 stop() {
-  pkill -f "uvicorn app.main:app --port $API_PORT" 2>/dev/null
+  lsof -nP -iTCP:$API_PORT -sTCP:LISTEN -t 2>/dev/null | xargs -r kill 2>/dev/null 2>/dev/null
   pkill -f "vite.*--port $WEB_PORT" 2>/dev/null
   lsof -nP -iTCP:$WEB_PORT -sTCP:LISTEN -t 2>/dev/null | xargs -r kill 2>/dev/null
   echo "已停止"

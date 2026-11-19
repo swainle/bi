@@ -26,7 +26,7 @@ export function useResizableWidth(
   dir: 1 | -1 = 1, onResizeEnd?: () => void,
 ) {
   const [width, setWidth] = useState<number>(() => {
-    const saved = Number(localStorage.getItem(key));
+    const saved = Number(localStorage.getItem(key) ?? localStorage.getItem(key.replace(/^mcbi\./, "mzbi.")));
     return Number.isFinite(saved) && saved >= min && saved <= max ? saved : initial;
   });
   const paneRef = useRef<HTMLDivElement | null>(null);

@@ -1,3 +1,5 @@
+import { formatChinaTime } from "../../utils/time";
+import { useSearchParams } from "react-router-dom";
 /** 数据集 —— 语义层建模（物理表 → 字段 / 指标，参考 Superset 的 Datasets） */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -29,12 +31,16 @@ import { useNavigate } from "react-router-dom";
 import ModelImportDialog from "./ModelImportDialog";
 
 export default function DatasetPanel() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [items, setItems] = useState<Dataset[]>([]);
   const [tables, setTables] = useState<PhysTable[]>([]);
   const [loading, setLoading] = useState(true);
   const [keyword, setKeyword] = useState("");
   const [error, setError] = useState("");
-  const [editing, setEditing] = useState<number | null>(null);
+  const [editing, setEditing] = useState<number | null>(() => {
+    const id = Number(searchParams.get("edit"));
+    return Number.isSafeInteger(id) && id > 0 ? id : null;
+  });
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Dataset | null>(null);
   /** 直连数据集的源库连通性：{数据集 id: {ok, message, checked_at}} */
@@ -156,6 +162,12 @@ export default function DatasetPanel() {
             测试数据集
           </Button>
         </Tooltip>
+        <Button variant="outlined" size="small"
+          onClick={() => nav("/bi/projects")}
+          sx={{ textTransform: "none", fontSize: 12.5, borderRadius: 2, px: 1.75, height: 36,
+            borderColor: "#D8E2F5", color: "#475569" }}>
+          进入项目
+        </Button>
       </Box>
 
       {loading ? (
@@ -210,7 +222,7 @@ export default function DatasetPanel() {
                         const color = !st ? "#CBD5E1" : st.ok ? "#22C55E" : "#EF4444";
                         const ring = !st ? "transparent" : st.ok ? "rgba(34,197,94,0.16)" : "rgba(239,68,68,0.16)";
                         const at = st?.checked_at
-                          ? new Date(st.checked_at * 1000).toLocaleTimeString("zh-CN", { hour12: false })
+                          ? formatChinaTime(st.checked_at * 1000).slice(11)
                           : "";
                         return (
                           <Tooltip
@@ -240,7 +252,7 @@ export default function DatasetPanel() {
                   <TableCell sx={{ ...td, textAlign: "right", color: "#475569" }}>{d.field_count}</TableCell>
                   <TableCell sx={{ ...td, textAlign: "right", color: "#475569" }}>{d.metric_count}</TableCell>
                   <TableCell sx={{ ...td, color: "text.secondary" }}>
-                    {d.updated_at?.slice(0, 16) || ""}
+                    {formatChinaTime(d.updated_at).slice(0, 16) || ""}
                   </TableCell>
                   <TableCell sx={{ ...td, pr: 2, textAlign: "right" }} onClick={(e) => e.stopPropagation()}>
                     <Tooltip title="只读预览这个数据集的数据">
@@ -278,7 +290,12 @@ export default function DatasetPanel() {
 
       {editing !== null && (
         <DatasetEditor datasetId={editing}
-          onClose={() => setEditing(null)}
+          onClose={() => {
+            setEditing(null);
+            const next = new URLSearchParams(searchParams);
+            next.delete("edit");
+            setSearchParams(next, { replace: true });
+          }}
           onChanged={load}
           onRenamed={(id, saved) => setItems((list) => list.map((d) => (d.id === id
             ? { ...d, name: saved.name, updated_at: saved.updated_at || d.updated_at }

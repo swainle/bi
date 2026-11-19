@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.timezone import china_now, time_text
+
 from fastapi import Depends, HTTPException, Body
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -32,8 +34,8 @@ def list_dashboards(
     ).fetchall()
     return {
         "dashboards": [
-            {"id": r[0], "name": r[1], "panels": r[2], "table_map": r[3], "created_at": str(r[4]),
-             "updated_at": str(r[5]), "owner_id": r[6]}
+            {"id": r[0], "name": r[1], "panels": r[2], "table_map": r[3], "created_at": time_text(r[4]),
+             "updated_at": time_text(r[5]), "owner_id": r[6]}
             for r in rows
         ]
     }

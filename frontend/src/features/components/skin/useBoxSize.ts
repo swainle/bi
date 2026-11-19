@@ -38,4 +38,3 @@ export function useBoxSize<T extends HTMLElement = HTMLDivElement>() {
 
   return [ref, size] as const;
 }
-

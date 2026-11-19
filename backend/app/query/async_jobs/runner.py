@@ -24,7 +24,6 @@ from app.query.async_jobs import queue as jobqueue
 from app.query.async_jobs.store import STORE, Job
 from app.query.contract import QueryObject
 from app.query.executor import run
-from app.query.whitelist import ALLOWED_TABLES
 
 
 def _env_int(name: str, default: int) -> int:
@@ -55,7 +54,6 @@ def execute_job(job_id: str, query: QueryObject, user_id: int, user_role: str) -
             db,
             query,
             _User(user_id, user_role),
-            allowed_tables=ALLOWED_TABLES,
             # 任务 id 就是查询 id：取消任务时能直接找到正在执行的那条 SQL
             query_id=job_id,
         )

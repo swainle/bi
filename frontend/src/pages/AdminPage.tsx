@@ -13,6 +13,7 @@ import {
 } from "@mui/icons-material";
 import { useAuth } from "../features/auth/useAuth";
 import BiSideNav, { type SideNavItem } from "../features/shell/BiSideNav";
+import TopBar from "../features/shell/TopBar";
 import OverviewPanel from "../features/admin/OverviewPanel";
 import UsersPanel from "../features/admin/UsersPanel";
 import RegistrationsPanel from "../features/admin/RegistrationsPanel";
@@ -106,15 +107,20 @@ export default function AdminPage() {
   // 登录态还在加载时先给中性占位，避免闪一下「没有权限」
   if (!user) {
     return (
-      <Box sx={{ height: "100%", display: "grid", placeItems: "center", bgcolor: "#F5F5F7" }}>
-        <CircularProgress size={22} />
+      <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
+        <TopBar />
+        <Box sx={{ flex: 1, display: "grid", placeItems: "center", bgcolor: "#F5F5F7" }}>
+          <CircularProgress size={22} />
+        </Box>
       </Box>
     );
   }
 
   if (allowed.length === 0) {
     return (
-      <Box sx={{ height: "100%", display: "grid", placeItems: "center", bgcolor: "#F5F5F7" }}>
+      <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
+        <TopBar />
+        <Box sx={{ flex: 1, display: "grid", placeItems: "center", bgcolor: "#F5F5F7" }}>
         <Box sx={{ textAlign: "center", px: 3 }}>
           <AdminPanelSettings sx={{ fontSize: 46, color: "#C7C9D9" }} />
           <Typography sx={{ mt: 1.5, fontSize: 16, fontWeight: 600, color: "#1D1D1F" }}>
@@ -129,6 +135,7 @@ export default function AdminPage() {
           >
             返回看板
           </Button>
+        </Box>
         </Box>
       </Box>
     );
@@ -177,7 +184,9 @@ export default function AdminPage() {
         }
       />
 
-      <Box sx={{ flex: 1, overflow: "auto", bgcolor: "#F5F5F7" }}>
+      <Box sx={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column" }}>
+        <TopBar hideLogo />
+        <Box sx={{ flex: 1, minHeight: 0, overflow: "auto", bgcolor: "#F5F5F7" }}>
         <Box sx={{ p: 3, minHeight: "100%", display: "flex", flexDirection: "column" }}>
           {/* 头标卡：与「我的看板」同一套渐变与圆角 */}
           <Box sx={{
@@ -244,6 +253,7 @@ export default function AdminPage() {
             {activeKey === "mcp" && <McpPanel />}
           </Box>
         </Box>
+      </Box>
       </Box>
     </Box>
   );

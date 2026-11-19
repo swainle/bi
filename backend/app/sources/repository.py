@@ -3,12 +3,14 @@
 链路：数据源（连接 / 文件） → 选表同步成本地物理表 → 数据集 → 图表。
 
 为什么同步落地而不是直连查询：
-    图表查询走本地 PG 的查询内核（白名单 / 行级权限 / 脱敏 / 类型转换），
+    图表查询走本地 PG 的查询内核（系统表保护 / 行级权限 / 脱敏 / 类型转换），
     直连外部库要重做一套安全与方言适配，风险远大于收益。
     同步是显式的（记录 row_count / synced_at），不假装直连。
 """
 
 from __future__ import annotations
+
+from app.timezone import as_china, time_text, utc_now
 
 import hashlib
 import io
@@ -17,13 +19,14 @@ import os
 import re
 import threading
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 from urllib.parse import quote_plus
 
 import pandas as pd
-from sqlalchemy import MetaData, Numeric, Table, create_engine, inspect, select, text
+from sqlalchemy import Column, MetaData, Numeric, Table, create_engine, inspect, select, text
+from sqlalchemy.schema import SetColumnComment, SetTableComment
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
@@ -121,12 +124,11 @@ def freshness_of(synced_at: Any, now: datetime | None = None) -> dict:
         return {"level": "unknown", "age_hours": None}
     if isinstance(synced_at, str):
         try:
-            synced_at = datetime.fromisoformat(synced_at.replace("Z", ""))
+            synced_at = datetime.fromisoformat(synced_at.replace("Z", "+00:00"))
         except ValueError:
             return {"level": "unknown", "age_hours": None}
-    current = now or datetime.now()
-    if getattr(synced_at, "tzinfo", None) is not None:
-        synced_at = synced_at.replace(tzinfo=None)
+    current = as_china(now or utc_now())
+    synced_at = as_china(synced_at)
     hours = max(0.0, (current - synced_at).total_seconds() / 3600)
     if hours < FRESH_HOURS:
         level = "fresh"
@@ -162,11 +164,11 @@ def next_sync_at(synced_at: Any, minutes: Any) -> datetime | None:
         return None
     if isinstance(synced_at, str):
         try:
-            synced_at = datetime.fromisoformat(synced_at.replace("Z", ""))
+            synced_at = datetime.fromisoformat(synced_at.replace("Z", "+00:00"))
         except ValueError:
             return None
     if getattr(synced_at, "tzinfo", None) is not None:
-        synced_at = synced_at.replace(tzinfo=None)
+        synced_at = synced_at.astimezone(timezone.utc).replace(tzinfo=None)
     try:
         return synced_at + timedelta(minutes=int(minutes))
     except (TypeError, ValueError):
@@ -178,7 +180,8 @@ def _remote_columns(eng: Engine, table: str) -> list[dict]:
     schema, name = table.rsplit(".", 1) if "." in table else (None, table)
     insp = inspect(eng)
     cols = insp.get_columns(name, schema=schema)
-    return [{"name": str(c["name"]), "type": str(c.get("type") or "")} for c in cols]
+    return [{"name": str(c["name"]), "type": str(c.get("type") or ""),
+             "comment": str(c.get("comment") or "")} for c in cols]
 
 
 # MySQL 家族：SQLAlchemy 的 `mysql://` 默认驱动是 MySQLdb（须编译安装），
@@ -410,7 +413,7 @@ def list_remote_tables(src: dict) -> list[dict]:
         raise SourceError(f"读取源库表清单失败：{str(exc)[:180]}") from exc
 
 
-def _read_remote(eng: Engine, table: str) -> pd.DataFrame:
+def _read_remote(eng: Engine, table: str, on_progress=None) -> pd.DataFrame:
     """读源表/视图；table 可写成 schema.name（如 dm.v_pdd_bangdan）."""
     schema, name = table.rsplit(".", 1) if "." in table else (None, table)
     meta = MetaData()
@@ -418,11 +421,17 @@ def _read_remote(eng: Engine, table: str) -> pd.DataFrame:
         tbl = Table(name, meta, schema=schema, autoload_with=eng)
     except Exception as exc:
         raise SourceError(f"源表不存在或无权访问：{table}") from exc
-    stmt = select(tbl).limit(MAX_ROWS)
+    stmt = select(tbl).limit(MAX_ROWS + 1)
     with eng.connect() as conn:
         result = conn.execute(stmt)
         keys = list(result.keys())
-        rows = [dict(r._mapping) for r in result.fetchall()]
+        rows = []
+        while chunk := result.fetchmany(1000):
+            rows.extend(dict(r._mapping) for r in chunk)
+            if len(rows) > MAX_ROWS:
+                raise SourceError(f"源表超过 {MAX_ROWS:,} 行接入上限，未写入本地表，请缩小源表或使用直连数据集")
+            if on_progress:
+                on_progress("reading", len(rows))
     return pd.DataFrame(rows, columns=keys)
 
 
@@ -454,7 +463,7 @@ def _as_date(value: Any) -> Any:
     return value.date() if hasattr(value, "date") and not isinstance(value, type) else value
 
 
-def _write_local(df: pd.DataFrame, table: str) -> dict:
+def _write_local(df: pd.DataFrame, table: str, on_progress=None) -> dict:
     """写本地物理表（图表查询读的就是它）.
 
     源里有 `dt` 列且本地表结构一致 → **按 dt 幂等追加**：只删掉这批 dt、再插入，
@@ -466,24 +475,32 @@ def _write_local(df: pd.DataFrame, table: str) -> dict:
 
     existing = _local_columns(table)
     appendable = bool(existing) and "dt" in df.columns and existing == set(df.columns)
+    written = 0
+
+    def write_chunk(pd_table, conn, keys, data_iter):
+        nonlocal written
+        values = [dict(zip(keys, row)) for row in data_iter]
+        conn.execute(pd_table.table.insert(), values)
+        written += len(values)
+        on_progress("writing", written)
+        return len(values)
 
     if appendable:
         dts = sorted({_as_date(v) for v in df["dt"].dropna()})
         dts = [d for d in dts if d is not None]
-        if dts:
-            with local_engine.begin() as conn:
+        with local_engine.begin() as conn:
+            if dts:
                 conn.execute(
                     text(f"DELETE FROM {_ident(table)} WHERE dt = ANY(:dts)"),
                     {"dts": dts},
                 )
-        df.to_sql(table, local_engine, index=False, if_exists="append",
-                  method="multi", chunksize=500, dtype=_decimal_dtypes(df) or None)
+            df.to_sql(table, conn, index=False, if_exists="append",
+                      method=write_chunk if on_progress else "multi", chunksize=500, dtype=_decimal_dtypes(df) or None)
         return {"mode": "append", "dt": [str(d) for d in dts]}
 
     with local_engine.begin() as conn:
-        conn.execute(text(f"DROP TABLE IF EXISTS {_ident(table)}"))
-    df.to_sql(table, local_engine, index=False, if_exists="replace",
-              method="multi", chunksize=500, dtype=_decimal_dtypes(df) or None)
+        df.to_sql(table, conn, index=False, if_exists="replace",
+                  method=write_chunk if on_progress else "multi", chunksize=500, dtype=_decimal_dtypes(df) or None)
     return {"mode": "replace", "dt": []}
 
 
@@ -546,19 +563,19 @@ def list_source_tables(db: Session) -> list[dict]:
         out.append({
             "id": m["id"], "source_id": m["source_id"], "source_table": m["source_table"],
             "local_table": m["local_table"], "row_count": m["row_count"], "kind": m["kind"],
-            "owner_id": m["owner_id"], "synced_at": str(m["synced_at"] or ""),
+            "owner_id": m["owner_id"], "synced_at": time_text(m["synced_at"] or ""),
             "dt_min": str(m["dt_min"] or ""), "dt_max": str(m["dt_max"] or ""),
             "dt_count": m.get("dt_count", 0) or 0,
             "source_name": m["source_name"] or "", "ds_type": m["ds_type"] or "",
             "dataset_count": m["dataset_count"],
             # 结构 / 新鲜度（P4）：字段数、指纹、上次检查时间、漂移明细
             "column_count": len(snapshot), "schema_hash": m.get("schema_hash") or "",
-            "checked_at": str(m.get("checked_at") or ""),
+            "checked_at": time_text(m.get("checked_at") or ""),
             "drift": m.get("drift") or None,
             "freshness": fresh["level"], "age_hours": fresh["age_hours"],
             # 自动同步（P4 第三批）
             "sync_interval_minutes": interval,
-            "next_sync_at": str(nxt or ""),
+            "next_sync_at": time_text(nxt or ""),
             "last_sync_status": m.get("last_sync_status") or "",
             "last_sync_error": m.get("last_sync_error") or "",
         })
@@ -592,21 +609,24 @@ def run_refresh_sql(src_row: dict) -> dict:
     return {"skipped": False, "result": str(value)}
 
 
-def sync_tables(db: Session, src_row: dict, tables: list[str], owner_id: int | None) -> list[dict]:
+def sync_tables(db: Session, src_row: dict, tables: list[str], owner_id: int | None,
+                on_progress=None, refresh: bool = True) -> dict:
     if not tables:
         raise SourceError("请至少选择一张表")
-    refreshed = run_refresh_sql(src_row)
+    refreshed = run_refresh_sql(src_row) if refresh else {"skipped": True}
     eng = engine_for(src_row)
     created: list[dict] = []
     for table in tables:
-        df = _read_remote(eng, table)
+        df = _read_remote(eng, table, on_progress)
         # 结构快照取源库真实定义（类型来自 inspector，比 pandas 推断准）
         try:
             columns = _remote_columns(eng, table)
         except Exception:
             columns = [{"name": str(c), "type": ""} for c in df.columns]
         local = _local_name("bi_src", src_row["id"], table)
-        write_info = _write_local(df, local)
+        if on_progress:
+            on_progress("writing", 0)
+        write_info = _write_local(df, local, on_progress)
         stats = _sync_stats(local)
         _register(db, source_id=src_row["id"], source_table=table, local_table=local,
                   stats=stats, kind="db", owner_id=owner_id, columns=columns)
@@ -733,6 +753,44 @@ def check_source_schema(db: Session, src_row: dict) -> dict:
     }
 
 
+def sync_table_metadata(db: Session, table_id: int) -> dict:
+    """只将源表与匹配字段的注释写入本地表，不重建表、不读写业务行。"""
+    row = db.execute(text("SELECT source_id, source_table, local_table, kind "
+                          "FROM bi_source_table WHERE id = :id"), {"id": table_id}).first()
+    if row is None:
+        raise SourceError("已接入表不存在")
+    source_id, source_table, local_table, kind = row
+    if kind != "db" or not source_id:
+        raise SourceError("文件导入的表没有可同步的源库注释，请重新上传文件")
+    source = get_source(db, int(source_id))
+    if source is None:
+        raise SourceError("数据源已不存在")
+    remote_engine = engine_for(source)
+    schema, name = source_table.rsplit(".", 1) if "." in source_table else (None, source_table)
+    try:
+        columns = _remote_columns(remote_engine, source_table)
+        comment = inspect(remote_engine).get_table_comment(name, schema=schema).get("text")
+    except Exception as exc:
+        raise SourceError("读取源库表和字段注释失败，未修改本地注释") from exc
+    with local_engine.begin() as conn:
+        local_columns = inspect(conn).get_columns(local_table, schema="public")
+        table = Table(local_table, MetaData(), *(Column(col["name"]) for col in local_columns),
+                      schema="public", comment=comment or None)
+        conn.execute(SetTableComment(table))
+        synced = 0
+        missing = []
+        for column in columns:
+            if column["name"] not in table.c:
+                missing.append(column["name"])
+                continue
+            local_column = table.c[column["name"]]
+            local_column.comment = column.get("comment") or None
+            conn.execute(SetColumnComment(local_column))
+            synced += 1
+    return {"table_id": table_id, "local_table": local_table,
+            "columns_synced": synced, "missing_columns": missing}
+
+
 def resync_table(db: Session, table_id: int, owner_id: int | None) -> dict:
     """重新同步单张已接入表（重拉数据 + 刷新结构快照 + 清空漂移）."""
     row = db.execute(
@@ -810,7 +868,7 @@ def _public(row) -> dict:
         "host": m["host"] or "", "port": m["port"], "db_name": m["db_name"] or "",
         "username": m["username"] or "", "uri": bool(m["uri"]),
         "dept_id": m.get("dept_id"),
-        "created_at": str(m["created_at"] or ""), "updated_at": str(m["updated_at"] or ""),
+        "created_at": time_text(m["created_at"] or ""), "updated_at": time_text(m["updated_at"] or ""),
     }
 
 
@@ -968,6 +1026,12 @@ def update_source(db: Session, source_id: int, payload: dict) -> dict:
 
 
 def delete_source(db: Session, source_id: int) -> dict:
+    db.execute(select(text("id")).select_from(text("bi_source"))
+               .where(text("id = :id")).with_for_update(), {"id": source_id})
+    active = db.execute(text("SELECT 1 FROM bi_source_import WHERE source_id = :id "
+                             "AND state IN ('queued','reading','writing') LIMIT 1"), {"id": source_id}).first()
+    if active:
+        raise SourceError("该数据源还有等待或执行中的导入任务，请完成后再删除")
     # 直连数据集直接绑 source_id（查的是源库，不经过已接入表），必须单独拦
     live_used = db.execute(
         text(
@@ -1009,7 +1073,7 @@ __all__ = [
     "test_source", "test_payload", "list_remote_tables", "sync_tables", "import_file",
     "list_sources", "get_source", "create_source", "update_source", "delete_source",
     "list_source_tables", "drop_source_table", "build_url",
-    "check_source_schema", "resync_table", "diff_columns", "snapshot_hash", "freshness_of",
+    "check_source_schema", "resync_table", "sync_table_metadata", "diff_columns", "snapshot_hash", "freshness_of",
     "normalize_interval", "next_sync_at", "set_sync_interval", "record_sync_result",
     "due_tables", "SYNC_INTERVALS",
 ]

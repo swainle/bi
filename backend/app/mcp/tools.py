@@ -36,7 +36,7 @@ from app.dashboards.router import _blank_doc, _can_read
 from app.middleware.audit import log_audit
 from app.query.executor import run as execute_query
 from app.query.live import run_live
-from app.query.whitelist import ALLOWED_TABLES
+from app.query.table_catalog import BUILTIN_TABLES, is_queryable
 from app.semantic import repository as sem_repo
 from app.semantic.compiler import compile_query
 from app.security.errors import RlsBlockedError, SecurityError
@@ -117,7 +117,7 @@ def _run_dataset_query(db: Session, dataset, payload: dict, user: Any) -> dict:
         if (dataset.conn_mode or "extract") == "live":
             result = run_live(db, query, user, _live_source(db, dataset), dataset_id=dataset.id)
         else:
-            result = execute_query(db, query, user, allowed_tables=ALLOWED_TABLES, dataset_id=dataset.id)
+            result = execute_query(db, query, user, dataset_id=dataset.id)
     except RlsBlockedError as exc:
         raise McpToolError(f"数据权限校验失败：{exc.message}") from exc
     except SecurityError as exc:

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.timezone import time_text, utc_now
+
 from fastapi import Depends, HTTPException, Query
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -99,7 +101,7 @@ def list_users(
             "position_name": POSITION_LABELS.get(r[9] or "member", "员工"),
             "is_active": bool(r[4]),
             "department_id": r[5],
-            "created_at": str(r[6] or ""),
+            "created_at": time_text(r[6] or ""),
             "approval_status": r[7] or "approved",
         }
         for r in rows

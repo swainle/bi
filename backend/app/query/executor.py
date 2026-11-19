@@ -172,7 +172,6 @@ def run(
     query: QueryObject,
     user: Any,
     *,
-    allowed_tables: set[str] | None = None,
     apply_row_level: bool = True,
     max_rows: int = 5000,
     query_id: str | None = None,
@@ -183,8 +182,14 @@ def run(
         TableNotAllowedError 越权表
         ValueError       契约不合法 / 并发超限 / 语句超时
     """
+    if not query.subquery:
+        from app.query.table_catalog import assert_queryable
+        assert_queryable(query.table)
+    if query.subquery and apply_row_level:
+        from app.query.sql_lab import prepare
+        query = query.model_copy(update={"subquery": prepare(db, query.subquery, user)})
     rls_conditions: list[str] = []
-    if apply_row_level and allowed_tables is not None:
+    if apply_row_level and not query.subquery:
         decision = rls_decide(db, query.table, user)
         rls_conditions = list(decision.conditions)
 
@@ -200,9 +205,11 @@ def run(
         rls_backstop.preflight(db, int(dataset_id))
 
     types = _column_types(db, query.table)
+    from app.semantic.formulas import check_formula_masks
+
+    check_formula_masks(db, query, dataset_id)
     built = build(
         query,
-        allowed_tables=allowed_tables,
         rls_conditions=rls_conditions,
         column_types=types,
     )
@@ -250,6 +257,9 @@ def run(
                    sql=built.sql, source="internal")
 
     rows = [dict(r._mapping) for r in result][:max_rows]
+    if query.subquery:
+        from app.query.sql_lab import mask_rows
+        rows = mask_rows(db, query.subquery, rows)
     rows = apply_masks(query.table, rows, db)
     # 数据集级脱敏（同一列以数据集规则为准，覆盖表级规则）
     rows = dataset_rules.apply_dataset_masks(db, dataset_id, rows)

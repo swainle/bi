@@ -29,4 +29,3 @@ export function Slot({ label, children }: { label: string; children: React.React
     </Box>
   );
 }
-

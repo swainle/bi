@@ -14,7 +14,6 @@ from __future__ import annotations
 from app.query.builder import build, quote
 from app.query.contract import QueryObject
 
-ALLOWED = {"bi_pdd_profit", "dm.v_bangdan"}
 
 
 def _qo(**kwargs) -> QueryObject:
@@ -59,7 +58,7 @@ def test_mysql_build_uses_backticks_like_and_no_nulls_last() -> None:
             keyword={"columns": ["store"], "value": "旗舰"},
             order_by=[{"column": "total", "desc": True}],
         ),
-        allowed_tables=ALLOWED,
+
     )
     sql = built.sql
     # FROM 的 schema 表名逐段反引号
@@ -87,7 +86,7 @@ def test_mysql_time_grain_uses_date_format() -> None:
             metrics=[{"column": "gmv", "agg": "SUM", "alias": "g"}],
             order_by=[{"column": "dt", "desc": False}],
         ),
-        allowed_tables=ALLOWED,
+
     )
     assert "DATE_FORMAT(`dt`, '%Y-%m-01')" in built.sql
     assert "GROUP BY DATE_FORMAT(`dt`, '%Y-%m-01')" in built.sql
@@ -105,7 +104,7 @@ def test_mssql_build_uses_brackets_and_no_nulls_last() -> None:
             keyword={"columns": ["store", "person"], "value": "旗舰"},
             order_by=[{"column": "total", "desc": True}],
         ),
-        allowed_tables=ALLOWED,
+
     )
     assert "SELECT [store], SUM([revenue]) AS [total]" in built.sql
     assert "[store] LIKE :kw0" in built.sql
@@ -123,7 +122,7 @@ def test_postgres_keeps_ilike_and_nulls_last() -> None:
             keyword={"columns": ["store"], "value": "旗舰"},
             order_by=[{"column": "total", "desc": True}],
         ),
-        allowed_tables=ALLOWED,
+
     )
     assert '"store" ILIKE :kw0' in built.sql
     assert 'ORDER BY "total" DESC NULLS LAST' in built.sql
@@ -139,7 +138,7 @@ def test_clickhouse_uses_double_quotes_and_ilike() -> None:
             keyword={"columns": ["store"], "value": "旗舰"},
             order_by=[{"column": "total", "desc": False}],
         ),
-        allowed_tables=ALLOWED,
+
     )
     assert 'SELECT "store", SUM("revenue") AS "total"' in built.sql
     assert '"store" ILIKE :kw0' in built.sql
@@ -155,7 +154,7 @@ def test_rls_and_filters_bound_on_mysql() -> None:
             metrics=[{"column": "revenue", "agg": "SUM", "alias": "t"}],
             filters=[{"column": "person", "op": "IN", "value": ["a", "b"]}],
         ),
-        allowed_tables=ALLOWED,
+
         rls_conditions=["store = 'A店'"],
     )
     assert "WHERE `person` IN (:f0_0, :f0_1)" in built.sql

@@ -16,6 +16,8 @@
 
 from __future__ import annotations
 
+import re
+from decimal import Decimal
 import datetime as _dt
 from typing import Any
 
@@ -32,7 +34,6 @@ from app.components.compute import (
 from app.components.spec import ComponentSpec, ComponentSpecError
 from app.query.executor import run as execute_query
 from app.query.live import LiveQueryError, run_live
-from app.query.whitelist import ALLOWED_TABLES
 from app.semantic.compiler import compile_query
 from app.security.errors import SecurityError
 from app.semantic.repository import get_dataset, list_fields
@@ -57,14 +58,15 @@ def _execute_dataset(db: Session, dataset, query, user):
             if message.startswith("数据源"):
                 raise ComponentSpecError(message) from exc
             raise ComponentSpecError(f"{dataset.name}：{message}") from exc
-    return execute_query(db, query, user, allowed_tables=ALLOWED_TABLES, dataset_id=dataset.id)
+    return execute_query(db, query, user, dataset_id=dataset.id)
 
 
 def _metric_items(spec: ComponentSpec) -> list[dict]:
     """binding.metric + binding.metrics → [{name, agg, fmt}]（去重、保序）."""
     out: list[dict] = []
     if spec.binding.metric:
-        out.append({"name": spec.binding.metric, "agg": spec.binding.agg, "fmt": spec.compute.format})
+        out.append({"name": spec.binding.metric, "agg": spec.binding.agg, "fmt": spec.compute.format,
+                    **({"expression": spec.binding.agg_expression} if spec.binding.agg == "CUSTOM" else {})})
     for item in spec.binding.metrics or []:
         if isinstance(item, dict):
             name = item.get("name")
@@ -219,7 +221,8 @@ def _request_for(spec: ComponentSpec, kind: str) -> dict:
     return {
         "columns": raw_columns,
         "dimensions": dims,
-        "metrics": [{"name": m["name"], "agg": m["agg"]} for m in metrics],
+        "metrics": [{"name": m["name"], "agg": m["agg"],
+                     **({"expression": m["expression"]} if "expression" in m else {})} for m in metrics],
         "filters": [],
         "order_by": order_by,
         "limit": limit,
@@ -724,7 +727,16 @@ def _resolve_bound(
 
 
 def _matrix(cells: list[dict]) -> dict:
-    xs = sorted({str(c["x"]) for c in cells})
+    def x_order(label: str) -> tuple:
+        value = label.strip()
+        if value in ("", "(空)"):
+            return (2, 0, 0, label)
+        interval = re.fullmatch(r"([+-]?\d+(?:\.\d+)?)\s*-\s*([+-]?\d+(?:\.\d+)?)", value)
+        if interval:
+            return (0, Decimal(interval[1]), Decimal(interval[2]), label)
+        return (1, 0, 0, label)
+
+    xs = sorted({str(c["x"]) for c in cells}, key=x_order)
     ys = sorted({str(c["y"]) for c in cells})
     xi = {v: i for i, v in enumerate(xs)}
     yi = {v: i for i, v in enumerate(ys)}

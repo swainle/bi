@@ -3,7 +3,7 @@
 三条硬规则：
     1. 标识符只允许 [A-Za-z_][A-Za-z0-9_]*，一律加双引号
     2. 值一律走 :param 绑定，绝不字符串拼接
-    3. 表必须在白名单内；行级条件 AND 进 WHERE（在 GROUP BY 之前）
+    3. 系统内部表不开放；行级条件 AND 进 WHERE（在 GROUP BY 之前）
 """
 
 from __future__ import annotations
@@ -13,8 +13,6 @@ from dataclasses import dataclass, field
 from app.query.column_types import needs_cast
 from app.query.contract import FilterSpec, QueryObject
 from app.query.grain import grain_expression, normalize_dialect
-from app.query.whitelist import SOURCE_TABLE_PREFIXES
-from app.security.errors import TableNotAllowedError
 
 
 @dataclass
@@ -104,7 +102,6 @@ def _compile_filters(
 def build(
     query: QueryObject,
     *,
-    allowed_tables: set[str] | None = None,
     rls_conditions: list[str] | None = None,
     column_types: dict[str, str] | None = None,
 ) -> BuiltQuery:
@@ -113,19 +110,33 @@ def build(
     family = normalize_dialect(dialect)
     table = query.table
     if query.subquery:
-        # 虚拟数据集：SQL 在保存时已过只读网关 + 表白名单，这里不再重复校验
+        # 虚拟数据集：SQL 在执行器已过只读网关和源表行级权限校验，这里不再重复校验
         from_clause = f"({query.subquery}) AS {quote('__ds', dialect)}"
     else:
-        if allowed_tables is not None and table not in allowed_tables \
-                and not table.startswith(SOURCE_TABLE_PREFIXES):
-            # 数据源同步表 / 文件导入表由接入层创建，前缀即白名单
-            raise TableNotAllowedError([table])
         from_clause = quote(table, dialect)
 
     params: dict = {}
     has_metric = bool(query.metrics)
 
-    types = column_types or {}
+    types = dict(column_types or {})
+    if query.calculated_columns:
+        import sqlglot
+        from app.semantic.formulas import validate_formula
+        from app.query.contract import OrderSpec
+
+        calculated = []
+        for name, expression in query.calculated_columns.items():
+            OrderSpec(column=name)
+            normalized = validate_formula(expression)
+            translated = sqlglot.parse_one(normalized, read="postgres").sql(dialect=family)
+            calculated.append(f"({translated}) AS {quote(name, dialect)}")
+            types.pop(name, None)
+        # 行级权限先约束源行，再产生计算列，避免公式别名影响权限条件。
+        inner = f"SELECT *, {', '.join(calculated)} FROM {from_clause}"
+        if rls_conditions:
+            inner += " WHERE " + " AND ".join(f"({c})" for c in rls_conditions)
+        from_clause = f"({inner}) AS {quote('__computed', dialect)}"
+        rls_conditions = []
     select_parts: list[str] = []
     for dim in query.dimensions:
         alias = quote(dim.output_name, dialect)
@@ -154,8 +165,17 @@ def build(
                     f"改用 COUNT / COUNT_DISTINCT，或换成数值列"
                 )
         if metric.expression:
-            # 语义层定义的表达式（管理员维护，已在建模时校验）
-            select_parts.append(f'{metric.expression} AS {quote(metric.output_name, dialect)}')
+            expression = metric.expression
+            if metric.custom_expression:
+                import sqlglot
+                from sqlglot import exp
+
+                node = sqlglot.parse_one(expression, read="postgres")
+                family = normalize_dialect(dialect)
+                if node.find(exp.Median) and family != "postgres":
+                    raise ValueError("当前数据源暂不支持 MEDIAN 自定义汇总；请使用本地 PostgreSQL 数据集")
+                expression = node.sql(dialect=family, unsupported_level=sqlglot.ErrorLevel.RAISE)
+            select_parts.append(f'{expression} AS {quote(metric.output_name, dialect)}')
         else:
             col = quote(metric.require_column(), dialect)
             if metric.agg == "COUNT_DISTINCT":

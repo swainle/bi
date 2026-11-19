@@ -43,7 +43,7 @@ def test_available_follows_driver_probe() -> None:
     assert by_id["kingbase"]["available"] is True
     assert by_id["mysql"]["available"] is False
     assert by_id["mysql"]["reason"] == "未安装驱动：PyMySQL"
-    assert by_id["mysql"]["install"] == "pip install PyMySQL"
+    assert by_id["mysql"]["install"] == "uv add PyMySQL"
 
 
 def test_available_sorted_first() -> None:
@@ -60,7 +60,7 @@ def test_all_missing_still_returns_every_type() -> None:
     for t in types:
         assert t["available"] is False
         assert t["reason"].startswith("未安装驱动：")
-        assert t["install"].startswith("pip install ")
+        assert t["install"].startswith("uv add ")
 
 
 def test_probe_error_is_treated_as_missing() -> None:

@@ -59,7 +59,7 @@ def get_current_user(
 
             set_audit_user(user.id)
             return user
-        # 缓存版本过期（其他设备登录了）→ 删除缓存，回退 DB 查询
+        # 缓存版本过期→ 删除缓存，回退 DB 查询
         cache_delete(cache_key)
 
     user = db.query(User).filter(User.id == user_id).first()
@@ -70,7 +70,7 @@ def get_current_user(
     if (user.token_version or 0) != token_ver:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="账号已在其他设备登录，请重新登录",
+            detail="登录凭证已失效，请重新登录",
             headers={"WWW-Authenticate": "Bearer"},
         )
 

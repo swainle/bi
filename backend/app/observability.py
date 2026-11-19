@@ -62,7 +62,7 @@ def init_sentry(
             integrations=[FastApiIntegration(), SqlalchemyIntegration()],
         )
     except ImportError:
-        print("[sentry] 未安装 sentry-sdk，跳过（pip install 'sentry-sdk[fastapi]'）")
+        print("[sentry] 未安装 sentry-sdk，跳过（uv add 'sentry-sdk[fastapi]'）")
         return False
     except Exception as exc:  # DSN 不合法等：不能连带应用起不来
         print(f"[sentry] 初始化失败（DSN 可能写错）：{str(exc)[:120]}")
