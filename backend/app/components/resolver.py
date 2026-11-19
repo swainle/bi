@@ -16,6 +16,8 @@
 
 from __future__ import annotations
 
+import re
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -635,7 +637,16 @@ def _resolve_bound(
 
 
 def _matrix(cells: list[dict]) -> dict:
-    xs = sorted({str(c["x"]) for c in cells})
+    def x_order(label: str) -> tuple:
+        value = label.strip()
+        if value in ("", "(空)"):
+            return (2, 0, 0, label)
+        interval = re.fullmatch(r"([+-]?\d+(?:\.\d+)?)\s*-\s*([+-]?\d+(?:\.\d+)?)", value)
+        if interval:
+            return (0, Decimal(interval[1]), Decimal(interval[2]), label)
+        return (1, 0, 0, label)
+
+    xs = sorted({str(c["x"]) for c in cells}, key=x_order)
     ys = sorted({str(c["y"]) for c in cells})
     xi = {v: i for i, v in enumerate(xs)}
     yi = {v: i for i, v in enumerate(ys)}
