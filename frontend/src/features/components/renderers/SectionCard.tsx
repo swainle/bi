@@ -14,25 +14,15 @@ interface Props {
   compact?: boolean;
 }
 
-const ICON_BG: Record<string, string> = {
-  grid: "linear-gradient(135deg, #6366F1, #818CF8)",
-  chart: "linear-gradient(135deg, #3B82F6, #60A5FA)",
-  pie: "linear-gradient(135deg, #14B8A6, #2DD4BF)",
-  table: "linear-gradient(135deg, #8B5CF6, #A78BFA)",
-  cloud: "linear-gradient(135deg, #F43F5E, #FB7185)",
-  tag: "linear-gradient(135deg, #10B981, #34D399)",
-  bulb: "linear-gradient(135deg, #F59E0B, #FBBF24)",
-};
-
 const NUMERAL: Record<string, string> = { "一": "1", "二": "2", "三": "3", "四": "4", "五": "5", "六": "6" };
 
 export default function SectionCard({ payload, ui, compact }: Props) {
   const token = accentOf(ui.accent);
-  const gradient = ICON_BG[payload.icon || ""] || `linear-gradient(135deg, ${token.main}, ${token.gradient[0]})`;
+  const gradient = `linear-gradient(135deg, ${token.main}, ${token.gradient[0]})`;
 
   return (
     <Box sx={{
-      height: "100%", display: "flex", alignItems: "center", gap: 1.25,
+      height: "100%", display: "flex", alignItems: "center", justifyContent: "flex-start", gap: 1.25,
       px: compact ? 0.5 : 0.25, minWidth: 0,
       borderBottom: compact ? "none" : "1px solid #EEF3FB",
     }}>

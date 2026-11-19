@@ -8,8 +8,9 @@ import { forwardRef, useImperativeHandle, useLayoutEffect, useMemo, useRef } fro
 import type { RefObject } from "react";
 import { Box, Typography } from "@mui/material";
 import BoardCard from "./BoardCard";
+import CanvasResizeHandles from "./CanvasResizeHandles";
 import type { CanvasItem } from "../boardTypes";
-import type { FilterFieldSpec, Guide as DocGuide, RenderPayload } from "../types";
+import type { CanvasSize, FilterFieldSpec, Guide as DocGuide, RenderPayload } from "../types";
 import NavCard, { type NavPayload, type NavUi } from "../renderers/NavCard";
 import { snapGuide, type Guide } from "./snapping";
 
@@ -49,12 +50,14 @@ interface Props {
   scale?: number;
   /** 画布左右出血（CSS px），让版面居中、不贴边 */
   offsetX?: number;
+  offsetY?: number;
   /** 画布外溢出区是否盖一层浅灰提醒 */
   bleedMask?: boolean;
   /** 别的页面上开着「跳转页全展示」的导航卡：本页只做只读预览，避免误编辑 */
   ghostNav?: CanvasItem | null;
   designWidth?: number;
   designHeight?: number;
+  onResizeCanvas?: (size: CanvasSize) => void;
   filterFields?: FilterFieldSpec[];
   filterValues?: Record<string, unknown>;
   /** 本页卡片读的数据集：给了就做「逐级筛选」 */
@@ -81,16 +84,14 @@ interface Props {
 const BoardSurface = forwardRef<BoardSurfaceHandle, Props>(function BoardSurface({
   canvasRef, items, cards, errors, selectedKeys, rendering,
   onSelect, onBlankSelect, onLayoutChange, onDelete, onDrop,
-  scale = 1, offsetX = 0, bleedMask = true, ghostNav = null, designWidth, designHeight = 620,
+  scale = 1, offsetX = 0, offsetY = 0, bleedMask = true, ghostNav = null, designWidth, designHeight = 620,
   filterFields, filterValues, filterDatasets, onTopList, onFilterChange,
   guides = [], guidesVisible = true, onGuideMove, onGuideRemove, onGuideMenu, onBlankMenu,
-  onTableMore, onDuplicate, currentPage,
+  onTableMore, onDuplicate, currentPage, onResizeCanvas,
 }, ref) {
   const designW = designWidth ?? 1440;
-  const boardHeight = Math.max(designHeight, 620);
+  const boardHeight = Math.max(designHeight, 160);
   const stageScale = scale || 1;
-  /** 版面左右溢出区（屏幕 px 换回设计坐标）—— 参考线可以跨进去，不只在版面内 */
-  const bleed = offsetX / stageScale;
 
   /* ── 实时层的 DOM 句柄（拖拽期间只碰这些，不碰 React）── */
   const guideNodes = useRef(new Map<string, HTMLDivElement>());
@@ -166,7 +167,7 @@ const BoardSurface = forwardRef<BoardSurfaceHandle, Props>(function BoardSurface
       el.style.width = "1.4px";
       el.style.height = "100%";
     } else {
-      el.style.top = `${guide.pos * stageScale}px`;
+      el.style.top = `${offsetY + guide.pos * stageScale}px`;
       el.style.left = "0";
       el.style.height = "1.4px";
       el.style.width = "100%";
@@ -199,7 +200,7 @@ const BoardSurface = forwardRef<BoardSurfaceHandle, Props>(function BoardSurface
         el.style.width = guide.center ? "0px" : "1.4px";
         el.style.height = "100%";
       } else {
-        el.style.top = `${guide.pos * stageScale}px`;
+        el.style.top = `${offsetY + guide.pos * stageScale}px`;
         el.style.left = "0";
         el.style.height = guide.center ? "0px" : "1.4px";
         el.style.width = "100%";
@@ -212,7 +213,7 @@ const BoardSurface = forwardRef<BoardSurfaceHandle, Props>(function BoardSurface
     const el = insertNode.current;
     if (!el) return;
     if (!rect) { el.style.display = "none"; return; }
-    const top = rect.y * stageScale;
+    const top = offsetY + rect.y * stageScale;
     el.style.display = "block";
     el.style.left = `${offsetX + rect.x * stageScale}px`;
     el.style.top = `${top}px`;
@@ -239,18 +240,19 @@ const BoardSurface = forwardRef<BoardSurfaceHandle, Props>(function BoardSurface
     const line = (node?.firstElementChild as HTMLElement | null) ?? null;
     /* 横线可以一直拖到画布可见底部（内容只有 600 高，也能把线放到下面的空白里，
        和 PS 一样「想放哪就放哪」）；竖线同理跨进左右溢出区 */
-    const bottomLimit = Math.max(boardHeight, (scroller.clientHeight + scroller.scrollTop) / stageScale);
+    const rightLimit = Math.max(designW, (scroller.clientWidth - offsetX) / stageScale);
+    const bottomLimit = Math.max(boardHeight, (scroller.clientHeight - offsetY) / stageScale);
     const clamp = (value: number) => (guide.axis === "x"
-      ? Math.min(designW + bleed, Math.max(-bleed, value))
-      : Math.min(bottomLimit, Math.max(0, value)));
-    /** 指针 → 设计坐标（横线按画布滚动 + 版面居中位移算，竖线只跟纵向滚动） */
+      ? Math.min(rightLimit, Math.max(Math.min(0, -offsetX / stageScale), value))
+      : Math.min(bottomLimit, Math.max(Math.min(0, -offsetY / stageScale), value)));
+    /** 指针减去画布原点后再除缩放，两轴共用同一坐标系。 */
     const toDesign = (ev: PointerEvent) => (guide.axis === "x"
-      ? (ev.clientX - box.left + scroller.scrollLeft - offsetX) / stageScale
-      : (ev.clientY - box.top + scroller.scrollTop) / stageScale);
+      ? (ev.clientX - box.left - offsetX) / stageScale
+      : (ev.clientY - box.top - offsetY) / stageScale);
     const paint = (pos: number) => {
       if (!node) return;
       if (guide.axis === "x") node.style.left = `${offsetX + pos * stageScale - 3.5}px`;
-      else node.style.top = `${pos * stageScale - 3.5}px`;
+      else node.style.top = `${offsetY + pos * stageScale - 3.5}px`;
     };
     liveGuide.current = guide.id;
     let pos = guide.pos;
@@ -328,11 +330,6 @@ const BoardSurface = forwardRef<BoardSurfaceHandle, Props>(function BoardSurface
     });
   };
 
-  const bleedLayers = bleedMask && offsetX > 0 && ([
-    { side: "left", edge: { left: -offsetX, borderRight: "1px solid rgba(148,163,184,0.55)" } },
-    { side: "right", edge: { right: -offsetX, borderLeft: "1px solid rgba(148,163,184,0.55)" } },
-  ] as const);
-
   return (
     <Box
       ref={canvasRef}
@@ -348,8 +345,10 @@ const BoardSurface = forwardRef<BoardSurfaceHandle, Props>(function BoardSurface
       }}
       onContextMenu={(e) => { e.preventDefault(); onBlankMenu?.(e); }}
       sx={{
-        flex: 1, minWidth: 0, position: "relative", overflow: "auto",
+        flex: 1, minWidth: 0, position: "relative", overflow: "clip",
         touchAction: "none",
+        '&[data-pan="ready"], &[data-pan="ready"] *': { cursor: "grab !important" },
+        '&[data-pan="dragging"], &[data-pan="dragging"] *': { cursor: "grabbing !important", userSelect: "none" },
         /* 从类型栏拖组件进来时，整块画布（含参考线的 ↔ 光标）统一显示「抓取中」 */
         '&[data-insert-drag="1"], &[data-insert-drag="1"] *': { cursor: "grabbing !important" },
         backgroundColor: "#FCFDFF",
@@ -369,19 +368,18 @@ const BoardSurface = forwardRef<BoardSurfaceHandle, Props>(function BoardSurface
             </Typography>
           </Box>
         </Box>
-      ) : (
+      ) : null}
         <Box sx={{
-          position: "relative",
+          position: "absolute", left: offsetX, top: offsetY,
           width: designWidth ? designWidth * scale : "100%",
-          height: Math.max(designHeight, 620) * scale,
-          /* 版面比视口矮时也把画布区撑满，左右灰层才能通到底 */
-          minHeight: "100%",
-          ml: `${offsetX}px`,
+          height: boardHeight * scale,
         }}>
           <Box sx={{
             position: "absolute", top: 0, left: 0,
             width: designWidth ?? "100%",
-            height: Math.max(designHeight, 620),
+            height: boardHeight,
+            outline: "1px solid #CBD5E1",
+            isolation: "isolate",
             transform: scale === 1 ? undefined : `scale(${scale})`,
             transformOrigin: "top left",
           }}>
@@ -407,7 +405,7 @@ const BoardSurface = forwardRef<BoardSurfaceHandle, Props>(function BoardSurface
             </Box>
           )}
 
-          {items.map((item) => (
+          {items.map((item, index) => (
             <BoardCard
               key={item.key}
               item={item}
@@ -418,6 +416,7 @@ const BoardSurface = forwardRef<BoardSurfaceHandle, Props>(function BoardSurface
               onLayoutChange={(next) => onLayoutChange(item.key, next)}
               onDelete={() => onDelete(item.key)}
               scale={scale}
+              zIndex={index}
               others={items.filter((i) => i.key !== item.key).map(({ x, y, w, h }) => ({ x, y, w, h }))}
               designWidth={designWidth ?? 1440}
               designHeight={boardHeight}
@@ -433,13 +432,17 @@ const BoardSurface = forwardRef<BoardSurfaceHandle, Props>(function BoardSurface
               onGhostStart={() => {
                 ghostKey.current = item.key;
                 const el = cardNodes.current.get(item.key);
-                if (el) { el.style.zIndex = "30"; el.style.willChange = "transform"; }
+                if (el) { el.style.zIndex = String(items.length + 1); el.style.willChange = "transform"; }
               }}
               onGhost={(dx, dy) => {
                 if (ghostKey.current !== item.key) return;
                 schedule("ghost", () => ghostOthers(item.key, dx, dy));
               }}
-              onGhostEnd={() => { ghostKey.current = null; }}
+              onGhostEnd={() => {
+                const el = cardNodes.current.get(item.key);
+                if (el) { el.style.zIndex = ""; el.style.willChange = ""; }
+                ghostKey.current = null;
+              }}
               guideLines={guidesVisible ? {
                 x: guides.filter((g) => g.axis === "x").map((g) => g.pos),
                 y: guides.filter((g) => g.axis === "y").map((g) => g.pos),
@@ -455,26 +458,26 @@ const BoardSurface = forwardRef<BoardSurfaceHandle, Props>(function BoardSurface
 
           </Box>
 
-          {/* 画布外的左右溢出区：浅灰提醒层，盖在元素之上但不拦交互，内缘一道细线标出版面边界 */}
-          {bleedLayers && bleedLayers.map(({ side, edge }) => (
+          {/* 画布四周留白：跟随画布边界平移，不拦截操作。 */}
+          {bleedMask && (
             <Box
-              key={`bleed-${side}`}
               aria-hidden
               data-bleed-mask
               sx={{
-                position: "absolute", top: 0, bottom: 0, width: offsetX,
-                bgcolor: "rgba(148,163,184,0.13)",
+                position: "absolute", inset: 0,
+                boxShadow: "0 0 0 100000px rgba(148,163,184,0.13)",
                 pointerEvents: "none", zIndex: 50,
-                ...edge,
               }}
             />
-          ))}
+          )}
+          {onResizeCanvas && <CanvasResizeHandles width={designW} height={boardHeight} scale={stageScale} onResize={onResizeCanvas} />}
+
+        </Box>
 
           {/* 参考线（手工 + 吸附）：独立图层，压在溢出区遮罩之上，横线一律横贯整条画布 ——
               版面两侧的浅灰溢出区也照直穿过，不再在版面边界处断掉 */}
           <Box sx={{
-            position: "absolute", top: 0, bottom: 0, left: -offsetX,
-            width: designW * stageScale + offsetX * 2,
+            position: "absolute", inset: 0,
             zIndex: 56, pointerEvents: "none",
           }}>
             {guidesVisible && guides.map((guide) => (
@@ -492,7 +495,7 @@ const BoardSurface = forwardRef<BoardSurfaceHandle, Props>(function BoardSurface
                   display: "flex", alignItems: "center", justifyContent: "center",
                   ...(guide.axis === "x"
                     ? { left: offsetX + guide.pos * scale - 3.5, top: 0, width: 7, height: "100%", cursor: "col-resize" }
-                    : { top: guide.pos * scale - 3.5, left: 0, height: 7, width: "100%", cursor: "row-resize" }),
+                    : { top: offsetY + guide.pos * scale - 3.5, left: 0, height: 7, width: "100%", cursor: "row-resize" }),
                 }}
               >
                 <Box sx={{ bgcolor: "#38BDF8", ...(guide.axis === "x" ? { width: 1.4, height: "100%" } : { height: 1.4, width: "100%" }) }} />
@@ -505,8 +508,6 @@ const BoardSurface = forwardRef<BoardSurfaceHandle, Props>(function BoardSurface
             {/* 吸附线（拖动卡片时出现，由 paintSnap 直接写 DOM） */}
             <Box ref={snapLayer} />
           </Box>
-        </Box>
-      )}
 
       {/* 从类型栏 / 工具栏拖组件进来时的落位框：跟着指针走，松手就落在这 */}
       <Box

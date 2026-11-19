@@ -130,12 +130,18 @@ class GuideDef(BaseModel):
     pos: float
 
 
+class CanvasSize(BaseModel):
+    width: int = Field(ge=160, le=9007199254740991, strict=True)
+    height: int = Field(ge=160, le=9007199254740991, strict=True)
+
+
 class ViewDef(BaseModel):
     key: str
     title: str = ""
     # items 放「共用内容」（筛选栏）；按平台分开的卡片放 items_map
     items: list[ItemDef] = []
     guides: list[GuideDef] = []
+    canvas: CanvasSize | None = None
     # 平台 → 该平台自己那一套卡片（头标卡 / 指标卡 / 图表 / 明细…）。
     # 未配置（没有这个 key）= 单套版面，与旧行为完全一致。
     items_map: dict[str, list[ItemDef]] = {}

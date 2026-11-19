@@ -13,18 +13,19 @@ import {
 import CanvasRuler, { RULER_SIZE } from "../../features/components/editor/CanvasRuler";
 import client from "../../api/client";
 import type { CanvasItem } from "../../features/components/boardTypes";
-import type { FilterFieldSpec, Guide, RenderPayload } from "../../features/components/types";
+import type { CanvasSize, FilterFieldSpec, Guide, RenderPayload } from "../../features/components/types";
 import type { GuideMenuState } from "./CanvasDialogs";
 import { toDocItem } from "./spec";
+import { boardAt } from "./boardResize";
 
 export default function CanvasStage({
   view, docId, designWidth, items, cards, paramDefs, params, guides, guidesVisible,
-  stageWidth, stageViewportH, canvasScrollTop, boardWidth, stageScale, stageOffsetX, stageHeight,
+  stageWidth, stageViewportH, boardWidth, stageScale, stageOffsetX, stageOffsetY, stageHeight, zoomTo,
   selectedKeys, selectedBounds, bleedMask, rendering, inlineDetail, detailEditKey, ghostNav, filterDataIds,
   stageRef, rulerRef, canvasRef, surfaceRef,
   setInlineDetail, setItems, setParams, setSelectedKeys, setTopKey, setDetailCardKey, setDirty, setGuideMenu,
   selectOnly, toggleSelect, duplicateForDrag, requestDelete, findBoard, commitDetailEdit, cancelDetailEdit,
-  patchItem, moveGuide, removeGuide, startPullGuide, handleDrop,
+  patchItem, moveGuide, removeGuide, startPullGuide, handleDrop, onResizeCanvas,
 }: {
   view: string;
   docId: number;
@@ -37,11 +38,13 @@ export default function CanvasStage({
   guidesVisible: boolean;
   stageWidth: number;
   stageViewportH: number;
-  canvasScrollTop: number;
+  zoomTo: (scale: number | null) => void;
   boardWidth: number;
   stageScale: number;
   stageOffsetX: number;
+  stageOffsetY: number;
   stageHeight: number;
+  onResizeCanvas: (size: CanvasSize) => void;
   selectedKeys: string[];
   selectedBounds: { x0: number; y0: number; x1: number; y1: number } | null;
   bleedMask: boolean;
@@ -127,6 +130,7 @@ export default function CanvasStage({
                   length={Math.max(1, boardWidth)}
                   scale={stageScale}
                   origin={stageOffsetX}
+                  extent={designWidth}
                   span={selectedBounds ? [selectedBounds.x0, selectedBounds.x1] : null}
                 />
               </Box>
@@ -144,8 +148,8 @@ export default function CanvasStage({
                   axis="y"
                   length={Math.max(1, stageViewportH)}
                   scale={stageScale}
-                  origin={0}
-                  scroll={canvasScrollTop}
+                  origin={stageOffsetY}
+                  extent={stageHeight}
                   span={selectedBounds ? [selectedBounds.y0, selectedBounds.y1] : null}
                 />
               </Box>
@@ -154,10 +158,12 @@ export default function CanvasStage({
               ref={surfaceRef}
               scale={stageScale}
               offsetX={stageOffsetX}
+              offsetY={stageOffsetY}
               bleedMask={bleedMask}
               ghostNav={ghostNav}
               designWidth={designWidth}
               designHeight={stageHeight}
+              onResizeCanvas={onResizeCanvas}
               canvasRef={canvasRef}
               items={items}
               cards={cards}
@@ -224,9 +230,24 @@ export default function CanvasStage({
               onGuideMove={moveGuide}
               onGuideRemove={removeGuide}
               onGuideMenu={(event, id) => setGuideMenu({ x: event.clientX, y: event.clientY, id })}
-              onBlankMenu={(event) => setGuideMenu({ x: event.clientX, y: event.clientY })}
+              onBlankMenu={(event) => {
+                const el = canvasRef.current;
+                if (!el) return;
+                const rect = el.getBoundingClientRect();
+                const clickedKey = (event.target as HTMLElement).closest("[data-board-key]")?.getAttribute("data-board-key");
+                const board = items.find((item) => item.key === clickedKey && item.type === "board")
+                  ?? boardAt(items, (event.clientX - rect.left - stageOffsetX) / stageScale,
+                    (event.clientY - rect.top - stageOffsetY) / stageScale);
+                setGuideMenu({ x: event.clientX, y: event.clientY, boardKey: board?.key });
+              }}
             />
               </Box>
+            </Box>
+            <Box sx={{ position: "absolute", right: 16, bottom: 16, zIndex: 20, display: "flex", alignItems: "center", bgcolor: "background.paper", border: "1px solid #E2E8F0", borderRadius: 1.5, boxShadow: 1 }}>
+              <Button size="small" aria-label="缩小画布" title="缩小（Ctrl + -）" disabled={stageScale <= 0.25} onClick={() => zoomTo(stageScale - 0.1)} sx={{ minWidth: 32 }}>−</Button>
+              <Button size="small" title="恢复 100%（Ctrl + 0）" onClick={() => zoomTo(1)} sx={{ minWidth: 56 }}>{Math.round(stageScale * 100)}%</Button>
+              <Button size="small" aria-label="放大画布" title="放大（Ctrl + +）" disabled={stageScale >= 2} onClick={() => zoomTo(stageScale + 0.1)} sx={{ minWidth: 32 }}>+</Button>
+              <Button size="small" onClick={() => zoomTo(null)} title="适应窗口；空格 + 左键或中键拖动画布" sx={{ px: 1 }}>适应窗口</Button>
             </Box>
             {inlineDetail && (() => {
               const board = inlineDetail.board;

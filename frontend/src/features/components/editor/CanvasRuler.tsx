@@ -1,4 +1,4 @@
-/** 画布标尺（对标 Photoshop）—— 顶部 / 左侧，按 1440 设计坐标出刻度，并标出当前选中元素的范围 */
+/** 画布标尺 —— 以画布左上角为零点，按实际尺寸显示刻度和选区范围。 */
 
 const SIZE = 20;
 /** 选区在标尺上的高亮条厚度 */
@@ -14,6 +14,7 @@ interface Props {
   origin: number;
   /** 内容向上滚动量（CSS px），让刻度跟着内容走 */
   scroll?: number;
+  extent?: number;
   /** 选中元素在设计坐标下的起止 */
   span?: [number, number] | null;
 }
@@ -24,16 +25,22 @@ function pickStep(scale: number) {
   return step;
 }
 
-export default function CanvasRuler({ axis, length, scale, origin, scroll = 0, span }: Props) {
+export function rulerMarks(length: number, scale: number, origin: number, extent: number) {
   const step = pickStep(scale);
   const major = step * 5;
-  const view = Math.min(1440, (length + scroll - origin) / scale);
+  const view = Math.min(extent, (length - origin) / scale);
   const marks: { pos: number; value: number; major: boolean }[] = [];
-  for (let value = 0; value <= 1440 && value <= view; value += step) {
-    const pos = origin + value * scale - scroll;
+  const start = Math.max(0, Math.floor(-origin / scale / step) * step);
+  for (let value = start; value <= view; value += step) {
+    const pos = origin + value * scale;
     if (pos < -2 || pos > length + 2) continue;
     marks.push({ pos, value, major: value % major === 0 });
   }
+  return marks;
+}
+
+export default function CanvasRuler({ axis, length, scale, origin, scroll = 0, extent = 1440, span }: Props) {
+  const marks = rulerMarks(length, scale, origin - scroll, extent);
 
   const from = span ? origin + span[0] * scale - scroll : 0;
   const to = span ? origin + span[1] * scale - scroll : 0;

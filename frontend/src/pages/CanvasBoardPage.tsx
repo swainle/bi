@@ -35,7 +35,7 @@ import FilterBar from "../features/components/renderers/FilterBar";
 import { KIND_LABEL } from "../features/components/registry";
 import type { CanvasItem } from "../features/components/boardTypes";
 import type {
-  ComponentItem, ComponentKind, ComponentSpec, DashboardDoc, DashboardRender,
+  CanvasSize, ComponentItem, ComponentKind, ComponentSpec, DashboardDoc, DashboardRender,
   DatasetBrief, DocItem, FilterFieldSpec, Guide, RenderPayload, ShapeKind, ShapeSpec,
 } from "../features/components/types";
 
@@ -47,7 +47,7 @@ import {
 import { CollapseButton, CollapseStrip, DistributeIcon, Splitter, paneAnimating, useResizableWidth } from "./canvas/controls";
 import { FilterFieldsEditor, Hint, IdChip, copyText, ElementForm } from "./canvas/panels";
 import PageTabs from "./canvas/PageTabs";
-import CanvasDialogs from "./canvas/CanvasDialogs";
+import CanvasDialogs, { type GuideMenuState } from "./canvas/CanvasDialogs";
 import LeftDatasetPane from "./canvas/LeftDatasetPane";
 import MiddleConfigPane from "./canvas/MiddleConfigPane";
 import ChartRailPane from "./canvas/ChartRailPane";
@@ -55,6 +55,7 @@ import EditorToolbar from "./canvas/EditorToolbar";
 import CanvasStage from "./canvas/CanvasStage";
 import { useCanvasHistory } from "./canvas/useCanvasHistory";
 import { useCanvasClipboard } from "./canvas/useCanvasClipboard";
+import { useCanvasViewport } from "./canvas/useCanvasViewport";
 
 
 export default function CanvasBoardPage() {
@@ -133,9 +134,9 @@ export default function CanvasBoardPage() {
   const surfaceRef = useRef<BoardSurfaceHandle>(null);
   const [stageWidth, setStageWidth] = useState(1000);
   const [stageViewportH, setStageViewportH] = useState(600);
-  const [canvasScrollTop, setCanvasScrollTop] = useState(0);
   const [guides, setGuides] = useState<Guide[]>([]);
-  const [guideMenu, setGuideMenu] = useState<{ x: number; y: number; id?: string } | null>(null);
+  const [canvasSize, setCanvasSize] = useState<CanvasSize | null>(null);
+  const [guideMenu, setGuideMenu] = useState<GuideMenuState>(null);
   /** 工具栏「矩形」下拉的锚点 */
   const [shapeAnchor, setShapeAnchor] = useState<HTMLElement | null>(null);
   /** 后端账本：本看板每个元素用了哪个数据集（页面 ID / 元素 ID / 数据集） */
@@ -149,7 +150,7 @@ export default function CanvasBoardPage() {
   const {
     canUndo, canRedo, undo, redo, pushHistory, resetHistory, snapOf,
     prevSnap, itemsRef, guidesRef,
-  } = useCanvasHistory({ items, guides, setItems, setGuides, setDirty, canvasRef });
+  } = useCanvasHistory({ items, guides, setItems, setGuides, setDirty, canvasRef, canvasSize, setCanvasSize });
   /** 右侧类型栏 = 组件库（与 /bi/components 同一份数据） */
   const [components, setComponents] = useState<ComponentItem[]>([]);
   const [componentsLoading, setComponentsLoading] = useState(true);
@@ -205,7 +206,7 @@ export default function CanvasBoardPage() {
       return false;
     };
     const onKey = (event: KeyboardEvent) => {
-      if (nudge(event)) return;
+      if (event.defaultPrevented || nudge(event)) return;
       const mod = event.metaKey || event.ctrlKey;
       const key = event.key.toLowerCase();
 
@@ -270,16 +271,6 @@ export default function CanvasBoardPage() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  /** 画布滚动 → 左侧标尺刻度跟着走 */
-  useEffect(() => {
-    const el = canvasRef.current;
-    if (!el) return;
-    const sync = () => setCanvasScrollTop(el.scrollTop);
-    sync();
-    el.addEventListener("scroll", sync, { passive: true });
-    return () => el.removeEventListener("scroll", sync);
-  }, []);
-
   /** 左侧标尺条高度 = 画布可视高度 */
   useEffect(() => {
     const el = rulerRef.current;
@@ -321,7 +312,7 @@ export default function CanvasBoardPage() {
       setView(firstView);
       setItems(firstItems);
       setGuides(firstViewDef?.guides ?? []);
-      resetHistory(firstItems, firstViewDef?.guides ?? []);
+      resetHistory(firstItems, firstViewDef?.guides ?? [], firstViewDef?.canvas ?? null);
       initialized.current = false;
       /* 换了一份文档：平台游标要归零，否则同名平台不会重新装载那套卡片 */
       platformRef.current = "";
@@ -416,7 +407,7 @@ export default function CanvasBoardPage() {
       if (v.key !== view) return v;
       const { filters, others } = splitItems(list);
       if (!activePlatform) {
-        const next: typeof v = { ...v, items: list.map(toDocItem), guides };
+        const next: typeof v = { ...v, items: list.map(toDocItem), guides, canvas: canvasSize };
         /* 这页没有平台切换器 → 旧的 items_map 是历史残留，清掉，免得同一张卡在 items / items_map 各存一份 */
         if (!hasPlatformSwitcher(next.items ?? [])) next.items_map = undefined;
         return next;
@@ -426,10 +417,11 @@ export default function CanvasBoardPage() {
         items: filters,
         items_map: { ...(v.items_map || {}), [activePlatform]: others },
         guides,
+        canvas: canvasSize,
       };
     }),
     };
-  }, [view, items, guides, activePlatform, splitItems, detailEditKey]);
+  }, [view, items, guides, activePlatform, splitItems, detailEditKey, canvasSize]);
 
   /** 页面上的所有画板（含其他页面与分套里的）：明细表弹窗要能选到
    *  标签带上页面名 —— 画板默认都叫「画板」，跨页时就分不清是哪一块了 */
@@ -536,7 +528,7 @@ export default function CanvasBoardPage() {
     setGuides(target.guides ?? []);
     const nextItems = target.items.map(toCanvasItem);
     setItems(nextItems);
-    resetHistory(nextItems, target.guides ?? []);
+    resetHistory(nextItems, target.guides ?? [], target.canvas ?? null);
     selectOnly((nextItems.find((i) => i.type === "chart") || nextItems[0])?.key ?? null);
     setEditingPage(null);
     if (changed) setDirty(true);
@@ -607,6 +599,7 @@ export default function CanvasBoardPage() {
     setView(key);
     setItems([]);
     setGuides([]);
+    resetHistory([], [], null);
     setSelectedKeys([]);
     setDirty(true);
     setEditingPage({ key, draft: title });
@@ -629,6 +622,7 @@ export default function CanvasBoardPage() {
     const copy = {
       key: `page_${stamp}`,
       title: `${source.title || "页面"} 副本`.slice(0, 16),
+      canvas: source.canvas,
       items: source.items.map((item, index) => ({ ...item, key: `${item.key}_${stamp}${index}` })),
       guides: (source.guides ?? []).map((guide, index) => ({ ...guide, id: `g_${stamp}${index}` })),
     };
@@ -647,6 +641,7 @@ export default function CanvasBoardPage() {
       setGuides(target.guides ?? []);
       const nextItems = target.items.map(toCanvasItem);
       setItems(nextItems);
+      resetHistory(nextItems, target.guides ?? [], target.canvas ?? null);
       selectOnly((nextItems.find((i) => i.type === "chart") || nextItems[0])?.key ?? null);
     }
     setDirty(true);
@@ -752,15 +747,22 @@ export default function CanvasBoardPage() {
     return () => observer.disconnect();
   }, []);
 
-  const DESIGN_W = 1440;
+  const DESIGN_W = canvasSize?.width ?? 1440;
   /** 版面可用宽 = 画布区 - 左侧标尺 */
   const boardWidth = Math.max(120, stageWidth - RULER_SIZE);
   /** 网页出血：1920 设计稿左右各留 60~80px；窄屏按 5% 收缩，最少 16px */
   const stageBleed = Math.min(72, Math.max(12, Math.round(boardWidth * 0.05)));
-  const stageScale = Math.min(1.25, (boardWidth - stageBleed * 2) / DESIGN_W);
-  /** 版面在画布里居中 */
-  const stageOffsetX = Math.max(0, Math.round((boardWidth - DESIGN_W * stageScale) / 2));
-  const stageHeight = items.reduce((max, i) => Math.max(max, i.y + i.h), 300) + 40;
+  const { scale: stageScale, offsetX: stageOffsetX, offsetY: stageOffsetY, zoomTo } = useCanvasViewport(
+    canvasRef, Math.min(1.25, (boardWidth - stageBleed * 2) / DESIGN_W), boardWidth, DESIGN_W,
+  );
+  const stageHeight = canvasSize?.height ?? Math.max(620, items.reduce((max, i) => Math.max(max, i.y + i.h), 300) + 40);
+  const resizeCanvas = (size: CanvasSize) => {
+    if (size.width === DESIGN_W && size.height === stageHeight) return;
+    pushHistory(snapOf(itemsRef.current, guidesRef.current));
+    prevSnap.current = snapOf(itemsRef.current, guidesRef.current, size);
+    setCanvasSize(size);
+    setDirty(true);
+  };
 
   /** 本页卡片**实际读**的数据集（后端按平台分套切过表）：筛选栏「逐级筛选」按它取候选值 */
   const filterDataIds = useMemo(() => {
@@ -1091,21 +1093,21 @@ export default function CanvasBoardPage() {
     const id = `g_${Date.now().toString(36)}${Math.floor(Math.random() * 99)}`;
     setGuidesVisible(true);
     /** 参考线可以落进版面两侧的溢出区（浅灰带）；横线可以一直放到画布可见底部（内容矮也能放） */
-    const bleed = stageOffsetX / (stageScale || 1);
-    const bottomLimit = Math.max(Math.max(stageHeight, 620), (el.scrollTop + el.clientHeight) / (stageScale || 1));
+    const rightLimit = Math.max(DESIGN_W, (el.clientWidth - stageOffsetX) / stageScale);
+    const bottomLimit = Math.max(stageHeight, (el.clientHeight - stageOffsetY) / stageScale);
     const clampPos = (value: number) => (axis === "x"
-      ? Math.min(DESIGN_W + bleed, Math.max(-bleed, value))
-      : Math.min(bottomLimit, Math.max(0, value)));
+      ? Math.min(rightLimit, Math.max(Math.min(0, -stageOffsetX / stageScale), value))
+      : Math.min(bottomLimit, Math.max(Math.min(0, -stageOffsetY / stageScale), value)));
     const inside = (clientX: number, clientY: number) =>
       clientX >= box.left && clientX <= box.right && clientY >= box.top && clientY <= box.bottom;
     const resolve = (ev: PointerEvent) => {
       const raw = axis === "x"
-        ? (ev.clientX - box.left + el.scrollLeft - stageOffsetX) / (stageScale || 1)
-        : (ev.clientY - box.top + el.scrollTop) / (stageScale || 1);
+        ? (ev.clientX - box.left - stageOffsetX) / stageScale
+        : (ev.clientY - box.top - stageOffsetY) / stageScale;
       const others = guidesVisible ? guides.filter((g) => g.axis === axis).map((g) => g.pos) : [];
       const hit = ev.altKey
         ? { snapped: false, center: false, pos: Math.round(raw) }
-        : snapGuide(axis, raw, items, DESIGN_W, stageScale || 1, others, Math.max(stageHeight, 620));
+        : snapGuide(axis, raw, items, DESIGN_W, stageScale, others, stageHeight);
       return { snapped: hit.snapped, center: hit.center, pos: Math.round(clampPos(hit.pos)) };
     };
     const onMove = (ev: PointerEvent) => {
@@ -1139,7 +1141,7 @@ export default function CanvasBoardPage() {
 
   /** 落库：publish=false 只存草稿（不动发布状态），publish=true 保存并发布 */
   const persist = useCallback(async (publish: boolean) => {
-    if (!doc || saving) return;
+    if (!doc || saving) return false;
     setSaving(publish ? "publish" : "save");
     try {
       const list = detailEditKey ? commitDetailEdit() : items;
@@ -1162,15 +1164,17 @@ export default function CanvasBoardPage() {
         msg: publish ? "已发布到「我的看板」" : "已保存",
         severity: "success",
       });
+      return true;
     } catch (err) {
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
       setToast({ open: true, msg: detail || (publish ? "发布失败" : "保存失败"), severity: "error" });
+      return false;
     } finally {
       setSaving(null);
     }
   }, [doc, docId, items, view, guides, saving, stashView, detailEditKey, commitDetailEdit]);
 
-  const handleSave = useCallback(() => { void persist(false); }, [persist]);
+  const handleSave = useCallback(() => persist(false), [persist]);
   /** 发布必须用户二次确认：点按钮 → 弹窗确认 → 才落库（Agent 侧工具也禁止直接发布） */
   const handlePublish = useCallback(() => setPublishConfirm(true), []);
 
@@ -1178,9 +1182,9 @@ export default function CanvasBoardPage() {
   const centerPosition = (width = 320) => {
     const el = canvasRef.current;
     if (!el) return { x: 12, y: 12 };
-    const centered = (el.scrollLeft + el.clientWidth / 2 - stageOffsetX) / (stageScale || 1) - width / 2;
+    const centered = (el.clientWidth / 2 - stageOffsetX) / stageScale - width / 2;
     const x = Math.min(Math.max(0, centered), Math.max(0, DESIGN_W - width));
-    const y = (el.scrollTop + 80) / (stageScale || 1);
+    const y = Math.max(0, (80 - stageOffsetY) / stageScale);
     return { x: Math.round(x / 8) * 8, y: Math.max(0, Math.round(y / 8) * 8) };
   };
 
@@ -1417,8 +1421,8 @@ export default function CanvasBoardPage() {
     const el = canvasRef.current;
     if (!el) return { x: 12, y: 12 };
     const rect = el.getBoundingClientRect();
-    const x = (e.clientX - rect.left + el.scrollLeft - stageOffsetX) / (stageScale || 1);
-    const y = (e.clientY - rect.top + el.scrollTop) / (stageScale || 1);
+    const x = (e.clientX - rect.left - stageOffsetX) / stageScale;
+    const y = (e.clientY - rect.top - stageOffsetY) / stageScale;
     return { x: Math.max(0, Math.round(x / 8) * 8), y: Math.max(0, Math.round(y / 8) * 8) };
   };
 
@@ -1485,8 +1489,8 @@ export default function CanvasBoardPage() {
           surfaceRef.current?.showSnap([]);
           return;
         }
-        const sx = (ev.clientX - box.left + scroller.scrollLeft - stageOffsetX) / (stageScale || 1);
-        const sy = (ev.clientY - box.top + scroller.scrollTop) / (stageScale || 1);
+        const sx = (ev.clientX - box.left - stageOffsetX) / stageScale;
+        const sy = (ev.clientY - box.top - stageOffsetY) / stageScale;
         const base = {
           x: fullWidth ? 0 : Math.max(0, Math.round(sx / 8) * 8),
           y: Math.max(0, Math.round(sy / 8) * 8),
@@ -1604,8 +1608,10 @@ export default function CanvasBoardPage() {
         <CanvasStage
           view={view} docId={docId} designWidth={DESIGN_W} items={items} cards={cards} paramDefs={paramDefs} params={params}
           guides={guides} guidesVisible={guidesVisible} stageWidth={stageWidth}
-          stageViewportH={stageViewportH} canvasScrollTop={canvasScrollTop} boardWidth={boardWidth}
-          stageScale={stageScale} stageOffsetX={stageOffsetX} stageHeight={stageHeight}
+          stageViewportH={stageViewportH} boardWidth={boardWidth}
+          zoomTo={zoomTo}
+          onResizeCanvas={resizeCanvas}
+          stageScale={stageScale} stageOffsetX={stageOffsetX} stageOffsetY={stageOffsetY} stageHeight={stageHeight}
           selectedKeys={selectedKeys} selectedBounds={selectedBounds} bleedMask={bleedMask}
           rendering={rendering} inlineDetail={inlineDetail} detailEditKey={detailEditKey}
           ghostNav={ghostNav} filterDataIds={filterDataIds}
@@ -1626,6 +1632,14 @@ export default function CanvasBoardPage() {
           collapsed={collapsed} togglePane={togglePane} rightW={rightW} components={components}
           selectedItem={selectedItem} componentsLoading={componentsLoading}
           pickComponent={pickComponent} beginInsertDrag={beginInsertDrag}
+          items={items} selectedKeys={selectedKeys} pageTitle={currentView?.title || view}
+          onSelect={selectOnly}
+          onReorder={(next) => {
+            pushHistory(snapOf(itemsRef.current, guidesRef.current));
+            prevSnap.current = snapOf(next, guidesRef.current);
+            setItems(next);
+            setDirty(true);
+          }}
         />
       </Box>
 
@@ -1635,6 +1649,9 @@ export default function CanvasBoardPage() {
         pageMenu={pageMenu} setPageMenu={setPageMenu} doc={doc} setEditingPage={setEditingPage}
         duplicatePage={duplicatePage} copyText={copyText} setToast={setToast} deletePage={deletePage}
         shapeAnchor={shapeAnchor} setShapeAnchor={setShapeAnchor} addShape={addShape}
+        patchItem={patchItem}
+        canvasSize={{ width: DESIGN_W, height: stageHeight }}
+        onResizeCanvas={resizeCanvas}
         guideMenu={guideMenu} setGuideMenu={setGuideMenu} removeGuide={removeGuide}
         guidesVisible={guidesVisible} setGuidesVisible={setGuidesVisible} guides={guides} setGuides={setGuides} setDirty={setDirty}
         publishConfirm={publishConfirm} setPublishConfirm={setPublishConfirm} persist={persist}

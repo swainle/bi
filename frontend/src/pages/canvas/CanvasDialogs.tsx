@@ -1,20 +1,21 @@
 /** 画布编辑器 · 浮层（行详情 / 删除确认 / 页面与形状菜单 / 参考线菜单 / 发布确认 / Toast） */
 
-import type { Dispatch, SetStateAction } from "react";
+import { useState, type Dispatch, type SetStateAction } from "react";
 import {
   Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Divider,
-  Menu, MenuItem, Snackbar, Typography,
+  Menu, MenuItem, Snackbar, TextField, Typography,
 } from "@mui/material";
 
 import TopListDialog from "../../features/components/board/TopListDialog";
 import { SHAPE_KINDS, SHAPE_LABEL, ShapeIcon } from "../../features/components/shapes";
 import type { CanvasItem } from "../../features/components/boardTypes";
-import type { DashboardDoc, DocItem, Guide, ShapeKind } from "../../features/components/types";
+import type { CanvasSize, DashboardDoc, DocItem, Guide, ShapeKind } from "../../features/components/types";
 import type { EditingPage, PageMenuState } from "./PageTabs";
+import { validBoardSize } from "./boardResize";
 
 export type ToastState = { open: boolean; msg: string; severity: "success" | "error" };
 export type DeleteConfirm = { keys: string[]; platforms: string[] } | null;
-export type GuideMenuState = { x: number; y: number; id?: string } | null;
+export type GuideMenuState = { x: number; y: number; id?: string; boardKey?: string } | null;
 
 export default function CanvasDialogs({
   topKey, setTopKey, docId, view, params, items, toDocItem,
@@ -22,7 +23,7 @@ export default function CanvasDialogs({
   pageMenu, setPageMenu, doc, setEditingPage, duplicatePage, copyText, setToast, deletePage,
   shapeAnchor, setShapeAnchor, addShape,
   guideMenu, setGuideMenu, removeGuide, guidesVisible, setGuidesVisible, guides, setGuides, setDirty,
-  publishConfirm, setPublishConfirm, persist, saving, agentGenerated, toast,
+  publishConfirm, setPublishConfirm, persist, saving, agentGenerated, toast, patchItem, canvasSize, onResizeCanvas,
 }: {
   topKey: string | null;
   setTopKey: (v: string | null) => void;
@@ -55,11 +56,18 @@ export default function CanvasDialogs({
   setDirty: (v: boolean) => void;
   publishConfirm: boolean;
   setPublishConfirm: (v: boolean) => void;
-  persist: (publish: boolean) => Promise<void>;
+  persist: (publish: boolean) => Promise<boolean>;
   saving: "save" | "publish" | null;
   agentGenerated: boolean;
   toast: ToastState;
+  patchItem: (key: string, patch: Partial<CanvasItem>) => void;
+  canvasSize: CanvasSize;
+  onResizeCanvas: (size: CanvasSize) => void;
 }) {
+  const [resizeBoard, setResizeBoard] = useState<{ key: string; name: string; width: string; height: string } | null>(null);
+  const menuBoard = items.find((item) => item.key === guideMenu?.boardKey && item.type === "board");
+  const widthValid = !!resizeBoard && validBoardSize(resizeBoard.width);
+  const heightValid = !!resizeBoard && validBoardSize(resizeBoard.height);
   return (
     <>
       {/* 删除筛选栏确认：它绑了平台时，删掉会让这些平台的筛选失效 */}
@@ -163,6 +171,14 @@ export default function CanvasDialogs({
             删除这条参考线
           </MenuItem>
         ) : [
+          <MenuItem key="resize-canvas" dense sx={{ fontSize: 12.5 }} onClick={() => {
+            setResizeBoard({ key: "", name: "当前页面画布", width: String(Math.round(canvasSize.width)), height: String(Math.round(canvasSize.height)) });
+            setGuideMenu(null);
+          }}>调整画布大小…</MenuItem>,
+          menuBoard && <MenuItem key="resize-board" dense sx={{ fontSize: 12.5 }} onClick={() => {
+            setResizeBoard({ key: menuBoard.key, name: menuBoard.text || "画板", width: String(Math.round(menuBoard.w)), height: String(Math.round(menuBoard.h)) });
+            setGuideMenu(null);
+          }}>调整画板大小…</MenuItem>,
           <MenuItem
             key="toggle"
             dense
@@ -186,6 +202,36 @@ export default function CanvasDialogs({
           </MenuItem>,
         ]}
       </Menu>
+
+      <Dialog open={!!resizeBoard} onClose={() => setResizeBoard(null)} maxWidth="xs" fullWidth aria-labelledby="resize-board-title">
+        <Box component="form" onSubmit={(event: React.FormEvent) => {
+          event.preventDefault();
+          if (!resizeBoard || !widthValid || !heightValid) return;
+          if (!resizeBoard.key) {
+            onResizeCanvas({ width: Number(resizeBoard.width), height: Number(resizeBoard.height) });
+          } else if (items.some((item) => item.key === resizeBoard.key && item.type === "board")) {
+            patchItem(resizeBoard.key, { w: Number(resizeBoard.width), h: Number(resizeBoard.height) });
+          }
+          setResizeBoard(null);
+        }}>
+          <DialogTitle id="resize-board-title">{resizeBoard?.key ? "调整画板大小" : "调整画布大小"}</DialogTitle>
+          <DialogContent sx={{ pt: "8px !important" }}>
+            <Typography sx={{ mb: 2, fontSize: 13, color: "text.secondary" }}>{resizeBoard?.name} · 仅调整边界，组件位置和大小保持不变</Typography>
+            <Box sx={{ display: "flex", gap: 2 }}>
+              <TextField autoFocus required fullWidth label="宽度（px）" type="number" value={resizeBoard?.width ?? ""}
+                inputProps={{ min: 160, step: 1 }} error={!!resizeBoard && !widthValid}
+                helperText="至少 160 px，整数" onChange={(event) => setResizeBoard((prev) => prev && { ...prev, width: event.target.value })} />
+              <TextField required fullWidth label="高度（px）" type="number" value={resizeBoard?.height ?? ""}
+                inputProps={{ min: 160, step: 1 }} error={!!resizeBoard && !heightValid}
+                helperText="至少 160 px，整数" onChange={(event) => setResizeBoard((prev) => prev && { ...prev, height: event.target.value })} />
+            </Box>
+          </DialogContent>
+          <DialogActions sx={{ px: 3, pb: 2 }}>
+            <Button onClick={() => setResizeBoard(null)}>取消</Button>
+            <Button type="submit" variant="contained" disabled={!widthValid || !heightValid}>确定</Button>
+          </DialogActions>
+        </Box>
+      </Dialog>
 
       {/* 发布二次确认：草稿转正必须用户自己点 */}
       <Dialog open={publishConfirm} onClose={() => setPublishConfirm(false)} maxWidth="xs" fullWidth

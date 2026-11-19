@@ -306,14 +306,15 @@ export default function DashboardPage() {
     return [...usage.entries()].sort((a, b) => b[1] - a[1]).map(([id]) => id);
   }, [cards]);
   const paramFields: FilterFieldSpec[] = render?.param_defs ?? [];
-  /** 版面按可用宽度等比铺满（上限 1.25，避免字体过大）；页面自身 md:6 留白即出血 */
-  const surfaceScale = Math.min(1.25, surfaceWidth / DESIGN_W);
-  const surfaceOffsetX = Math.max(0, Math.round((surfaceWidth - DESIGN_W * surfaceScale) / 2));
-  const surfaceHeight = items.reduce((max, item) => {
+  /** 宽屏按原尺寸居中，窄屏等比缩小，组件沿用画布内坐标。 */
+  const designWidth = currentView?.canvas?.width ?? DESIGN_W;
+  const surfaceScale = Math.min(1, surfaceWidth / designWidth);
+  const surfaceOffsetX = (surfaceWidth - designWidth * surfaceScale) / 2;
+  const surfaceHeight = currentView?.canvas?.height ?? (items.reduce((max, item) => {
     const layout = item.layout;
     if (!layout) return max;
     return Math.max(max, layout.y + layout.h);
-  }, 320) + 24;
+  }, 320) + 24);
 
   useEffect(() => {
     const el = surfaceRef.current;
@@ -864,20 +865,20 @@ export default function DashboardPage() {
       )}
 
       {/* 自由画布（只读，位置与画布编辑器一致） */}
-      <Box ref={surfaceRef} sx={{ px: PAGE_X, pb: 6 }}>
+      <Box ref={surfaceRef} sx={{ pb: 6 }}>
         <Box sx={{ position: "relative", width: "100%", height: surfaceHeight * surfaceScale }}>
           <CanvasDetailContext.Provider value={{ items: canvasItems as unknown as import("../components/boardTypes").CanvasItem[], findBoard }}>
           <Box sx={{
-            position: "absolute", top: 0, left: surfaceOffsetX, width: DESIGN_W, height: surfaceHeight,
+            position: "absolute", top: 0, left: surfaceOffsetX, width: designWidth, height: surfaceHeight,
             transform: `scale(${surfaceScale})`, transformOrigin: "top left",
           }}>
-            {renderItems.filter((item) => !hiddenByBoard.has(String(item.key))).map((item) => {
+            {renderItems.filter((item) => !hiddenByBoard.has(String(item.key))).map((item, index) => {
               const type = item.type || "chart";
               const layout = item.layout || { x: 12, y: 12, w: 400, h: item.h || 260 };
               const payload = cards[item.key];
               return (
                 <Box key={item.key} sx={{
-                  position: "absolute", left: layout.x, top: layout.y, width: layout.w, height: layout.h,
+                  position: "absolute", zIndex: index, left: layout.x, top: layout.y, width: layout.w, height: layout.h,
                 }}>
                   {type === "filter" ? (
                     <Box sx={{

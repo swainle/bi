@@ -2,6 +2,7 @@
 
 import { Box } from "@mui/material";
 import { RENDERERS } from "../registry";
+import { sectionPayload } from "./sectionPayload";
 import type { ComponentKind, ComponentItem, RenderPayload } from "../types";
 
 interface Props {
@@ -18,6 +19,8 @@ interface Props {
 
 export default function PreviewThumb({ item, payload, height = 178, scale = 0.82, full = false, fit }: Props) {
   const Renderer = RENDERERS[item.kind as ComponentKind] ?? RENDERERS.kpi;
+
+  if (item.kind === "section") payload = { ...payload, ...sectionPayload(item.spec) };
 
   if (!payload) {
     return (

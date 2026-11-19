@@ -28,6 +28,21 @@ type InsertPayload =
   | { type: "element"; element: "heading" | "text" | "divider" | "filter" | "board"; label: string }
   | { type: "shape"; shape: ShapeKind; label: string };
 
+export async function previewDashboard(save: () => Promise<boolean>, navigate: (url: string) => void, docId: number, params: Record<string, unknown>) {
+  if (!(await save())) return;
+  const search = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === "" || value === "all") return;
+    if (Array.isArray(value)) {
+      if (value.length) search.set(`p_${key}`, value.join(","));
+    } else {
+      search.set(`p_${key}`, String(value));
+    }
+  });
+  // 不传 view，让预览沿用看板配置的首视页。
+  navigate(`/bi/dashboards/${docId}?${search.toString()}`);
+}
+
 export default function EditorToolbar({
   nav, recentDocs, docId, renaming, renameDraft, setRenameDraft, setRenaming, commitRename, setSearch,
   items, selectedKeys, designWidth, fullWidthKinds, applyAiLayout, undo, redo, canUndo, canRedo,
@@ -73,7 +88,7 @@ export default function EditorToolbar({
   addPage: () => void;
   dirty: boolean;
   params: Record<string, unknown>;
-  handleSave: () => void;
+  handleSave: () => Promise<boolean>;
   handlePublish: () => void;
   saving: "save" | "publish" | null;
 }) {
@@ -324,21 +339,8 @@ export default function EditorToolbar({
         )}
         {dirty && <Typography sx={{ fontSize: 11.5, color: "#F59E0B", mr: 1, whiteSpace: "nowrap", flexShrink: 0 }}>未保存</Typography>}
         <Button size="small" startIcon={<Visibility sx={{ fontSize: 15 }} />}
-          onClick={() => {
-            /* 预览 = 打开发布后的样子：**不塞 view**，让预览页按「首视页」落地
-               （塞了 view 就会盖掉首视页，用户改首视页会以为没生效）；
-               要看看别的页，在预览里点导航菜单，或地址后加 ?view=页面ID。筛选值照样带上。 */
-            const search = new URLSearchParams();
-            Object.entries(params).forEach(([key, value]) => {
-              if (value === undefined || value === null || value === "" || value === "all") return;
-              if (Array.isArray(value)) {
-                if (value.length) search.set(`p_${key}`, value.join(","));
-              } else {
-                search.set(`p_${key}`, String(value));
-              }
-            });
-            nav(`/bi/dashboards/${docId}?${search.toString()}`);
-          }}
+          disabled={!!saving || !doc}
+          onClick={() => void previewDashboard(handleSave, nav, docId, params)}
           sx={{ textTransform: "none", fontSize: 12.5, borderRadius: 2, whiteSpace: "nowrap", flexShrink: 0 }}>
           预览
         </Button>

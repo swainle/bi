@@ -507,12 +507,15 @@ export interface Guide {
   pos: number;
 }
 
+export interface CanvasSize { width: number; height: number }
+
 export interface DocView {
   key: string;
   title: string;
   /** 共用元素（筛选栏） */
   items: DocItem[];
   guides?: Guide[];
+  canvas?: CanvasSize | null;
   /** 平台 → 该平台自己那一套卡片；没有这个 key 表示单套版面（旧看板） */
   items_map?: Record<string, DocItem[]>;
 }

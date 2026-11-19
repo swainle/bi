@@ -12,6 +12,7 @@ import type { ComponentKind, FilterFieldSpec, RenderPayload } from "../types";
 import type { CanvasItem } from "../boardTypes";
 import { snapMove, snapResize, MIN_H, MIN_W, type Guide, type MinSize, type Rect, type ResizeEdge } from "./snapping";
 import { sizeOfKind } from "../sizes";
+import { sectionPayload } from "./sectionPayload";
 
 interface Props {
   item: CanvasItem;
@@ -22,6 +23,7 @@ interface Props {
   onLayoutChange: (next: { x: number; y: number; w: number; h: number }) => void;
   onDelete: () => void;
   scale?: number;
+  zIndex?: number;
   /** 同视图其它元素的位置（磁吸参考） */
   others?: Rect[];
   /** 手工参考线的吸附坐标 */
@@ -125,7 +127,7 @@ function plainResize(base: Rect, edge: ResizeEdge, dx: number, dy: number, min: 
 }
 
 export default function BoardCard({
-  item, payload, error, selected, onSelect, onLayoutChange, onDelete, scale = 1,
+  item, payload, error, selected, onSelect, onLayoutChange, onDelete, scale = 1, zIndex,
   others = [], guideLines, designWidth = 1440, designHeight = 620, onGuides,
   filterFields, filterValues, onFilterChange, filterDatasets, onTopList, onLoadAll, currentPage,
   registerNode, onDuplicateForDrag, onGhostStart, onGhost, onGhostEnd,
@@ -352,6 +354,7 @@ export default function BoardCard({
       onMouseLeave={() => setHover(false)}
       sx={{
         position: "absolute",
+        zIndex,
         left: item.x,
         top: item.y,
         width: item.w,
@@ -420,18 +423,19 @@ export default function BoardCard({
               {cardError}
             </Box>
           </Box>
-        ) : payload ? (
+        ) : payload || item.kind === "section" ? (
           <Renderer
             // 标题 / 副标题 / 图表选项（轴标题、柱宽、图例…）以当前配置为准，改完立刻生效（不必等重查）
             payload={{
               ...payload,
               // 行详情面板要知道是哪张明细表（写回它的 spec）
               detailBoardKey: item.key,
-              title: item.spec.title || payload.title,
-              subtitle: item.spec.subtitle ?? payload.subtitle,
-              chart: { ...(payload.chart || {}), ...(item.spec.chart || {}) },
-              combo: { ...(payload.combo || {}), ...(item.spec.combo || {}) },
-              ui: item.spec.ui as unknown as typeof payload.ui,
+              title: item.spec.title || payload?.title,
+              subtitle: item.spec.subtitle ?? payload?.subtitle,
+              chart: { ...(payload?.chart || {}), ...(item.spec.chart || {}) },
+              combo: { ...(payload?.combo || {}), ...(item.spec.combo || {}) },
+              ui: item.spec.ui as unknown as RenderPayload["ui"],
+              ...(item.kind === "section" ? sectionPayload(item.spec) : {}),
             }}
             ui={item.spec.ui}
             onLoadAll={onLoadAll as never}

@@ -4,11 +4,11 @@ import type { Dispatch, RefObject, SetStateAction } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { CanvasItem } from "../../features/components/boardTypes";
-import type { DocItem, Guide } from "../../features/components/types";
+import type { CanvasSize, DocItem, Guide } from "../../features/components/types";
 import { toCanvasItem, toDocItem } from "./spec";
 
 export function useCanvasHistory({
-  items, guides, setItems, setGuides, setDirty, canvasRef,
+  items, guides, setItems, setGuides, setDirty, canvasRef, canvasSize, setCanvasSize,
 }: {
   items: CanvasItem[];
   guides: Guide[];
@@ -16,6 +16,8 @@ export function useCanvasHistory({
   setGuides: Dispatch<SetStateAction<Guide[]>>;
   setDirty: Dispatch<SetStateAction<boolean>>;
   canvasRef: RefObject<HTMLDivElement>;
+  canvasSize: CanvasSize | null;
+  setCanvasSize: Dispatch<SetStateAction<CanvasSize | null>>;
 }) {
   const historyRef = useRef<{ past: string[]; future: string[] }>({ past: [], future: [] });
   const prevSnap = useRef("");
@@ -23,11 +25,12 @@ export function useCanvasHistory({
   const interactionSnap = useRef<string | null>(null);
   const itemsRef = useRef<CanvasItem[]>([]);
   const guidesRef = useRef<Guide[]>([]);
+  const canvasSizeRef = useRef(canvasSize);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
 
-  const snapOf = useCallback((nextItems: CanvasItem[], nextGuides: Guide[]) => JSON.stringify({
-    items: nextItems.map(toDocItem), guides: nextGuides,
+  const snapOf = useCallback((nextItems: CanvasItem[], nextGuides: Guide[], size = canvasSizeRef.current) => JSON.stringify({
+    items: nextItems.map(toDocItem), guides: nextGuides, canvas: size,
   }), []);
 
   const pushHistory = useCallback((snap: string) => {
@@ -42,9 +45,11 @@ export function useCanvasHistory({
   }, []);
 
   const applySnapshot = useCallback((snap: string) => {
-    const parsed = JSON.parse(snap) as { items: DocItem[]; guides?: Guide[] };
+    const parsed = JSON.parse(snap) as { items: DocItem[]; guides?: Guide[]; canvas?: CanvasSize | null };
     setItems((parsed.items ?? []).map(toCanvasItem));
     setGuides(parsed.guides ?? []);
+    canvasSizeRef.current = parsed.canvas ?? null;
+    setCanvasSize(canvasSizeRef.current);
     prevSnap.current = snap;
     setDirty(true);
   }, []);
@@ -71,7 +76,9 @@ export function useCanvasHistory({
     setCanRedo(h.future.length > 0);
   }, [applySnapshot, snapOf]);
 
-  const resetHistory = useCallback((nextItems: CanvasItem[], nextGuides: Guide[]) => {
+  const resetHistory = useCallback((nextItems: CanvasItem[], nextGuides: Guide[], size = canvasSizeRef.current) => {
+    canvasSizeRef.current = size;
+    setCanvasSize(size);
     historyRef.current = { past: [], future: [] };
     prevSnap.current = snapOf(nextItems, nextGuides);
     lastPushAt.current = 0;
@@ -84,6 +91,7 @@ export function useCanvasHistory({
   useEffect(() => {
     itemsRef.current = items;
     guidesRef.current = guides;
+    canvasSizeRef.current = canvasSize;
     const snap = snapOf(items, guides);
     if (!prevSnap.current) { prevSnap.current = snap; return; }
     if (snap === prevSnap.current) return;
@@ -92,7 +100,7 @@ export function useCanvasHistory({
     if (interactionSnap.current !== null) return;   // 拖拽中不记，松手时记一步
     if (Date.now() - lastPushAt.current < 500) return;
     pushHistory(previous);
-  }, [items, guides, snapOf, pushHistory]);
+  }, [items, guides, canvasSize, snapOf, pushHistory]);
 
   /* 画布内一次按下-松开 = 一步（拖元素 / 拉尺寸 / 拖动即一次） */
   useEffect(() => {

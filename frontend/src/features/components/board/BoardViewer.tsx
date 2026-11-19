@@ -8,6 +8,7 @@ import type { ComponentKind, RenderPayload } from "../types";
 import type { CanvasItem } from "../boardTypes";
 import { ElementBody } from "./BoardCard";
 import { CanvasDetailContext } from "./canvasDetail";
+import { sectionPayload } from "./sectionPayload";
 
 interface Props {
   items: CanvasItem[];
@@ -125,11 +126,13 @@ export default function BoardViewer({ items, docId, plain, fitWidth, frameW, fra
           position: "absolute", top: 0, left: 0, width: innerW, height: innerH,
           transform: scale < 1 ? `scale(${scale})` : undefined, transformOrigin: "top left",
         }}>
-        {items.map((item) => {
-          const payload = cards[item.key];
+        {items.map((item, index) => {
+          const payload = item.kind === "section"
+            ? { ...cards[item.key], ...sectionPayload(item.spec) }
+            : cards[item.key];
           const Renderer = RENDERERS[item.kind as ComponentKind] ?? RENDERERS.kpi;
           return (
-            <Box key={item.key} sx={{ position: "absolute", left: item.x, top: item.y, width: item.w, height: item.h }}>
+            <Box key={item.key} sx={{ position: "absolute", zIndex: index, left: item.x, top: item.y, width: item.w, height: item.h }}>
               {isPageElement(item) ? (
                 <ElementBody item={item} />
               ) : payload ? (
