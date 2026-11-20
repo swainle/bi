@@ -371,6 +371,7 @@ const BoardSurface = forwardRef<BoardSurfaceHandle, Props>(function BoardSurface
       ) : null}
         <Box sx={{
           position: "absolute", left: offsetX, top: offsetY,
+          transform: "translate3d(var(--canvas-pan-x, 0px), var(--canvas-pan-y, 0px), 0)",
           width: designWidth ? designWidth * scale : "100%",
           height: boardHeight * scale,
         }}>
@@ -494,8 +495,8 @@ const BoardSurface = forwardRef<BoardSurfaceHandle, Props>(function BoardSurface
                   position: "absolute", pointerEvents: "auto",
                   display: "flex", alignItems: "center", justifyContent: "center",
                   ...(guide.axis === "x"
-                    ? { left: offsetX + guide.pos * scale - 3.5, top: 0, width: 7, height: "100%", cursor: "col-resize" }
-                    : { top: offsetY + guide.pos * scale - 3.5, left: 0, height: 7, width: "100%", cursor: "row-resize" }),
+                    ? { left: offsetX + guide.pos * scale - 3.5, top: 0, width: 7, height: "100%", cursor: "col-resize", transform: "translateX(var(--canvas-pan-x, 0px))" }
+                    : { top: offsetY + guide.pos * scale - 3.5, left: 0, height: 7, width: "100%", cursor: "row-resize", transform: "translateY(var(--canvas-pan-y, 0px))" }),
                 }}
               >
                 <Box sx={{ bgcolor: "#38BDF8", ...(guide.axis === "x" ? { width: 1.4, height: "100%" } : { height: 1.4, width: "100%" }) }} />

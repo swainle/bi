@@ -1,5 +1,7 @@
 /** 画布标尺 —— 以画布左上角为零点，按实际尺寸显示刻度和选区范围。 */
 
+import { useEffect, useRef, useState } from "react";
+
 const SIZE = 20;
 /** 选区在标尺上的高亮条厚度 */
 const BAND = 3;
@@ -40,6 +42,15 @@ export function rulerMarks(length: number, scale: number, origin: number, extent
 }
 
 export default function CanvasRuler({ axis, length, scale, origin, scroll = 0, extent = 1440, span }: Props) {
+  const ref = useRef<SVGSVGElement>(null);
+  const [pan, setPan] = useState(0);
+  useEffect(() => {
+    const root = ref.current?.closest("[data-stage-wrap]");
+    const update = (event: Event) => setPan((event as CustomEvent<{ x: number; y: number }>).detail[axis]);
+    root?.addEventListener("canvaspan", update);
+    return () => root?.removeEventListener("canvaspan", update);
+  }, [axis]);
+  origin += pan;
   const marks = rulerMarks(length, scale, origin - scroll, extent);
 
   const from = span ? origin + span[0] * scale - scroll : 0;
@@ -52,7 +63,7 @@ export default function CanvasRuler({ axis, length, scale, origin, scroll = 0, e
   const height = axis === "x" ? SIZE : length;
 
   return (
-    <svg width={width} height={height} style={{ display: "block", pointerEvents: "none" }}>
+    <svg ref={ref} width={width} height={height} style={{ display: "block", pointerEvents: "none" }}>
       <rect x={0} y={0} width={width} height={height} fill="#FBFCFE" />
 
       {hasBand && (

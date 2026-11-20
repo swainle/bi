@@ -18,6 +18,12 @@ export function canvasPanForOrigin(origin: { x: number; y: number }, scale: numb
 export const isViewportInput = (target: EventTarget | null) =>
   target instanceof HTMLElement && !!target.closest("input, textarea, select, [contenteditable]:not([contenteditable='false']), [role='textbox']");
 
+function previewCanvasPan(root: HTMLElement, x: number, y: number) {
+  root.style.setProperty("--canvas-pan-x", `${x}px`);
+  root.style.setProperty("--canvas-pan-y", `${y}px`);
+  root.dispatchEvent(new CustomEvent("canvaspan", { detail: { x, y } }));
+}
+
 export function useCanvasViewport(canvasRef: RefObject<HTMLDivElement>, fitScale: number, width: number, designWidth: number) {
   const [manualScale, setManualScale] = useState<number | null>(null);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -26,6 +32,10 @@ export function useCanvasViewport(canvasRef: RefObject<HTMLDivElement>, fitScale
   const offsetX = centeredX(scale) + pan.x;
   const offsetY = 24 + pan.y;
   const geometry = useRef({ designWidth, scale, offsetX, offsetY });
+  useLayoutEffect(() => {
+    const root = canvasRef.current?.closest<HTMLElement>("[data-stage-wrap]");
+    if (root) previewCanvasPan(root, 0, 0);
+  }, [pan, scale]);
   useLayoutEffect(() => {
     const previous = geometry.current;
     geometry.current = { designWidth, scale, offsetX, offsetY };
@@ -59,10 +69,19 @@ export function useCanvasViewport(canvasRef: RefObject<HTMLDivElement>, fitScale
     let dragged = false;
     let frame = 0;
     let nextPan: { x: number; y: number } | null = null;
+    let previewPan: { x: number; y: number } | null = null;
     let drag: { x: number; y: number; pan: { x: number; y: number }; pointerId: number } | null = null;
     const flush = () => {
       frame = 0;
-      if (nextPan) { setPan(nextPan); nextPan = null; }
+      if (nextPan) {
+        const root = el.closest<HTMLElement>("[data-stage-wrap]");
+        if (drag && root) {
+          // 平移只更新位移；松手才提交状态，避免每帧重渲染所有图表。
+          previewPan = nextPan;
+          previewCanvasPan(root, nextPan.x - current.current.pan.x, nextPan.y - current.current.pan.y);
+        } else setPan(nextPan);
+        nextPan = null;
+      }
     };
     const schedule = (next: { x: number; y: number }) => {
       nextPan = next;
@@ -73,10 +92,16 @@ export function useCanvasViewport(canvasRef: RefObject<HTMLDivElement>, fitScale
       else delete el.dataset.pan;
     };
     const stop = () => {
-      if (drag && el.hasPointerCapture(drag.pointerId)) el.releasePointerCapture(drag.pointerId);
-      drag = null;
       if (frame) cancelAnimationFrame(frame);
       flush();
+      if (previewPan) {
+        setPan(previewPan);
+        current.current.pan = previewPan;
+        previewPan = null;
+      }
+      const pointerId = drag?.pointerId;
+      drag = null;
+      if (pointerId !== undefined && el.hasPointerCapture(pointerId)) el.releasePointerCapture(pointerId);
       cursor();
     };
     const keydown = (event: KeyboardEvent) => {
@@ -143,6 +168,9 @@ export function useCanvasViewport(canvasRef: RefObject<HTMLDivElement>, fitScale
     return () => {
       if (frame) cancelAnimationFrame(frame);
       nextPan = null;
+      previewPan = null;
+      const root = el.closest<HTMLElement>("[data-stage-wrap]");
+      if (root) previewCanvasPan(root, 0, 0);
       space = false; stop();
       window.removeEventListener("keydown", keydown);
       window.removeEventListener("keyup", keyup);
