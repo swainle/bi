@@ -23,14 +23,29 @@ describe("柱状图数字区间排序", () => {
       .toEqual(["<=-1", "≤0", "<0", "1-5", "1-7", ">=60", ">60", "≥90"]);
   });
 
-  it.each(["其他", "", "2026-11-20", "14-8", "商品1-7"])("混有 %s 时保留原顺序", (name) => {
+  it.each(["其他", "2026-11-20", "14-8", "商品1-7"])("混有 %s 时保留原顺序", (name) => {
     const series = [{ name: "8-14" }, { name }, { name: "1-7" }];
     expect(sortRangeSeries(series)).toBe(series);
   });
 
-  it("兼容空数据和缺少名称的数据", () => {
+  it.each(["", "  ", null, undefined])("空分类 %s 不阻止区间排序，整条数据保留在最后", (name) => {
+    const series = [
+      { name, value: 768 }, { name: "22-28", value: 342 },
+      { name: "15-21", value: 75 }, { name: "1-7", value: 54 },
+      { name: "8-14", value: 27 }, { name: ">60", value: 2 },
+    ];
+    expect(sortRangeSeries(series)).toEqual([series[3], series[4], series[2], series[1], series[5], series[0]]);
+    expect(series[0]).toEqual({ name, value: 768 });
+  });
+
+  it("多个空分类保留相对顺序，缺少名称也按空分类处理", () => {
+    const series = [{ value: 1 }, { name: "8-14", value: 2 }, { name: "", value: 3 }, { name: "1-7", value: 4 }];
+    expect(sortRangeSeries(series)).toEqual([series[3], series[1], series[0], series[2]]);
+  });
+
+  it("全为空分类时保留原顺序", () => {
     expect(sortRangeSeries([])).toEqual([]);
-    const series = [{ value: 1 }, { name: "1-7", value: 2 }];
+    const series = [{ value: 1 }, { name: "", value: 2 }, { name: null, value: 3 }];
     expect(sortRangeSeries(series)).toBe(series);
   });
 });

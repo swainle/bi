@@ -16,10 +16,13 @@ function rangeBounds(name: unknown): [number, number] | null {
 
 export function sortRangeSeries<T extends { name?: unknown }>(series: T[]): T[] {
   const ranked = series.map((item) => ({ item, bounds: rangeBounds(item.name) }));
-  if (ranked.some(({ bounds }) => bounds === null)) return series;
+  if (ranked.some(({ item, bounds }) => bounds === null && String(item.name ?? "").trim() !== "")) return series;
+  if (!ranked.some(({ bounds }) => bounds !== null)) return series;
   return ranked.sort((a, b) => {
-    const [lowA, highA] = a.bounds!;
-    const [lowB, highB] = b.bounds!;
+    if (a.bounds === null) return b.bounds === null ? 0 : 1;
+    if (b.bounds === null) return -1;
+    const [lowA, highA] = a.bounds;
+    const [lowB, highB] = b.bounds;
     return (lowA === lowB ? 0 : lowA < lowB ? -1 : 1)
       || (highA === highB ? 0 : highA < highB ? -1 : 1);
   }).map(({ item }) => item);
