@@ -221,16 +221,29 @@ const shiftYmd = (day: string, delta: number) => {
 };
 const todayYmd = () => formatChinaTime(new Date()).slice(0, 10);
 
-/** 快捷档位：结束 = 今天，开始 = 往前 n-1 天（含今天） */
-const DATE_SHORTCUTS: { key: string; label: string; days: number }[] = [
+/** 按天包含今天；按周取此前对应的完整自然周（周一至周日）。 */
+const DATE_SHORTCUTS: { key: string; label: string; days: number; weeks?: number }[] = [
   { key: "today", label: "今日", days: 1 },
   { key: "yesterday", label: "昨日", days: 1 },
+  { key: "week1", label: "上周", days: 7, weeks: 1 },
+  { key: "week2", label: "上上周", days: 7, weeks: 2 },
+  { key: "week3", label: "上上上周", days: 7, weeks: 3 },
   { key: "7", label: "近7日", days: 7 },
   { key: "15", label: "近15天", days: 15 },
   { key: "30", label: "近30日", days: 30 },
   { key: "60", label: "近60天", days: 60 },
   { key: "90", label: "近90天", days: 90 },
 ];
+
+export function dateShortcutRange(today: string, key: string, days: number, weeks = 0) {
+  if (weeks) {
+    const weekday = (new Date(`${today}T00:00:00`).getDay() + 6) % 7;
+    const start = shiftYmd(today, -weekday - weeks * 7);
+    return { start, end: shiftYmd(start, 6) };
+  }
+  const end = key === "yesterday" ? shiftYmd(today, -1) : today;
+  return { start: shiftYmd(end, -(days - 1)), end };
+}
 
 function MonthGrid({ year, month, start, end, hover, onPick, onHover }: {
   year: number;
@@ -342,14 +355,6 @@ function FilterDate({ field, value, onChange }: {
     if (day < draft.start) setDraft({ start: day, end: draft.start });
     else setDraft({ start: draft.start, end: day });
   };
-  const quickPick = (key: string, days: number) => {
-    const today = todayYmd();
-    if (key === "today") setDraft({ start: today, end: today });
-    else if (key === "yesterday") {
-      const yesterday = shiftYmd(today, -1);
-      setDraft({ start: yesterday, end: yesterday });
-    } else setDraft({ start: shiftYmd(today, -(days - 1)), end: today });
-  };
   const commit = () => {
     if (!draft.start) { onChange?.(field.id, "all"); setAnchor(null); return; }
     const end = draft.end || draft.start;
@@ -399,21 +404,12 @@ function FilterDate({ field, value, onChange }: {
           {/* 快捷档位 */}
           <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.75, pb: 1.25, borderBottom: "1px solid #EEF3FB" }}>
             {DATE_SHORTCUTS.map((item) => {
-              const active = (() => {
-                if (!draft.start) return false;
-                const end = draft.end || draft.start;
-                const today = todayYmd();
-                if (item.key === "today") return draft.start === today && end === today;
-                if (item.key === "yesterday") {
-                  const yesterday = shiftYmd(today, -1);
-                  return draft.start === yesterday && end === yesterday;
-                }
-                return end === today && draft.start === shiftYmd(today, -(item.days - 1));
-              })();
+              const range = dateShortcutRange(todayYmd(), item.key, item.days, item.weeks);
+              const active = draft.start === range.start && (draft.end || draft.start) === range.end;
               return (
                 <Box
                   key={item.key}
-                  onClick={() => quickPick(item.key, item.days)}
+                  onClick={() => setDraft(dateShortcutRange(todayYmd(), item.key, item.days, item.weeks))}
                   sx={{
                     px: 1, height: 26, display: "grid", placeItems: "center", cursor: "pointer",
                     borderRadius: "6px", fontSize: 11.5,
