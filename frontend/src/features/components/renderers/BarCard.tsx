@@ -9,6 +9,7 @@ import { chartOf, formatAxis, formatValue } from "../skin/format";
 import { fitChart } from "../skin/CardFit";
 import { useBoxSize } from "../skin/useBoxSize";
 import type { RenderPayload, UiSpec } from "../types";
+import { sortRangeSeries } from "./sortRangeSeries";
 
 interface Props {
   payload: RenderPayload;
@@ -20,7 +21,7 @@ export default function BarCard({ payload, ui, compact, onSliceClick }: Props & 
   const opts = chartOf(payload.chart);
   const [boxRef, box] = useBoxSize<HTMLDivElement>();
   const compute = payload.compute;
-  const series = payload.series ?? [];
+  const series = sortRangeSeries(payload.series ?? []);
   const names = series.map((s) => String(s.name ?? ""));
   const values = series.map((s) => Number(s.value ?? 0));
   const horizontal = names.some((n) => n.length > 10);
@@ -33,8 +34,7 @@ export default function BarCard({ payload, ui, compact, onSliceClick }: Props & 
     );
   }
 
-  /** 分类轴标签旋转角度（长标签自动斜排），轴名间距要按旋转量让开 */
-  const rotate = opts.label_rotate || (!horizontal && names.some((n) => n.length > 4) ? 24 : 0);
+  const rotate = opts.label_rotate;
   /* 轴名只认手填的「X 轴标题」：留空 = 不显示 */
   const categoryName = opts.x_title || undefined;
   const categoryAxis = {
