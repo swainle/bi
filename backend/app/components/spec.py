@@ -519,6 +519,17 @@ class TableDetailSpec(BaseModel):
         return out
 
 
+class RelatedThumbnailSpec(BaseModel):
+    enabled: bool = False
+    local_key: str = Field(default="", max_length=120)
+    dataset_id: int | None = Field(default=None, gt=0)
+    match_key: str = Field(default="", max_length=120)
+    url_key: str = Field(default="", max_length=120)
+    operation: Literal["none", "prefix", "replace", "regex"] = "none"
+    pattern: str = Field(default="", max_length=512)
+    replacement: str = Field(default="", max_length=2048)
+
+
 class TableViewSpec(BaseModel):
     """明细表的列与交互（富单元格 / 排序 / 分页 / 查看更多）."""
 
@@ -531,6 +542,7 @@ class TableViewSpec(BaseModel):
     # 缩略图：true 时在行首放一个图框，图来自 thumb_key 这一列的图片地址
     thumb: bool = False
     thumb_key: str = ""
+    related_thumb: RelatedThumbnailSpec = Field(default_factory=RelatedThumbnailSpec)
     # 行详情面板（点一行右侧滑出，内容由组件卡片组成）
     detail: TableDetailSpec = Field(default_factory=TableDetailSpec)
 

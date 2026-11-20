@@ -53,6 +53,15 @@ def _guard(exc: Exception) -> HTTPException:
     return HTTPException(400, f"组件执行失败：{str(exc)[:200]}")
 
 
+@router.get("/thumbnail-tables")
+def thumbnail_tables(dataset_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    from app.components.related_thumbnail import thumbnail_tables as options
+    try:
+        return options(db, dataset_id, current_user)
+    except Exception as exc:
+        raise _guard(exc) from exc
+
+
 @router.get("")
 def list_components(
     kind: str | None = Query(default=None),

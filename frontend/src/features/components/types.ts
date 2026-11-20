@@ -174,6 +174,17 @@ export interface TableColumn {
   badge_tone?: string;
 }
 
+export interface RelatedThumbnailSpec {
+  enabled: boolean;
+  local_key: string;
+  dataset_id: number | null;
+  match_key: string;
+  url_key: string;
+  operation: "none" | "prefix" | "replace" | "regex";
+  pattern: string;
+  replacement: string;
+}
+
 export interface TableViewSpec {
   columns: TableColumn[];
   sortable: boolean;
@@ -184,6 +195,7 @@ export interface TableViewSpec {
   /** 行首缩略图（图来自 thumb_key 那一列的图片地址） */
   thumb?: boolean;
   thumb_key?: string;
+  related_thumb?: RelatedThumbnailSpec;
   /** 行详情面板：点明细表一行，右侧滑出，内容由组件卡片纵向排列组成 */
   detail?: DetailConfig;
 }

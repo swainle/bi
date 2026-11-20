@@ -18,14 +18,16 @@ import type { BannerStat, ComponentItem, ComponentKind, ComponentSpec, FieldOpti
 
 import { AGG, GRAINS, IMAGE_KEY, NEEDS_DIMENSION, OPS, STRONG_IMAGE_KEY, dash } from "./queryConstants";
 import type { Props } from "./queryTypes";
+import RelatedThumbnailSettings from "./RelatedThumbnailSettings";
 
 export function TableThumbSettings({
-  spec, onChange, dimensionOptions, identifierOptions,
+  spec, onChange, dimensionOptions, identifierOptions, metricOptions,
 }: {
   spec: ComponentSpec;
   onChange: (next: ComponentSpec) => void;
   dimensionOptions: FieldOption[];
   identifierOptions: FieldOption[];
+  metricOptions: FieldOption[];
 }) {
   const b = spec.binding;
   const fields = b.dimensions ?? [];
@@ -46,7 +48,8 @@ export function TableThumbSettings({
     const key = rawKey || candidates[0]?.name || imageOptions[0]?.name || "";
     onChange({
       ...spec,
-      table_view: { ...spec.table_view, thumb: on, thumb_key: key },
+      table_view: { ...spec.table_view, thumb: on, thumb_key: key,
+        ...(on && spec.table_view.related_thumb ? { related_thumb: { ...spec.table_view.related_thumb, enabled: false } } : {}) },
       binding: { ...b, dimension: null, metric: null, metrics: [], dimensions: fields.filter((name) => name !== key) },
     });
   };
@@ -86,6 +89,8 @@ export function TableThumbSettings({
           </TextField>
         )}
       </Box>
+      <RelatedThumbnailSettings spec={spec} onChange={onChange}
+        fields={[...identifierOptions, ...dimensionOptions, ...metricOptions]} />
     </Box>
   );
 }

@@ -185,6 +185,9 @@ def _request_for(spec: ComponentSpec, kind: str) -> dict:
 
     # 缩略图的图片字段是「底层挂载用」，不进字段列表，但查询必须带出这一列
     if kind == "table":
+        related = spec.table_view.related_thumb
+        if related.enabled and related.local_key and all(col["name"] != related.local_key for col in raw_columns):
+            raw_columns.append({"name": related.local_key})
         thumb_key = str((spec.table_view.thumb_key or "").strip()) if spec.table_view.thumb else ""
         if thumb_key and all(col["name"] != thumb_key for col in raw_columns):
             raw_columns.append({"name": thumb_key}) 
@@ -691,6 +694,8 @@ def _resolve_bound(
         payload = build_scatter(raw_rows, spec)
     elif kind == "table":
         payload = build_table(raw_rows, spec)
+        from app.components.related_thumbnail import attach_thumbnails
+        payload = attach_thumbnails(db, dataset, spec, payload, user, _execute_dataset)
     else:
         rows = _normalize(kind, raw_rows, spec)
         if spec.compute.transform != "raw" or spec.compute.scale != 1 or spec.compute.offset:

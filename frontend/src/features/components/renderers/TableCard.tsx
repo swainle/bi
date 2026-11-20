@@ -771,6 +771,7 @@ const ID_VALUE = /^[-\w\u4e00-\u9fa5]{1,120}$/;
 export function thumbSourcesOf(thumbKey: string, row: Record<string, unknown>): string[] {
   const out: string[] = [];
   const raw = String(row[thumbKey] ?? "").trim();
+  if (thumbKey === "__related_thumbnail_url") return /^https?:\/\//i.test(raw) ? [raw] : [];
   if (raw) {
     if (IMAGE_SRC.test(raw)) out.push(raw);
     else if (ID_VALUE.test(raw)) out.push(`/api/bi/images/${encodeURIComponent(raw)}`);

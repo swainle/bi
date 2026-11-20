@@ -942,6 +942,7 @@ export default function QueryPanel({
           <>
             <TableThumbSettings
               spec={spec} onChange={onChange}
+              metricOptions={metricOptions}
               dimensionOptions={dimensionOptions ?? []}
               identifierOptions={identifierOptions ?? []}
             />
