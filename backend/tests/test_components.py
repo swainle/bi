@@ -7,6 +7,7 @@ import pytest
 from app.components.compute import (
     bucket_series,
     build_payload,
+    build_rank,
     explode_tokens,
     fmt_number,
     headline_value,
@@ -21,6 +22,25 @@ from app.components.spec import (
 
 
 # ── 规格校验 ────────────────────────────────────────────────
+@pytest.mark.parametrize("top_n", [1, 5, 12, 30])
+@pytest.mark.parametrize("sort", ["asc", "desc"])
+def test_rank_uses_row_limit_after_sorting(top_n: int, sort: str) -> None:
+    rows = [{"商品": f"商品{i}", "销量": i} for i in [3, 12, 1, 9, 5, 11, 2, 10, 4, 8, 6, 7]]
+    spec = ComponentSpec(
+        title="排行",
+        binding={"dimension": "商品", "metric": "销量", "top_n": top_n, "sort": sort},
+        rank={"max_items": 2},
+    )
+    payload = build_rank(rows, spec)
+    expected = sorted(rows, key=lambda row: row["销量"], reverse=sort == "desc")[:top_n]
+    assert payload["items"] == [{"name": row["商品"], "value": row["销量"]} for row in expected]
+    assert payload["count"] == len(rows)
+
+
+def test_rank_row_limit_handles_empty_data() -> None:
+    assert build_rank([], ComponentSpec(title="排行", binding={"top_n": 5}))["items"] == []
+
+
 def test_kind_whitelist() -> None:
     assert validate_kind("KPI") == "kpi"
     with pytest.raises(ComponentSpecError):

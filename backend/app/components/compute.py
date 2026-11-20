@@ -367,7 +367,7 @@ def build_rank(rows: list[dict], spec: ComponentSpec) -> dict:
     else:
         items.sort(key=lambda x: x["value"], reverse=(spec.binding.sort == "desc"))
 
-    return {"items": items[: rank.max_items], "count": len(rows), "order": rank.order,
+    return {"items": items[: spec.binding.top_n], "count": len(rows), "order": rank.order,
             # 三个显示开关必须带给渲染端，否则面板上的开关是死按钮
             "show_rank": rank.show_rank, "show_score": rank.show_score, "show_tags": rank.show_tags,
             "quads": stats["counts"] if stats else {}}
