@@ -39,7 +39,8 @@ export function TableFieldsEditor({
   const setFields = (next: string[]) => {
     onChange({
       ...spec,
-      binding: { ...b, dimension: null, metric: null, metrics: [], dimensions: next },
+      binding: { ...b, dimension: null, metric: null, metrics: [], dimensions: next,
+        sort_field: next.includes(b.sort_field ?? "") ? b.sort_field : "" },
       table_view: { ...spec.table_view, columns: spec.table_view.columns.filter((column) => next.includes(column.key)) },
     });
   };

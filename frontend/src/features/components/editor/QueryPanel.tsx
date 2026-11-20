@@ -909,14 +909,27 @@ export default function QueryPanel({
           )}
         </Slot>
 
-        <Stack direction="row" spacing={1.25} sx={{ mt: 1.75 }}>
+        <Stack direction="row" useFlexGap spacing={1.25} sx={{ mt: 1.75, flexWrap: "wrap" }}>
+          {kind === "table" && (
+            <TextField select size="small" label="排序字段" value={b.sort_field || ""}
+              onChange={(e) => patch("sort_field", e.target.value)}
+              sx={{ minWidth: 140, flex: 1, "& .MuiOutlinedInput-root": { borderRadius: 2, fontSize: 12.5 } }}>
+              <MenuItem value="" sx={{ fontSize: 12.5 }}>不指定</MenuItem>
+              {(b.dimensions ?? []).map((name) => (
+                <MenuItem key={name} value={name} sx={{ fontSize: 12.5 }}>
+                  {spec.table_view.columns.find((column) => column.key === name)?.label || name}
+                </MenuItem>
+              ))}
+            </TextField>
+          )}
           {!["kpi", "insight"].includes(kind) && (
           <TextField size="small" type="number" label="行限制" value={b.top_n}
             onChange={(e) => patch("top_n", Number(e.target.value))}
             sx={{ width: 104, "& .MuiOutlinedInput-root": { borderRadius: 2, fontSize: 12.5 } }} />
           )}
-          {kind !== "table" && !["kpi", "insight"].includes(kind) && (
+          {!["kpi", "insight"].includes(kind) && (
           <TextField select size="small" label="排序" value={b.sort}
+            disabled={kind === "table" && !b.sort_field}
             onChange={(e) => patch("sort", e.target.value)}
             sx={{ width: 104, "& .MuiOutlinedInput-root": { borderRadius: 2, fontSize: 12.5 } }}>
             <MenuItem value="desc" sx={{ fontSize: 12.5 }}>降序</MenuItem>

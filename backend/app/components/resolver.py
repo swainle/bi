@@ -208,7 +208,11 @@ def _request_for(spec: ComponentSpec, kind: str) -> dict:
                 metrics.append({"name": name, "agg": "MAX"})
 
     order_by: list[dict] = []
-    if getattr(b, "order_by_dimension", False) and b.dimension:
+    if kind == "table" and b.sort_field:
+        if b.sort_field not in {column["name"] for column in raw_columns}:
+            raise ComponentSpecError("明细表排序字段必须是已选择的字段")
+        order_by = [{"name": b.sort_field, "desc": b.sort == "desc"}]
+    elif getattr(b, "order_by_dimension", False) and b.dimension:
         order_by = [{"name": b.dimension, "desc": False}]
     elif spec.compute.headline == "latest" and b.dimension:
         order_by = [{"name": b.dimension, "desc": True}]
@@ -216,7 +220,9 @@ def _request_for(spec: ComponentSpec, kind: str) -> dict:
         order_by = [{"name": metrics[0]["name"], "desc": b.sort == "desc"}]
 
     limit = b.limit
-    if kind in ("rank_list", "scatter", "table"):
+    if kind == "table" and b.sort_field:
+        limit = b.top_n
+    elif kind in ("rank_list", "scatter", "table"):
         limit = max(limit, 2000)
     elif spec.compute.headline in ("max", "min"):
         limit = max(b.top_n * 5, 50)

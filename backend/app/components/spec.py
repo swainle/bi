@@ -115,6 +115,7 @@ class BindingSpec(BaseModel):
     agg_expression: str = Field(default="", max_length=4000)
     top_n: int = 10
     sort: Literal["desc", "asc"] = "desc"
+    sort_field: str = Field(default="", max_length=120)  # 明细表按所选列全量排序后取前 N 行
     order_by_dimension: bool = False   # 按维度名排序（价格带这类有序类目用）
     dimensions: list = []             # 明细表：额外维度（多列分组）
     series: str | None = None         # 热力图第二维

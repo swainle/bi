@@ -235,6 +235,7 @@ export interface BindingSpec {
   top_n: number;
   sort: "desc" | "asc";
   order_by_dimension?: boolean;
+  sort_field?: string;
   series: string | null;
   split: string | null;
   grain?: string | null;
