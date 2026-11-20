@@ -172,8 +172,7 @@ export function TableFieldsEditor({
                       ?? { key: name, label: name, type: numeric ? "number" as const : "text" as const,
                         align: numeric ? "right" as const : "left" as const, width: 0 };
                     const columns = spec.table_view.columns.filter((column) => column.key !== name);
-                    if (event.target.value) columns.push({ ...base, label: event.target.value });
-                    else if (configured) columns.push({ ...configured, label: name });
+                    columns.push({ ...base, label: event.target.value });
                     onChange({ ...spec, table_view: { ...spec.table_view, columns } });
                   }}
                   sx={{ "& .MuiOutlinedInput-root": { fontSize: 12.5, borderRadius: 1.5 } }} />
