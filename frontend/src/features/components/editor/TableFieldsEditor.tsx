@@ -21,13 +21,14 @@ import type { Props } from "./queryTypes";
 import { Slot } from "./Slot";
 
 export function TableFieldsEditor({
-  spec, onChange, metricOptions, dimensionOptions, identifierOptions,
+  spec, onChange, metricOptions, dimensionOptions, identifierOptions, payload,
 }: {
   spec: ComponentSpec;
   onChange: (next: ComponentSpec) => void;
   metricOptions: FieldOption[];
   dimensionOptions: FieldOption[];
   identifierOptions: FieldOption[];
+  payload?: RenderPayload | null;
 }) {
   const b = spec.binding;
   const fields = b.dimensions ?? [];
@@ -39,6 +40,7 @@ export function TableFieldsEditor({
     onChange({
       ...spec,
       binding: { ...b, dimension: null, metric: null, metrics: [], dimensions: next },
+      table_view: { ...spec.table_view, columns: spec.table_view.columns.filter((column) => next.includes(column.key)) },
     });
   };
   const add = (name: string) => {
@@ -154,6 +156,32 @@ export function TableFieldsEditor({
         </Box>
 
       </Slot>
+
+      {fields.filter((name) => name !== spec.table_view.thumb_key).length > 0 && (
+        <Slot label="列头名称">
+          <Stack spacing={1}>
+            {fields.filter((name) => name !== spec.table_view.thumb_key).map((name) => {
+              const configured = spec.table_view.columns.find((column) => column.key === name);
+              return (
+                <TextField key={name} size="small" fullWidth label={name}
+                  placeholder={name} value={configured?.label ?? ""}
+                  InputLabelProps={{ shrink: true }} inputProps={{ maxLength: 20 }}
+                  onChange={(event) => {
+                    const numeric = metricOptions.some((field) => field.name === name);
+                    const base = configured ?? payload?.columns?.find((column) => column.key === name)
+                      ?? { key: name, label: name, type: numeric ? "number" as const : "text" as const,
+                        align: numeric ? "right" as const : "left" as const, width: 0 };
+                    const columns = spec.table_view.columns.filter((column) => column.key !== name);
+                    if (event.target.value) columns.push({ ...base, label: event.target.value });
+                    else if (configured) columns.push({ ...configured, label: name });
+                    onChange({ ...spec, table_view: { ...spec.table_view, columns } });
+                  }}
+                  sx={{ "& .MuiOutlinedInput-root": { fontSize: 12.5, borderRadius: 1.5 } }} />
+              );
+            })}
+          </Stack>
+        </Slot>
+      )}
 
       <Menu
         anchorEl={anchor} open={Boolean(anchor)} onClose={() => setAnchor(null)}

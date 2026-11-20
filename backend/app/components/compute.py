@@ -424,12 +424,18 @@ def _looks_numeric(value: Any) -> bool:
 def build_table(rows: list[dict], spec: ComponentSpec) -> dict:
     view = spec.table_view
     columns = list(view.columns)
-    if not columns and rows:
-        for key in rows[0].keys():
+    if spec.binding.dimensions or (not columns and rows):
+        configured = {column["key"]: column for column in columns}
+        columns = []
+        sample = rows[0] if rows else {}
+        for key in spec.binding.dimensions or sample.keys():
             text = str(key)
+            if text in configured:
+                columns.append(configured[text])
+                continue
             # ID 一类的列保持原样，别加千分位
             is_id = text.lower().endswith("id")
-            numeric = (not is_id) and _looks_numeric(rows[0].get(key))
+            numeric = (not is_id) and _looks_numeric(sample.get(key))
             if "率" in text or "占比" in text:
                 kind = "percent"
             elif numeric:

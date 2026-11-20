@@ -583,6 +583,7 @@ export default function QueryPanel({
         {kind === "table" ? (
           <TableFieldsEditor
             spec={spec} onChange={onChange}
+            payload={payload}
             metricOptions={metricOptions} dimensionOptions={dimensionOptions}
             identifierOptions={identifierOptions ?? []}
           />

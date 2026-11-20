@@ -8,6 +8,7 @@ from app.components.compute import (
     bucket_series,
     build_payload,
     build_rank,
+    build_table,
     explode_tokens,
     fmt_number,
     headline_value,
@@ -39,6 +40,39 @@ def test_rank_uses_row_limit_after_sorting(top_n: int, sort: str) -> None:
 
 def test_rank_row_limit_handles_empty_data() -> None:
     assert build_rank([], ComponentSpec(title="排行", binding={"top_n": 5}))["items"] == []
+
+
+@pytest.mark.parametrize("fields", [["item_id", "销量"], ["销量", "item_id", "店铺"]])
+def test_table_custom_header_preserves_other_columns_and_field_order(fields: list[str]) -> None:
+    spec = ComponentSpec(
+        title="明细表", binding={"dimensions": fields},
+        table_view={"columns": [{"key": "item_id", "label": "商品编号", "width": 120}]},
+    )
+    rows = [{"item_id": "123", "销量": 20, "店铺": "旗舰店"}]
+    payload = build_table(rows, spec)
+    assert [column["key"] for column in payload["columns"]] == fields
+    columns = {column["key"]: column for column in payload["columns"]}
+    assert columns["item_id"]["label"] == "商品编号"
+    assert columns["item_id"]["width"] == 120
+    assert columns["销量"]["label"] == "销量"
+    assert columns["销量"]["type"] == "number"
+    assert payload["rows"] == rows
+
+
+def test_table_headers_handle_removed_fields_empty_data_and_thumbnails() -> None:
+    spec = ComponentSpec(
+        title="明细表", binding={"dimensions": ["item_id", "主图"]},
+        table_view={"thumb": True, "thumb_key": "主图", "columns": [
+            {"key": "item_id", "label": "商品编号"}, {"key": "旧字段", "label": "旧列头"},
+        ]},
+    )
+    assert build_table([], spec)["columns"] == [spec.table_view.columns[0]]
+
+
+def test_table_blank_header_falls_back_to_field_name() -> None:
+    spec = ComponentSpec(title="明细表", binding={"dimensions": ["item_id"]},
+                         table_view={"columns": [{"key": "item_id", "label": ""}]})
+    assert build_table([], spec)["columns"][0]["label"] == "item_id"
 
 
 def test_kind_whitelist() -> None:
