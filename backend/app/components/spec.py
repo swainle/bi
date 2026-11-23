@@ -609,6 +609,10 @@ class ChartSpec(BaseModel):
     label_rotate: int = 0             # 0=自动，可 0/30/45/90
     y_min: float | None = None
     y_max: float | None = None
+    # 组合图的右轴（线）单独一套刻度 / 格式
+    y2_min: float | None = None
+    y2_max: float | None = None
+    y2_format: Literal["", "auto", "int", "w", "k", "pct"] = ""
     bar_width: int = 26               # 柱宽 px
     hbar_threshold_key: str = ""      # 排行条：按哪个字段染色（如「需求供给比」）
     hbar_threshold_gte: float | None = None

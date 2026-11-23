@@ -7,6 +7,33 @@
 > 交付顺序：改代码 → `tsc --noEmit` → 真机截图自检（对齐 / 折行 / 溢出 / 空态）→ 写这里。
 
 ---
+## 2026-11-23 · 新增：组合图左右 Y 轴分别设置刻度/格式 + 提示框跟随格式
+
+- **附加 · 坐标轴**（组合图）：`左Y最大 / 左Y最小 / 左Y格式 / 右Y最大 / 右Y最小 / 右Y格式 / 标签旋转`，
+  右轴格式多一个「同左轴」选项。
+- 后端 `ChartSpec` 新增 `y2_min / y2_max / y2_format`（前端类型同步）；渲染时左轴用 `y_min/y_max/label_format`、
+  右轴用 `y2_*`（空则回落左轴）。
+- **提示框**：原来用 ECharts 默认 formatter（显示原始精度，且格式不受设置影响）；
+  现在柱按左轴格式、线按右轴格式格式化，名字仍取「柱名称 / 线名称」。
+- **文件**：`backend/app/components/spec.py`、`frontend/src/features/components/types.ts`、
+  `editor/ChartOptionsPanel.tsx`、`renderers/ComboCard.tsx`。
+- **怎么验证**：doc5 临时组合图（`y_min=0, y_max=10, label_format=int, y2_min=0, y2_max=2000000, y2_format=w`，验完已还原）——
+  面板实测 `左Y最大 / 左Y最小 / 左Y格式 整数 / 右Y最大 / 右Y最小 / 右Y格式 万 / 标签旋转`；
+  截图 `docs/_selfcheck/2026-11-23-combo-axes.png`：左轴 0~10、右轴 0.0万~200.0万。`tsc --noEmit` 0。
+  （提示框需要在页面上悬停看一眼，自动化没抓。）
+
+---
+## 2026-11-23 · 修复：组合图 X 轴类目名大部分不显示
+
+- **原因**：`xAxis.axisLabel` 带了 `hideOverlap: true`。品牌名这类长类目互相重叠，ECharts 就把大部分标签直接隐藏，
+  所以只有零星几个名字露出来（用户截图里就是这样）。
+- **修复**：去掉 `hideOverlap`，改 `interval: 0`（全部显示）+ `overflow: "truncate", width: 64`（超长省略号），
+  完整名字在 tooltip 里看；需要更多字符就把「标签旋转」调 30/45。
+- **文件**：`frontend/src/features/components/renderers/ComboCard.tsx`。
+- **怎么验证**：doc5 临时组合图（横轴 `brand_name`，左轴 `COUNT_DISTINCT(rank_name)`，右轴 `SUM(daily_deal)`，验完已还原）——
+  截图 `docs/_selfcheck/2026-11-23-combo-xlabels.png`：8 个品牌名全部出现（超长截断），右轴刻度也在。`tsc --noEmit` 0。
+
+---
 ## 2026-11-23 · 修复：点击弹窗的过滤真的生效了（并加可见标记）
 
 - 排查结论：过滤逻辑本身没问题，**问题是弹窗那张明细表里没有图表用的维度列**（doc5 的 `tt_table` 没有 `platform_code`），

@@ -337,6 +337,10 @@ export interface ChartSpec {
   label_rotate: number;
   y_min: number | null;
   y_max: number | null;
+  /** 组合图右轴（线）单独一套刻度 / 格式 */
+  y2_min?: number | null;
+  y2_max?: number | null;
+  y2_format?: "auto" | "int" | "w" | "k" | "pct" | "";
   bar_width: number;
   smooth: boolean;
   label_format: "auto" | "int" | "w" | "k" | "pct";

@@ -199,16 +199,58 @@ export default function ChartOptionsPanel({ kind, spec, onChange, mode = "all" }
             </Typography>
           )}
           <Stack spacing={1} sx={{ mb: 1.5 }}>
-            <Row label="Y 最小">
-              <TextField size="small" type="number" value={chart.y_min ?? ""}
-                onChange={(e) => setChart({ y_min: e.target.value === "" ? null : Number(e.target.value) })}
-                sx={fieldSx} />
-            </Row>
-            <Row label="Y 最大">
-              <TextField size="small" type="number" value={chart.y_max ?? ""}
-                onChange={(e) => setChart({ y_max: e.target.value === "" ? null : Number(e.target.value) })}
-                sx={fieldSx} />
-            </Row>
+            {isCombo ? (
+              <>
+                <Row label="左Y最大">
+                  <TextField size="small" type="number" value={chart.y_max ?? ""}
+                    onChange={(e) => setChart({ y_max: e.target.value === "" ? null : Number(e.target.value) })}
+                    sx={fieldSx} />
+                </Row>
+                <Row label="左Y最小">
+                  <TextField size="small" type="number" value={chart.y_min ?? ""}
+                    onChange={(e) => setChart({ y_min: e.target.value === "" ? null : Number(e.target.value) })}
+                    sx={fieldSx} />
+                </Row>
+                <Row label="左Y格式">
+                  <TextField select size="small" value={chart.label_format}
+                    onChange={(e) => setChart({ label_format: e.target.value as never })}
+                    sx={fieldSx}>
+                    {LABEL_FORMATS.map(([v, t]) => <MenuItem key={v} value={v} sx={{ fontSize: 12.5 }}>{t}</MenuItem>)}
+                  </TextField>
+                </Row>
+                <Row label="右Y最大">
+                  <TextField size="small" type="number" value={chart.y2_max ?? ""}
+                    onChange={(e) => setChart({ y2_max: e.target.value === "" ? null : Number(e.target.value) })}
+                    sx={fieldSx} />
+                </Row>
+                <Row label="右Y最小">
+                  <TextField size="small" type="number" value={chart.y2_min ?? ""}
+                    onChange={(e) => setChart({ y2_min: e.target.value === "" ? null : Number(e.target.value) })}
+                    sx={fieldSx} />
+                </Row>
+                <Row label="右Y格式">
+                  <TextField select size="small" value={chart.y2_format || ""}
+                    onChange={(e) => setChart({ y2_format: e.target.value as never })}
+                    sx={fieldSx}>
+                    <MenuItem value="" sx={{ fontSize: 12.5 }}>同左轴</MenuItem>
+                    {LABEL_FORMATS.map(([v, t]) => <MenuItem key={v} value={v} sx={{ fontSize: 12.5 }}>{t}</MenuItem>)}
+                  </TextField>
+                </Row>
+              </>
+            ) : (
+              <>
+                <Row label="Y 最小">
+                  <TextField size="small" type="number" value={chart.y_min ?? ""}
+                    onChange={(e) => setChart({ y_min: e.target.value === "" ? null : Number(e.target.value) })}
+                    sx={fieldSx} />
+                </Row>
+                <Row label="Y 最大">
+                  <TextField size="small" type="number" value={chart.y_max ?? ""}
+                    onChange={(e) => setChart({ y_max: e.target.value === "" ? null : Number(e.target.value) })}
+                    sx={fieldSx} />
+                </Row>
+              </>
+            )}
             {kind === "bar" && (
               <Row label="柱宽">
                 <TextField size="small" type="number" value={chart.bar_width}
@@ -216,13 +258,15 @@ export default function ChartOptionsPanel({ kind, spec, onChange, mode = "all" }
                   sx={fieldSx} />
               </Row>
             )}
-            <Row label="数值格式">
-              <TextField select size="small" value={chart.label_format}
-                onChange={(e) => setChart({ label_format: e.target.value as never })}
-                sx={fieldSx}>
-                {LABEL_FORMATS.map(([v, t]) => <MenuItem key={v} value={v} sx={{ fontSize: 12.5 }}>{t}</MenuItem>)}
-              </TextField>
-            </Row>
+            {!isCombo && (
+              <Row label="数值格式">
+                <TextField select size="small" value={chart.label_format}
+                  onChange={(e) => setChart({ label_format: e.target.value as never })}
+                  sx={fieldSx}>
+                  {LABEL_FORMATS.map(([v, t]) => <MenuItem key={v} value={v} sx={{ fontSize: 12.5 }}>{t}</MenuItem>)}
+                </TextField>
+              </Row>
+            )}
             <Row label="标签旋转">
               <TextField select size="small" value={chart.label_rotate ?? 0}
                 onChange={(e) => setChart({ label_rotate: Number(e.target.value) })}
