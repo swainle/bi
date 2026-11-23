@@ -3,8 +3,8 @@
  *  （2026-11-13）。老文档里已经写好的 column 数据照旧生效，只是不再提供编辑入口。 */
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Autocomplete, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Menu, MenuItem, Stack, Switch, TextField, Typography } from "@mui/material";
-import { Add, Check, Close, DeleteOutline, ExpandMore, KeyboardArrowDown } from "@mui/icons-material";
+import { Autocomplete, Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, IconButton, Menu, MenuItem, Stack, Switch, TextField, Typography } from "@mui/material";
+import { Add, Check, Close, DeleteOutline, ExpandMore, KeyboardArrowDown, Settings } from "@mui/icons-material";
 import client from "../../../api/client";
 import type { FilterFieldSpec } from "../types";
 import { isSplitField } from "../split";
@@ -41,6 +41,8 @@ interface Props {
   onBackgroundChange?: (next: boolean) => void;
   /** 字段全删完 = 这个筛选栏空了：交给外层把组件一起删掉（组件库不传，保留空模板） */
   onEmpty?: () => void;
+  /** 本页组件（齿轮按钮里配「这个字段影响哪些组件」用） */
+  components?: { key: string; label: string }[];
 }
 
 /** 映射行的平台名输入：打字时只改本地草稿，失焦/回车才提交 ——
@@ -212,9 +214,11 @@ function PlatformMap({ field, datasets, onChange }: {
 const ACTION_SLOT = 26;
 
 /** 筛选字段编辑器 —— 画布中栏与组件库编辑页共用同一套参数（名称/控件/选项/默认值/宽度） */
-export default function FilterFieldsEditor({ fields, platform, fieldsMap, columns, fieldOptions = [], datasetId, onDatasetChange, onChange, onFieldsMapChange, background, onBackgroundChange, onEmpty }: Props) {
+export default function FilterFieldsEditor({ fields, platform, fieldsMap, columns, fieldOptions = [], datasetId, onDatasetChange, onChange, onFieldsMapChange, background, onBackgroundChange, onEmpty, components = [] }: Props) {
   /** 正在编辑哪一套字段："" = 通用，其它 = 该平台自己那套 */
   const [scope, setScope] = useState("");
+  /** 齿轮：正在配「影响组件」的字段下标 */
+  const [targetFor, setTargetFor] = useState<number | null>(null);
   const map = fieldsMap ?? {};
   /** 正在编辑的这一套：平台没单独配过 → 先用通用那份（筛选栏就是这么渲染的，面板必须一致）；
    *  配过（哪怕是空数组）就以它为准。 */
@@ -759,6 +763,11 @@ export default function FilterFieldsEditor({ fields, platform, fieldsMap, column
                 未绑定
               </Box>
             )}
+            <IconButton size="small" title="配置这个字段影响哪些组件"
+              onClick={(event) => { event.stopPropagation(); setTargetFor(index); }}
+              sx={{ flexShrink: 0, opacity: "1 !important" }}>
+              <Settings sx={{ fontSize: 15, color: "#94A3B8", "&:hover": { color: "#4F46E5" } }} />
+            </IconButton>
             <ExpandMore sx={{
               fontSize: 16, color: "#94A3B8", flexShrink: 0, transition: "transform .15s",
               transform: folded ? "rotate(-90deg)" : "none",
@@ -987,6 +996,52 @@ export default function FilterFieldsEditor({ fields, platform, fieldsMap, column
             onClick={deleteSplitField}>
             删除
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* 齿轮：这个字段影响哪些组件（树：本页 → 组件；勾选 = 生效） */}
+      <Dialog open={targetFor !== null} onClose={() => setTargetFor(null)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontSize: 14, fontWeight: 700, pb: 1 }}>影响组件</DialogTitle>
+        <DialogContent>
+          {(() => {
+            const field = targetFor === null ? null : panelFields[targetFor];
+            const allKeys = components.map((c) => c.key);
+            const picked = field?.targets?.length ? field.targets : allKeys;
+            const toggle = (key: string) => {
+              if (!field || targetFor === null) return;
+              const next = picked.includes(key) ? picked.filter((k) => k !== key) : [...picked, key];
+              const targets = next.length === allKeys.length ? [] : next;
+              commit(panelFields.map((f, i) => (i === targetFor ? { ...f, targets } : f)));
+            };
+            return (
+              <Box>
+                <Typography sx={{ fontSize: 11.5, color: "#94A3B8", mb: 0.5 }}>本页</Typography>
+                <Box sx={{ pl: 1, borderLeft: "1px dashed #E2E8F0" }}>
+                  {components.length === 0 && (
+                    <Typography sx={{ fontSize: 12, color: "#94A3B8", py: 1 }}>这一页还没有可影响的组件</Typography>
+                  )}
+                  {components.map((component) => (
+                    <Box key={component.key} sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                      <Checkbox size="small" checked={picked.includes(component.key)}
+                        onChange={() => toggle(component.key)} sx={{ p: 0.5 }} />
+                      <Typography sx={{ fontSize: 12.5, color: "#334155" }}>{component.label}</Typography>
+                    </Box>
+                  ))}
+                </Box>
+                <Typography sx={{ fontSize: 11, color: "#94A3B8", mt: 1 }}>
+                  全勾 = 影响全部组件；只勾部分就只影响它们。
+                </Typography>
+              </Box>
+            );
+          })()}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5 }}>
+          <Button sx={{ textTransform: "none" }} onClick={() => {
+            if (targetFor === null) return;
+            commit(panelFields.map((f, i) => (i === targetFor ? { ...f, targets: [] } : f)));
+          }}>影响全部</Button>
+          <Button variant="contained" sx={{ textTransform: "none", borderRadius: 2 }}
+            onClick={() => setTargetFor(null)}>完成</Button>
         </DialogActions>
       </Dialog>
     </Box>

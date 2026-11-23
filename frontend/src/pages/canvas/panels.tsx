@@ -10,7 +10,7 @@ import { SHAPE_DEFAULT, SHAPE_KINDS, SHAPE_LABEL, ShapeIcon, shapeOf } from "../
 import type { CanvasItem } from "../../features/components/boardTypes";
 import type { ComponentSpec, ShapeSpec } from "../../features/components/types";
 
-export function FilterFieldsEditor({ item, columns, fieldOptions, datasetId, platform, onChange, onEmpty, onDatasetChange }: {
+export function FilterFieldsEditor({ item, columns, fieldOptions, datasetId, platform, onChange, onEmpty, onDatasetChange, pageComponents = [] }: {
   item: CanvasItem;
   columns: string[];
   fieldOptions?: { name: string; role?: string }[];
@@ -20,12 +20,15 @@ export function FilterFieldsEditor({ item, columns, fieldOptions, datasetId, pla
   onEmpty?: () => void;
   /** 绑字段弹窗里换数据集：改的是这个筛选栏的 binding.dataset_id */
   onDatasetChange?: (id: number) => void;
+  /** 本页组件（齿轮里配置「影响哪些组件」） */
+  pageComponents?: { key: string; label: string }[];
 }) {
   return (
     <SharedFilterFieldsEditor
       platform={platform}
       onEmpty={onEmpty}
       onDatasetChange={onDatasetChange}
+      components={pageComponents}
       fields={item.spec.filter?.fields ?? []}
       fieldsMap={item.spec.filter?.fields_map}
       columns={columns}

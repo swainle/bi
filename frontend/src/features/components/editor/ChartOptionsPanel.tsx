@@ -1,6 +1,6 @@
 /** 运算自定义 + 坐标轴 / 饼图参数（编辑页中栏） */
 
-import { Box, MenuItem, Stack, Switch, TextField, ToggleButton, ToggleButtonGroup, Typography } from "@mui/material";
+import { Box, MenuItem, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography } from "@mui/material";
 import { chartOf, computeOf } from "../skin/format";
 import { PanelSection } from "./PanelSection";
 import { Row, fieldSx } from "./Row";
@@ -171,15 +171,8 @@ export default function ChartOptionsPanel({ kind, spec, onChange, mode = "all" }
         )}
       </>)}
 
-      {(isCombo || isPie) && showPrefsBlock && (
+      {isCombo && showPrefsBlock && (
         <PanelSection title="首选项">
-          {/* 环形图 / 组合图默认不受筛选器影响（undefined = 默认 true） */}
-          <Row label="不受筛选器影响">
-            <Switch size="small"
-              checked={spec.binding?.ignore_filters !== false}
-              onChange={(e) => onChange({ ...spec, binding: { ...spec.binding, ignore_filters: e.target.checked } })}
-              sx={{ ml: -0.75 }} />
-          </Row>
           {isCombo && (
             <Row label="柱 / 线">
               <Box sx={{ flex: 1, minWidth: 0, display: "flex", gap: 1 }}>

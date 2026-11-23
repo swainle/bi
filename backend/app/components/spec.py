@@ -117,7 +117,6 @@ class BindingSpec(BaseModel):
     sort: Literal["desc", "asc"] = "desc"
     sort_field: str = Field(default="", max_length=120)  # 明细表按所选列全量排序后取前 N 行
     order_by_dimension: bool = False   # 按维度名排序（价格带这类有序类目用）
-    ignore_filters: bool | None = None  # 不受页面筛选器影响（None = 按类型默认：环形图 / 组合图 true）
     dimensions: list = []             # 明细表：额外维度（多列分组）
     series: str | None = None         # 热力图第二维
     split: str | None = None          # 词云：按分隔符拆标签
@@ -196,6 +195,7 @@ class FilterFieldSpec(BaseModel):
     width: int = 0                    # 0 = 自适应
     note: str = ""
     column: str = ""                  # 绑定的数据集字段（同名字段自动按参数过滤）
+    targets: list[str] = []           # 只影响这些组件（空 = 全部组件）
     ranges: dict[str, str] = {}       # 档位值 → 区间表达式（">=80000" / "5000..10000"）
     # 数据集切换器：选项值 → 数据集 id（如 {"拼多多": 15, "天猫": 21}）。
     # 非空时这个字段不再是「过滤一行」，而是「换一张表」：选项由映射生成，

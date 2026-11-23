@@ -193,6 +193,11 @@ export default function MiddleConfigPane({
             <FilterFieldsEditor
               item={selectedItem}
               platform={activePlatform}
+              pageComponents={(doc?.views ?? [])
+                .filter((v) => v.key === view)
+                .flatMap((v) => [...(v.items ?? []), ...Object.values(v.items_map ?? {}).flat()])
+                .filter((item) => item.type === "chart")
+                .map((item) => ({ key: item.key, label: String(item.spec?.title || item.key) }))}
               columns={[...groups.dimensions, ...groups.metrics, ...groups.identifiers].map((f) => f.name)}
               fieldOptions={[...groups.dimensions, ...groups.metrics, ...groups.identifiers]
                 .map((f) => ({ name: f.name, role: f.role }))}

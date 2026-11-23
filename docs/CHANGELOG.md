@@ -7,6 +7,45 @@
 > 交付顺序：改代码 → `tsc --noEmit` → 真机截图自检（对齐 / 折行 / 溢出 / 空态）→ 写这里。
 
 ---
+## 2026-11-23 · 修复：组合图折线 Y 轴刻度不显示 + 删除「不受筛选器影响」
+
+- **组合图右轴刻度**：`yAxis[1]` 少了 `position: "right"`，ECharts 会把它叠在左轴上，看起来「没有刻度」。
+  现在右侧独立显示（并去掉原来窄卡就整条隐藏的逻辑，只保留 compact 场景隐藏）。
+- **删除「不受筛选器影响」**：环形图 / 组合图首选项里的开关、后端 `ignore_filters` 字段与 `_render_card` 的跳过逻辑全部移除，
+  恢复「筛选器对所有组件生效」。
+- **文件**：`frontend/src/features/components/renderers/ComboCard.tsx`、`editor/ChartOptionsPanel.tsx`、
+  `editor/QueryPanel.tsx`、`types.ts`、`backend/app/components/spec.py`、`backend/app/dashboards/render.py`。
+- **怎么验证**：doc5 临时环形图 + 组合图（验完已还原）——
+  带 `cross_filters=[platform_code=tmall]` 时环形图 series = `["tmall"]`（筛选重新生效）；
+  组合图截图 `docs/_selfcheck/2026-11-23-combo-right-axis.png`：左轴 0~500,000、右轴 0~15 都在。
+  `tsc --noEmit` 0、`vitest` 55 项通过。
+
+---
+## 2026-11-23 · 新增：筛选字段「影响组件」范围（齿轮按钮 + 组件树勾选）
+
+- 筛选栏每张字段卡的折叠箭头左边多了一个 **齿轮**：点开是「影响组件」对话框，树状列出**本页组件**（页面 → 组件），
+  前面带复选框；不勾就不影响那个组件。全勾 = 影响全部（存空数组，语义等同默认）。
+- 数据：`FilterFieldSpec.targets: string[]`（空 = 全部）。后端 `_page_filters` 把 `targets` 带到每条过滤条件上，
+  `_render_card` 只对被勾中的卡片应用该条件。
+- **文件**：`backend/app/components/spec.py`、`backend/app/dashboards/render.py`、
+  `frontend/src/features/components/types.ts`、`editor/FilterFieldsEditor.tsx`、
+  `pages/canvas/panels.tsx`、`pages/canvas/MiddleConfigPane.tsx`。
+- **怎么验证**：doc5 临时造了一张筛选字段（`column=platform_code`，默认 `tmall`，`targets=["tmp_f1"]`）+ 两张柱图（验完已还原）——
+  `/render` 实测：`tmp_f1 → ["tmall"]`（被过滤）、`tmp_f2 → ["tmall","jd","douyin","pdd"]`（不受影响）。`tsc --noEmit` 0。
+  ⚠️ 齿轮对话框的交互我还没在界面上点过，麻烦你点开确认一眼。
+
+---
+## 2026-11-23 · 优化：明细表「字段 · 添加字段」改成拖拽自动输入框
+
+- 原来是「＋ 添加字段」虚线按钮 + 弹出分组菜单；现在换成 `AxisInput`：能把左侧字段/指标直接拖进来，
+  也能打字过滤后回车添加（选项 = 指标 / 列 / 标识 里还没选中的字段）。
+- 样式与其它拖拽框一致：浅紫底 `rgba(99,102,241,0.05)` + 虚线边 + 「拖到这里」。
+- 顺带删掉不再需要的菜单、`anchor` / `dropField` 状态和 `Menu`、`MenuItem`、`Check` 引用。
+- **文件**：`frontend/src/features/components/editor/TableFieldsEditor.tsx`。
+- **怎么验证**：doc1 明细表 —— 展开「字段」后实测存在 `placeholder=拖到这里` 的输入框，
+  计算样式 `bg=rgba(99,102,241,0.05)`、`border=dashed`。`tsc --noEmit` 0。
+
+---
 ## 2026-11-23 · 新增：环形图 / 柱线组合「不受筛选器影响」+ 点击弹窗按点击值过滤
 
 - **首选项 · 不受筛选器影响**：环形图（含饼图）和柱线组合的首选项里新增开关，**默认开启**；

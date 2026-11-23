@@ -2,9 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
-  Box, Button, Chip, Divider, IconButton, Menu, MenuItem, Stack, Switch, TextField, Typography,
+  Box, Button, Chip, Divider, IconButton, Stack, Switch, TextField, Typography,
 } from "@mui/material";
-import { Add, Check, Close, ExpandMore } from "@mui/icons-material";
+import { Add, Close, ExpandMore } from "@mui/icons-material";
 import ChartOptionsPanel from "./ChartOptionsPanel";
 import TableDetailSettings from "./TableDetailSettings";
 import { BANNER_TONES } from "../renderers/BannerCard";
@@ -19,6 +19,7 @@ import type { BannerStat, ComponentItem, ComponentKind, ComponentSpec, FieldOpti
 import { AGG, GRAINS, IMAGE_KEY, NEEDS_DIMENSION, OPS, STRONG_IMAGE_KEY, dash } from "./queryConstants";
 import type { Props } from "./queryTypes";
 import { Slot } from "./Slot";
+import { AxisInput } from "./AxisInput";
 
 export function TableFieldsEditor({
   spec, onChange, metricOptions, dimensionOptions, identifierOptions, payload,
@@ -32,9 +33,6 @@ export function TableFieldsEditor({
 }) {
   const b = spec.binding;
   const fields = b.dimensions ?? [];
-  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
-  /** 字段区也能当拖拽落点 */
-  const [dropField, setDropField] = useState(false);
 
   const setFields = (next: string[]) => {
     onChange({
@@ -144,64 +142,17 @@ export function TableFieldsEditor({
               </Box>
             );
           })}
-          <Box
-            onClick={(e) => setAnchor(e.currentTarget)}
-            onDragOver={(e) => {
-              e.preventDefault();
-              e.dataTransfer.dropEffect = "copy";
-              if (!dropField) setDropField(true);
-            }}
-            onDragLeave={() => setDropField(false)}
-            onDrop={(e) => {
-              e.preventDefault();
-              setDropField(false);
-              try {
-                const payload = JSON.parse(e.dataTransfer.getData("text/plain") || "{}");
-                if (payload.kind === "field" && payload.name) add(String(payload.name));
-              } catch {
-                /* 不是字段拖拽，忽略 */
-              }
-            }}
-            sx={{
-              ...dash, px: 1.1, py: 0.5, fontSize: 12.5, cursor: "pointer",
-              transition: "border-color .12s, background .12s, color .12s",
-              borderColor: dropField ? "#6366F1" : undefined,
-              bgcolor: dropField ? "rgba(99,102,241,0.05)" : undefined,
-              color: dropField ? "#4F46E5" : undefined,
-              "&:hover": { borderColor: "#A5B4FC", color: "#6366F1" },
-            }}
-          >
-            ＋ 添加字段
-          </Box>
+          <AxisInput
+            value=""
+            options={Array.from(new Set(groups.flatMap(([, options]) => options.map((f) => f.name))))
+              .filter((name) => !fields.includes(name))}
+            placeholder="拖到这里"
+            onPick={(name) => { if (name) add(name); }}
+          />
         </Stack>
 
       </Slot>
 
-      <Menu
-        anchorEl={anchor} open={Boolean(anchor)} onClose={() => setAnchor(null)}
-        slotProps={{ paper: { sx: { borderRadius: 2, maxHeight: 360, minWidth: 200 } } }}
-      >
-        {groups.map(([label, options]) => (
-          options.length ? (
-            <Box key={label}>
-              <Typography sx={{ px: 1.5, pt: 1, pb: 0.5, fontSize: 10.5, color: "#94A3B8" }}>{label}</Typography>
-              {options.map((f) => {
-                const active = fields.includes(f.name);
-                return (
-                  <MenuItem
-                    key={`${label}-${f.name}`}
-                    onClick={() => { add(f.name); setAnchor(null); }}
-                    sx={{ fontSize: 12.5, minHeight: 32 }}
-                  >
-                    <Box sx={{ flex: 1 }}>{f.name}</Box>
-                    {active && <Check sx={{ fontSize: 14, color: "#4F46E5" }} />}
-                  </MenuItem>
-                );
-              })}
-            </Box>
-          ) : null
-        ))}
-      </Menu>
     </>
   );
 }

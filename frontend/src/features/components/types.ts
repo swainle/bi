@@ -52,6 +52,8 @@ export interface FilterFieldSpec {
   width: number;
   note: string;
   column?: string;
+  /** 只影响这些组件（空 = 全部组件） */
+  targets?: string[];
   ranges?: Record<string, string>;
   /** 数据集切换器：选项值 → 数据集 id（如 {拼多多: 15, 天猫: 21}）。
    *  非空时这个字段不再是「过滤一行」，而是「换一张表」，选项由映射生成。 */

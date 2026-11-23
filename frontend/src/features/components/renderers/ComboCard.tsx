@@ -72,11 +72,14 @@ export default function ComboCard({ payload, ui, compact, onTopList }: Props) {
       },
       {
         type: "value",
-        show: !compact && !(box.w > 0 && box.w < 420),
+        /* 线的 Y 轴放右侧：不写 position 会叠在左轴上，看起来就是「没有刻度」 */
+        position: "right",
+        show: !compact,
         axisTick: { show: false },
         axisLine: { show: false },
-        axisLabel: { ...AXIS.label, show: !compact && !(box.w > 0 && box.w < 420), formatter: (v: number) => formatAxis(v, opts) },
+        axisLabel: { ...AXIS.label, show: !compact, formatter: (v: number) => formatAxis(v, opts) },
         splitLine: { show: false },
+        nameTextStyle: { fontSize: 10.5, color: "#94A3B8" },
       },
     ],
     series: [

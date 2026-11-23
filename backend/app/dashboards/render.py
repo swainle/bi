@@ -297,12 +297,13 @@ def _page_filters(defs: list[dict], effective: dict) -> tuple[list[dict], list[s
             continue
         # 日期控件：选中的那一天 / 起止区间 → 开始日 00:00 ~ 结束日 23:59:59
         # （时间戳列不会被漏掉，date 列 / 文本日期列也照样匹配）
+        targets = [str(k) for k in (field.get("targets") or [])]
         if str(field.get("type") or "") == "date":
             bounds = _date_bounds(value)
             if bounds is None:
                 continue
             start, end = bounds
-            out.append({"name": column, "op": "BETWEEN", "value": [start, f"{end} 23:59:59"]})
+            out.append({"name": column, "op": "BETWEEN", "value": [start, f"{end} 23:59:59"], "targets": targets})
             continue
         if isinstance(value, (list, dict)):
             continue
@@ -313,14 +314,14 @@ def _page_filters(defs: list[dict], effective: dict) -> tuple[list[dict], list[s
             op, resolved = parsed
             if resolved is None:
                 continue
-            out.append({"name": column, "op": op, "value": resolved})
+            out.append({"name": column, "op": op, "value": resolved, "targets": targets})
         elif str(field.get("type") or "") == "search":
             # 搜索框是模糊匹配，别当精确等于用
             text = str(value).strip()
             if text:
-                out.append({"name": column, "op": "ILIKE", "value": text})
+                out.append({"name": column, "op": "ILIKE", "value": text, "targets": targets})
         else:
-            out.append({"name": column, "op": "=", "value": value})
+            out.append({"name": column, "op": "=", "value": value, "targets": targets})
     return out, keywords
 
 
@@ -379,10 +380,11 @@ def _render_card(
             kind, spec = _item_spec(db, item)
             # 先按平台切数据集，再拿新表的字段判断页面筛选能不能挂上去
             spec, _switched = apply_dataset_switch(db, spec, effective, switches)
-            ignore_page_filters = spec.binding.ignore_filters if getattr(spec.binding, "ignore_filters", None) is not None else kind in ("pie", "donut", "combo")
-            if page_filters and spec.binding and spec.binding.dataset_id and not ignore_page_filters:
+            if page_filters and spec.binding and spec.binding.dataset_id:
                 columns = _dataset_fields(db, spec.binding.dataset_id)
-                extra = [f for f in page_filters if f["name"] in columns]
+                extra = [f for f in page_filters
+                         if f["name"] in columns
+                         and (not f.get("targets") or item.key in f["targets"])]
                 if extra:
                     existing = {(f.get("column") or f.get("name")) for f in (spec.binding.filters or [])}
                     extra = [f for f in extra if f["name"] not in existing]

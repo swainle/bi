@@ -1086,10 +1086,7 @@ export default function QueryPanel({
             {/* 环形图 / 饼图：形状参数 + 显示开关（组件特有） */}
             {(kind === "pie" || kind === "donut") && (
               <>
-                <PanelSection title="首选项" first>
-                  <ChartOptionsPanel kind={kind} spec={spec} onChange={onChange} mode="prefs" />
-                </PanelSection>
-                <PanelSection title="图形">
+                <PanelSection title="图形" first>
                   <ChartOptionsPanel kind={kind} spec={spec} onChange={onChange} mode="pie" />
                 </PanelSection>
                 {/* 点击弹窗：点扇区弹出指定明细表（和指标卡徽标弹窗同一套配置） */}
