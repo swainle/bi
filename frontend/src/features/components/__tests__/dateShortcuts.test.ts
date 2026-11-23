@@ -18,6 +18,15 @@ describe("日期快捷选项", () => {
     expect(dateShortcutRange(today, "week1", 7, 1)).toEqual({ start: "2026-12-28", end: "2027-01-03" });
   });
 
+  it("本周从周一算到今天（不选未来）", () => {
+    // 2026-11-20 是周五 → 周一 11-16
+    expect(dateShortcutRange("2026-11-20", "week0", 7, 0)).toEqual({ start: "2026-11-16", end: "2026-11-20" });
+    // 2026-11-16 正好是周一 → 当天
+    expect(dateShortcutRange("2026-11-16", "week0", 7, 0)).toEqual({ start: "2026-11-16", end: "2026-11-16" });
+    // 2026-11-22 是周日 → 整周
+    expect(dateShortcutRange("2026-11-22", "week0", 7, 0)).toEqual({ start: "2026-11-16", end: "2026-11-22" });
+  });
+
   it("保留今日、昨日和近7日的计算口径", () => {
     expect(dateShortcutRange("2026-11-20", "today", 1)).toEqual({ start: "2026-11-20", end: "2026-11-20" });
     expect(dateShortcutRange("2026-11-20", "yesterday", 1)).toEqual({ start: "2026-11-19", end: "2026-11-19" });

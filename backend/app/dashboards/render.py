@@ -379,7 +379,8 @@ def _render_card(
             kind, spec = _item_spec(db, item)
             # 先按平台切数据集，再拿新表的字段判断页面筛选能不能挂上去
             spec, _switched = apply_dataset_switch(db, spec, effective, switches)
-            if page_filters and spec.binding and spec.binding.dataset_id:
+            ignore_page_filters = spec.binding.ignore_filters if getattr(spec.binding, "ignore_filters", None) is not None else kind in ("pie", "donut", "combo")
+            if page_filters and spec.binding and spec.binding.dataset_id and not ignore_page_filters:
                 columns = _dataset_fields(db, spec.binding.dataset_id)
                 extra = [f for f in page_filters if f["name"] in columns]
                 if extra:

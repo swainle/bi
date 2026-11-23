@@ -298,6 +298,8 @@ export interface BindingSpec {
   top_n: number;
   sort: "desc" | "asc";
   order_by_dimension?: boolean;
+  /** 不受页面筛选器影响（undefined = 按类型默认：环形图 / 组合图 true） */
+  ignore_filters?: boolean | null;
   sort_field?: string;
   series: string | null;
   split: string | null;

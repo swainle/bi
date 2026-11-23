@@ -1020,6 +1020,17 @@ export default function QueryPanel({
               />
             </Row>
           )}
+          {kind === "combo" && (
+            <Row label="排序依据">
+              <TextField select size="small" value={b.order_by_dimension ? "x" : "value"}
+                onChange={(e) => patch("order_by_dimension", e.target.value === "x")}
+                sx={fieldSx}>
+                <MenuItem value="value" sx={{ fontSize: 12.5 }}>按数值</MenuItem>
+                <MenuItem value="x" sx={{ fontSize: 12.5 }}>按 X 轴</MenuItem>
+              </TextField>
+              <Box sx={{ width: 26, flexShrink: 0 }} />
+            </Row>
+          )}
         </Stack>
         </Slot>
         )}
@@ -1075,7 +1086,10 @@ export default function QueryPanel({
             {/* 环形图 / 饼图：形状参数 + 显示开关（组件特有） */}
             {(kind === "pie" || kind === "donut") && (
               <>
-                <PanelSection title="图形" first>
+                <PanelSection title="首选项" first>
+                  <ChartOptionsPanel kind={kind} spec={spec} onChange={onChange} mode="prefs" />
+                </PanelSection>
+                <PanelSection title="图形">
                   <ChartOptionsPanel kind={kind} spec={spec} onChange={onChange} mode="pie" />
                 </PanelSection>
                 {/* 点击弹窗：点扇区弹出指定明细表（和指标卡徽标弹窗同一套配置） */}
@@ -1093,6 +1107,11 @@ export default function QueryPanel({
                 <ChartOptionsPanel kind={kind} spec={spec} onChange={onChange} mode="prefs" />
                 <PanelSection title="坐标轴">
                   <ChartOptionsPanel kind={kind} spec={spec} onChange={onChange} mode="axis" />
+                </PanelSection>
+                {/* 点击弹窗：点柱子/线弹出指定明细表（和环形图同一套配置） */}
+                <PanelSection title="点击弹窗">
+                  <KpiTopSettings spec={spec} onChange={onChange} tables={tables}
+                    hideBadge switchLabel="点击弹窗" />
                 </PanelSection>
               </>
             )}

@@ -7,6 +7,57 @@
 > 交付顺序：改代码 → `tsc --noEmit` → 真机截图自检（对齐 / 折行 / 溢出 / 空态）→ 写这里。
 
 ---
+## 2026-11-23 · 新增：环形图 / 柱线组合「不受筛选器影响」+ 点击弹窗按点击值过滤
+
+- **首选项 · 不受筛选器影响**：环形图（含饼图）和柱线组合的首选项里新增开关，**默认开启**；
+  写 `binding.ignore_filters`（`null` = 按类型默认：`pie / donut / combo` 视为 true，其它图表仍受筛选器控制）。
+  后端在 `_render_card` 里据此跳过页面筛选 / 联动筛选。
+- **点击弹窗过滤**：点扇区或柱子时把点击值带到弹窗，明细表按**卡片维度列**过滤（例如横轴 `week_key`，就只看该周的行）；
+  不需要额外配置项。弹窗关闭时清空。
+- **文件**：`backend/app/components/spec.py`（`ignore_filters`）、`backend/app/dashboards/render.py`（跳过筛选）、
+  `frontend/src/features/components/editor/ChartOptionsPanel.tsx`、`editor/QueryPanel.tsx`、`types.ts`、
+  `renderers/PieCard.tsx`、`renderers/ComboCard.tsx`、`board/TopListDialog.tsx`、`viewer/DashboardPage.tsx`。
+- **怎么验证**：doc5 临时环形图两张（验完已还原），带 `cross_filters=[{platform_code: tmall}]` 渲染：
+  默认卡 series = `tmall, jd, douyin, pdd`（不受影响），显式 `ignore_filters: false` 的卡 series = `tmall`（受影响）。
+  `tsc --noEmit` 0；`pytest -k "render or component or spec"` 71 项通过。
+  ⚠️ 预览页「点扇区 → 弹窗只剩该值行」需要你点一下确认（画布点击我的自动化抓不到）。
+
+---
+## 2026-11-23 · 新增：柱线组合图也能「点击弹窗」弹明细表
+
+- 面板 **附加 → 点击弹窗**：开关 + 弹出明细表 + 排序列 + 排序（复用指标卡徽标弹窗那套 `KpiTopSettings`，
+  `hideBadge` + 开关文案「点击弹窗」，和环形图完全一致的配置方式）。
+- 后端 `payload.top` 的返回条件加上 `combo`（原来只有 kpi / pie / donut）。
+- 渲染侧 `ComboCard` 新增 `onTopList`：点柱子或线就弹窗；没配弹窗时点击无副作用。
+- **文件**：`frontend/src/features/components/editor/QueryPanel.tsx`、`renderers/ComboCard.tsx`、
+  `backend/app/components/resolver.py`。
+- **怎么验证**：doc5 临时组合图（`top.enabled=true` + `table_key=tt_table`，验完已还原）——
+  `/render` 返回 `payload.top = {enabled:true, table_key:"tt_table", …}`（改前恒为 null）；`tsc --noEmit` 0。
+  预览页「点柱子弹明细表」的端到端点击仍需你点一下确认（和环形图一样，我的自动化没抓到画布点击）。
+
+---
+## 2026-11-23 · 新增：柱线组合排序可「按 X 轴」
+
+- 排序分区多了一行 **排序依据**：`按数值` / `按 X 轴`（写 `binding.order_by_dimension`）。
+  选「按 X 轴」后不再按值重排，X 轴保持维度顺序（时间/类目这类有序轴必须这样）。
+- **文件**：`frontend/src/features/components/editor/QueryPanel.tsx`（复用后端已有的 `order_by_dimension`）。
+- **怎么验证**：doc5 临时组合图，`order_by_dimension: true`（验完已还原）—— `/render` 返回
+  `error: ""`，series 顺序 `douyin, jd, pdd, tmall`（维度顺序，而不是按值 desc 的 tmall 在前）。`tsc --noEmit` 0。
+- **未做**：组合图「左右轴用同一个字段」。SQL 需要一个不冲突的列别名（`xxx__line`），
+  涉及 resolver 的 `_metric_items` / 请求 metrics 别名 / compute 的 `build_combo` 取值三处，我没在没验证的情况下改。
+
+---
+## 2026-11-23 · 新增：筛选栏日期控件加入「本周」
+
+- 日期控件的快捷选项在「昨日」和「上周」之间加了 **本周**：取 **本周一 → 今天**（不把未来几天算进去）。
+- `dateShortcutRange` 的 `weeks` 参数现在是可选的「第 N 个自然周」（`0` = 本周，`1` = 上周），
+  日选项（今日/昨日/近 7 日…）走原来的天数口径，不受影响。
+- **文件**：`frontend/src/features/components/renderers/FilterBar.tsx`、
+  `__tests__/dateShortcuts.test.ts`（补 3 条本周用例）。
+- **怎么验证**：`vitest dateShortcuts` 7 项通过 —— `2026-11-20`（周五）本周 = `11-16~11-20`、
+  周一当天 = `11-16~11-16`、周日 = 整周 `11-16~11-22`；`tsc --noEmit` 0。
+
+---
 ## 2026-11-23 · 修复：明细表弹窗「产品卖点 / 差评痛点标签」选不了字段（真因）
 
 - **上一轮的改动撤回**：给 5 个附加区块加的「关联字段」行去掉了（多一个配置项，用户确认不需要）。

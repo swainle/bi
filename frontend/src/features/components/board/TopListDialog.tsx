@@ -10,9 +10,11 @@ const tableUi: UiSpec = {
   accent: "indigo", radius: 8, min_height: 220, show_unit: false, animate: false, align: "left", columns: 1,
 };
 
-export default function TopListDialog({ open, onClose, payload, sortField = "", sort = "" }: {
+export default function TopListDialog({ open, onClose, payload, sortField = "", sort = "", filter = null }: {
   open: boolean;
   onClose: () => void;
+  /** 按「点击的数据」过滤（环形图 / 组合图点扇区、柱子） */
+  filter?: { column: string; value: string } | null;
   /** 弹窗要显示的明细表渲染结果（看板渲染里的 cards[table_key]） */
   payload?: RenderPayload | null;
   /** 排序列（空 = 用明细表自己的顺序） */
@@ -21,6 +23,13 @@ export default function TopListDialog({ open, onClose, payload, sortField = "", 
   sort?: SortDir;
 }) {
   const initialSort = sortField && sort ? { key: sortField, desc: sort === "desc" } : null;
+  /* 点哪个扇区 / 柱子，就只看那一行对应的明细 */
+  const shown = payload && filter?.column && filter.value
+    ? {
+      ...payload,
+      rows: (payload.rows ?? []).filter((row) => String((row as Record<string, unknown>)[filter.column] ?? "") === filter.value),
+    }
+    : payload;
   return (
     <Dialog
       open={open}
@@ -37,7 +46,7 @@ export default function TopListDialog({ open, onClose, payload, sortField = "", 
       }}
     >
       <Box sx={{ width: "92vw", maxWidth: 1400, height: "82vh", mx: "auto", pointerEvents: "auto" }}>
-        {payload ? <TableCard payload={payload} ui={tableUi} initialSort={initialSort} /> : null}
+        {shown ? <TableCard payload={shown} ui={tableUi} initialSort={initialSort} /> : null}
       </Box>
     </Dialog>
   );

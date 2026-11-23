@@ -117,6 +117,7 @@ class BindingSpec(BaseModel):
     sort: Literal["desc", "asc"] = "desc"
     sort_field: str = Field(default="", max_length=120)  # 明细表按所选列全量排序后取前 N 行
     order_by_dimension: bool = False   # 按维度名排序（价格带这类有序类目用）
+    ignore_filters: bool | None = None  # 不受页面筛选器影响（None = 按类型默认：环形图 / 组合图 true）
     dimensions: list = []             # 明细表：额外维度（多列分组）
     series: str | None = None         # 热力图第二维
     split: str | None = None          # 词云：按分隔符拆标签

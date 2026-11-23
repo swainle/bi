@@ -221,10 +221,11 @@ const shiftYmd = (day: string, delta: number) => {
 };
 const todayYmd = () => formatChinaTime(new Date()).slice(0, 10);
 
-/** 按天包含今天；按周取此前对应的完整自然周（周一至周日）。 */
+/** 按天包含今天；按周取自然周（周一至周日）：0 = 本周（截到今天），1 = 上周（完整自然周）。 */
 const DATE_SHORTCUTS: { key: string; label: string; days: number; weeks?: number }[] = [
   { key: "today", label: "今日", days: 1 },
   { key: "yesterday", label: "昨日", days: 1 },
+  { key: "week0", label: "本周", days: 7, weeks: 0 },
   { key: "week1", label: "上周", days: 7, weeks: 1 },
   { key: "week2", label: "上上周", days: 7, weeks: 2 },
   { key: "week3", label: "上上上周", days: 7, weeks: 3 },
@@ -235,11 +236,13 @@ const DATE_SHORTCUTS: { key: string; label: string; days: number; weeks?: number
   { key: "90", label: "近90天", days: 90 },
 ];
 
-export function dateShortcutRange(today: string, key: string, days: number, weeks = 0) {
-  if (weeks) {
+export function dateShortcutRange(today: string, key: string, days: number, weeks?: number) {
+  if (typeof weeks === "number") {
     const weekday = (new Date(`${today}T00:00:00`).getDay() + 6) % 7;
     const start = shiftYmd(today, -weekday - weeks * 7);
-    return { start, end: shiftYmd(start, 6) };
+    const sunday = shiftYmd(start, 6);
+    /* 本周只到今天（未来几天没有数据，选了也白选） */
+    return { start, end: weeks === 0 && sunday > today ? today : sunday };
   }
   const end = key === "yesterday" ? shiftYmd(today, -1) : today;
   return { start: shiftYmd(end, -(days - 1)), end };

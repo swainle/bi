@@ -1,6 +1,6 @@
 /** 运算自定义 + 坐标轴 / 饼图参数（编辑页中栏） */
 
-import { Box, MenuItem, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography } from "@mui/material";
+import { Box, MenuItem, Stack, Switch, TextField, ToggleButton, ToggleButtonGroup, Typography } from "@mui/material";
 import { chartOf, computeOf } from "../skin/format";
 import { PanelSection } from "./PanelSection";
 import { Row, fieldSx } from "./Row";
@@ -171,20 +171,28 @@ export default function ChartOptionsPanel({ kind, spec, onChange, mode = "all" }
         )}
       </>)}
 
-      {isCombo && showPrefsBlock && (
+      {(isCombo || isPie) && showPrefsBlock && (
         <PanelSection title="首选项">
-          <Row label="柱 / 线">
-            <Box sx={{ flex: 1, minWidth: 0, display: "flex", gap: 1 }}>
-              <ToggleButton value="axis" size="small" selected={combo.right_axis}
-                onChange={() => setCombo({ right_axis: !combo.right_axis })}
-                sx={groupSx["& .MuiToggleButton-root"]}>右轴</ToggleButton>
-              <ToggleButton value="smooth" size="small" selected={combo.smooth}
-                onChange={() => setCombo({ smooth: !combo.smooth })}
-                sx={groupSx["& .MuiToggleButton-root"]}>曲线平滑</ToggleButton>
-            </Box>
+          {/* 环形图 / 组合图默认不受筛选器影响（undefined = 默认 true） */}
+          <Row label="不受筛选器影响">
+            <Switch size="small"
+              checked={spec.binding?.ignore_filters !== false}
+              onChange={(e) => onChange({ ...spec, binding: { ...spec.binding, ignore_filters: e.target.checked } })}
+              sx={{ ml: -0.75 }} />
           </Row>
-          {/* 组件元素并进「首选项」，不再单独占一行标题 */}
-          <ChartOptionsPanel kind={kind} spec={spec} onChange={onChange} mode="elements" />
+          {isCombo && (
+            <Row label="柱 / 线">
+              <Box sx={{ flex: 1, minWidth: 0, display: "flex", gap: 1 }}>
+                <ToggleButton value="axis" size="small" selected={combo.right_axis}
+                  onChange={() => setCombo({ right_axis: !combo.right_axis })}
+                  sx={groupSx["& .MuiToggleButton-root"]}>右轴</ToggleButton>
+                <ToggleButton value="smooth" size="small" selected={combo.smooth}
+                  onChange={() => setCombo({ smooth: !combo.smooth })}
+                  sx={groupSx["& .MuiToggleButton-root"]}>曲线平滑</ToggleButton>
+              </Box>
+            </Row>
+          )}
+          {isCombo && <ChartOptionsPanel kind={kind} spec={spec} onChange={onChange} mode="elements" />}
         </PanelSection>
       )}
 

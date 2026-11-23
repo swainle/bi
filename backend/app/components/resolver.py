@@ -731,7 +731,7 @@ def _resolve_bound(
         "elapsed_ms": result.elapsed_ms,
         "rls": result.rls,
         # 指标卡右上角徽标 / 环形图点扇区的弹窗配置：前端据此把徽标（或扇区）做成可点
-        "top": spec.top.model_dump() if kind in ("kpi", "pie", "donut") and spec.top.enabled else None,
+        "top": spec.top.model_dump() if kind in ("kpi", "pie", "donut", "combo") and spec.top.enabled else None,
         # 这张卡最终读的是哪个数据集（平台分套切换后是目标表）：前端做「逐级筛选」时
         # 要按这些数据集去取候选值，不能拿卡片 spec 里那个（那是切换前的）。
         "dataset_id": dataset.id,

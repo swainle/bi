@@ -295,6 +295,8 @@ export default function DashboardPage() {
   const cards = render?.cards ?? {};
   /** 指标卡右上角徽标 → 明细表弹窗（只读，不动页面状态；排序配置只在弹窗内生效） */
   const [topKey, setTopKey] = useState<string | null>(null);
+  /* 点扇区 / 柱子 → 弹窗按「点击的数据」过滤（列 = 卡片维度） */
+  const [topFilter, setTopFilter] = useState<{ column: string; value: string } | null>(null);
   const [topSort, setTopSort] = useState<{ field: string; sort: SortDir } | null>(null);
   /** 这一页的卡片实际读的数据集（后端按平台分套切过表）：筛选栏「逐级筛选」按它取候选值 */
   const pageDatasets = useMemo(() => {
@@ -957,9 +959,12 @@ export default function DashboardPage() {
                                 window.scrollTo({ top: 0, behavior: "smooth" });
                               }
                             }}
-                            onTopList={payload.top?.enabled ? () => {
+                            onTopList={payload.top?.enabled ? (name?: string) => {
                               const top = payload.top as { table_key?: string; sort_field?: string; sort?: SortDir } | undefined;
                               setTopSort({ field: String(top?.sort_field || ""), sort: top?.sort ?? "" });
+                              setTopFilter(name
+                                ? { column: String(item.spec?.binding?.dimension || ""), value: name }
+                                : null);
                               setTopKey(String(top?.table_key || ""));
                             } : undefined}
                             onExport={payload.kind === "table" && typeof item.spec?.binding?.dataset_id === "number"
@@ -1010,10 +1015,11 @@ export default function DashboardPage() {
       {topKey && (
         <TopListDialog
           open
-          onClose={() => { setTopKey(null); setTopSort(null); }}
+          onClose={() => { setTopKey(null); setTopSort(null); setTopFilter(null); }}
           payload={cards[topKey] ?? null}
           sortField={topSort?.field ?? ""}
           sort={topSort?.sort ?? ""}
+          filter={topFilter}
         />
       )}
 
