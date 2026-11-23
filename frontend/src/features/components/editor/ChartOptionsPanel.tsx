@@ -98,20 +98,6 @@ export default function ChartOptionsPanel({ kind, spec, onChange, mode = "all" }
               onChange={(e) => onChange({ ...spec, subtitle: e.target.value })}
               sx={fieldSx} />
           </Row>
-          {isCombo && (
-            <>
-              <Row label="柱名称">
-                <TextField size="small" value={combo.bar_name}
-                  onChange={(e) => setCombo({ bar_name: e.target.value.slice(0, 16) })}
-                  sx={fieldSx} />
-              </Row>
-              <Row label="线名称">
-                <TextField size="small" value={combo.line_name}
-                  onChange={(e) => setCombo({ line_name: e.target.value.slice(0, 16) })}
-                  sx={fieldSx} />
-              </Row>
-            </>
-          )}
           {isAxis && (
             <>
               <Row label="横轴标题">
@@ -184,6 +170,21 @@ export default function ChartOptionsPanel({ kind, spec, onChange, mode = "all" }
                   sx={groupSx["& .MuiToggleButton-root"]}>曲线平滑</ToggleButton>
               </Box>
             </Row>
+          )}
+          {/* 图例文字就在「柱 / 线」下面改（原来藏在「文字」里） */}
+          {isCombo && (
+            <>
+              <Row label="柱名称">
+                <TextField size="small" placeholder="默认 = 左轴指标名" value={combo.bar_name}
+                  onChange={(e) => setCombo({ bar_name: e.target.value.slice(0, 16) })}
+                  sx={fieldSx} />
+              </Row>
+              <Row label="线名称">
+                <TextField size="small" placeholder="默认 = 右轴指标名" value={combo.line_name}
+                  onChange={(e) => setCombo({ line_name: e.target.value.slice(0, 16) })}
+                  sx={fieldSx} />
+              </Row>
+            </>
           )}
           {isCombo && <ChartOptionsPanel kind={kind} spec={spec} onChange={onChange} mode="elements" />}
         </PanelSection>
