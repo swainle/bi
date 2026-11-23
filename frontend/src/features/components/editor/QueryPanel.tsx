@@ -76,6 +76,21 @@ export default function QueryPanel({
   const patch = (key: string, value: unknown) =>
     onChange({ ...spec, binding: { ...spec.binding, [key]: value } });
 
+  /** 自定义聚合表达式的数据来源只认「当前指标」：
+   *  换指标时把表达式里的列名一起换掉，避免聚合 SQL 偷偷用了别的列（含公式字段）。 */
+  const retargetExpr = (expression: string | undefined, next: string): string =>
+    String(expression || "").replace(/"([^"]+)"/g, () => `"${next}"`);
+
+  /** 选指标：自定义聚合模式下，表达式同步改成新指标 */
+  const pickMetric = (next: string | null) => {
+    if (next && b.agg === "CUSTOM" && b.agg_expression) {
+      const expression = retargetExpr(b.agg_expression, next);
+      onChange({ ...spec, binding: { ...spec.binding, metric: next, agg_expression: expression } });
+      return;
+    }
+    patch("metric", next);
+  };
+
   /** 词云的「拆词」分隔符：编辑态用本地草稿，失焦/回车再落到 spec（不每敲一个字就重算） */
   const [splitDraft, setSplitDraft] = useState(b.split ?? "");
   useEffect(() => { setSplitDraft(b.split ?? ""); }, [b.split]);
@@ -801,7 +816,7 @@ export default function QueryPanel({
               value={b.metric ?? ""}
               options={metricOptions.map((f) => f.name)}
               placeholder="拖到这里"
-              onPick={(next) => patch("metric", next)}
+              onPick={pickMetric}
             />
           </Row>
           {b.metric && (
@@ -823,17 +838,25 @@ export default function QueryPanel({
           )}
         </Box>
 
-        {b.metric && b.agg === "CUSTOM" && (
+        {b.metric && b.agg === "CUSTOM" && (() => {
+          /* 表达式里的列必须就是当前指标：引用到别的列（尤其公式字段）会让口径悄悄跑偏，
+             这里直接点出来，别让人对着不一致的两个输入猜。 */
+          const used = [...String(b.agg_expression || "").matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+          const foreign = [...new Set(used.filter((name) => name !== b.metric))];
+          return (
           <Box sx={{ mt: 1 }}>
             <TextField size="small" multiline minRows={3} fullWidth
               value={b.agg_expression ?? ""}
               onChange={(e) => patch("agg_expression", e.target.value)}
-              error={Boolean(payload?.error)}
-              helperText={payload?.error || '使用数据集字段名，例如 MEDIAN("销售额")；无需 SELECT / FROM，随当前筛选和分组计算。'}
+              error={Boolean(payload?.error) || foreign.length > 0}
+              helperText={payload?.error || (foreign.length
+                ? `表达式引用的是 ${foreign.map((n) => `"${n}"`).join("、")}，和当前指标 "${b.metric}" 不一致 —— 这个聚合会按前者计算。`
+                : '使用数据集字段名，例如 MEDIAN("销售额")；无需 SELECT / FROM，随当前筛选和分组计算。')}
               inputProps={{ maxLength: 4000, spellCheck: false }}
               sx={{ "& .MuiOutlinedInput-root": { borderRadius: "8px", fontSize: 12 }, "& textarea, & .MuiInputBase-input": { fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace", fontSize: 12 } }} />
           </Box>
-        )}
+          );
+        })()}
         </PanelSection>
         )}
 

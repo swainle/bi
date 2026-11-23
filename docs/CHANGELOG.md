@@ -7,6 +7,33 @@
 > 交付顺序：改代码 → `tsc --noEmit` → 真机截图自检（对齐 / 折行 / 溢出 / 空态）→ 写这里。
 
 ---
+## 2026-11-23 · 修复：自定义 SQL 返回文本时「运算 > 后缀」不生效
+
+- **现象**：聚合用 CASE 返回 `'20-40'` 这类文本后，`运算 > 后缀`（如「 元」）加了没反应。
+- **原因**：`compute.fmt_number` 先按「数字格式」走 `float(value)`；文本值转换失败时**直接原样返回**，
+  把 `prefix / suffix` 丢掉了（`text` / `date` 格式那条路是正常的，所以切格式能生效）。
+- **修复**：非数字值同样套前后缀（空值 `-` 除外）。
+- **文件**：`backend/app/components/compute.py`。
+- **怎么验证**：`fmt_number('20-40','int',suffix=' 元')` → `20-40 元`；`fmt_number('-','int',suffix=' 元')` → `-`；
+  `fmt_number(1234.5,'int',decimals=1,suffix=' 元')` → `1,234.5 元`；`pytest -k "compute or format or component"` 62 项通过。
+
+---
+## 2026-11-23 · 修复：自定义聚合表达式可以「背着指标」引用别的列（含公式字段）
+
+- **问题（原则性）**：聚合选「自定义 SQL」后，表达式是自由文本，换指标不会改它。
+  于是出现「指标 = `final_price`，表达式 = `MAX("price_band")`」这种配置 —— 卡片实际按 `price_band` 聚合，
+  界面上却看不出来；`price_band` 还是公式字段时，后端会把它展开成 `__computed` 子查询，
+  看起来就像「聚合默认拿公式字段当数据来源」。
+- **修复①（行为）**：换指标时，自定义表达式里的列名**自动跟着换成新指标**（`MAX("price_band")` → `MAX("rank_position")`），
+  聚合口径不再悄悄跑偏。
+- **修复②（校验）**：表达式引用的列 ≠ 当前指标时，输入框标红并提示
+  「表达式引用的是 "x"，和当前指标 "y" 不一致 —— 这个聚合会按前者计算」（后端已报错时优先显示后端错误）。
+- **文件**：`frontend/src/features/components/editor/QueryPanel.tsx`（`retargetExpr` / `pickMetric` / 表达式校验）。
+- **怎么验证**：doc1 指标卡 —— 表达式 `MAX("price_band")` 时后端报「未知字段：price_band」（该数据集无此列）；
+  把指标从 `final_price` 换成 `rank_position`，表达式实测自动变成 `MAX("rank_position")`。`tsc --noEmit` 0。
+  截图 `docs/_selfcheck/2026-11-23-custom-sql-guard.png`。
+
+---
 ## 2026-11-21 · 修复：「数据」区输入框宽度不一致
 
 - **原因**：纵轴（指标）外面多包了一层拖拽区，带 `p: 0.25`（左右各 2px），所以纵轴的输入框比横轴窄 4px；

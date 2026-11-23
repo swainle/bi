@@ -29,7 +29,10 @@ def fmt_number(value: Any, fmt: str = "int", *, decimals: int = 0,
     try:
         num = float(value)
     except (TypeError, ValueError):
-        return str(value)
+        # 非数字（例如自定义 SQL 返回 '20-40' 这种文本）：前缀 / 后缀照样要生效，
+        # 否则「运算 > 后缀」看起来是坏的
+        text = str(value)
+        return f"{prefix}{text}{suffix}" if text not in ("-", "") else text
     dec = max(0, int(decimals or 0))
     if fmt == "w":
         text = f"{num / 10000:.1f}万" if abs(num) >= 10000 else f"{num:,.{dec or 0}f}"
