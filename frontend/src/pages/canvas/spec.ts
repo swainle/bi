@@ -62,7 +62,7 @@ export function emptySpec(title = "组件"): ComponentSpec {
     },
     combo: { bar_name: "", line_name: "", right_axis: true, smooth: true },
     table_view: {
-      columns: [], sortable: false, page_size: 10, more: true,
+      columns: [], page_size: 10, more: false,
       more_label: "", index_column: true,
     },
     banner: {

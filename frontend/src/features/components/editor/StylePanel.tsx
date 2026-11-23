@@ -1,8 +1,9 @@
 /** 外观与计算规则（编辑页中栏底部）—— 配色 / 格式 / 高度 / KPI 取数规则 */
 
 import { useEffect, useState } from "react";
-import { Box, MenuItem, Stack, Switch, TextField, Typography } from "@mui/material";
+import { Autocomplete, Box, MenuItem, Stack, Switch, TextField, Typography } from "@mui/material";
 import { CLOUD_PALETTES } from "../skin/tokens";
+import { Row, fieldSx } from "./Row";
 import type { Accent, ComponentKind, ComponentSpec } from "../types";
 
 const ACCENTS: [Accent, string][] = [
@@ -25,8 +26,6 @@ const HINTS: [string, string][] = [
   ["sum_topn", "前N合计"], ["avg_topn", "前N平均"], ["count_topn", "前N名计数"],
   ["total", "全量合计"], ["none", "不显示"],
 ];
-
-const fieldSx = { "& .MuiOutlinedInput-root": { borderRadius: 2, fontSize: 12.5 } } as const;
 
 interface Props {
   kind: ComponentKind;
@@ -102,30 +101,35 @@ export default function StylePanel({
     onResize?.(value);
   };
 
-  /** 头标卡 / 导航菜单卡的外观：两列网格，尺寸 → 阴影 → 描边细项，边缘齐 */
+  /** 头标卡 / 导航菜单卡的外观：尺寸 → 阴影 → 描边细项，边缘齐 */
   if (kind === "banner" || kind === "nav") {
     const edgeOn = spec.ui.edge !== false;
     return (
       <Box>
-        <Typography sx={{ fontSize: 11.5, fontWeight: 600, color: "#64748B", mb: 1.25 }}>外观</Typography>
-        <Box sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 2 }}>
-          <TextField size="small" type="number" label="高度" value={heightText}
-            onChange={(e) => setHeightText(e.target.value)}
-            onBlur={commitHeight}
-            onKeyDown={(e) => { if (e.key === "Enter") commitHeight(); }}
-            sx={fieldSx} />
-          <TextField size="small" type="number" label="圆角" value={radiusText}
-            onChange={(e) => setRadiusText(e.target.value)}
-            onBlur={commitRadius}
-            onKeyDown={(e) => { if (e.key === "Enter") commitRadius(); }}
-            inputProps={{ min: 0, max: 28, step: 1 }}
-            sx={fieldSx} />
-          <TextField select size="small" label="阴影" value={String(Math.round(spec.ui.shadow_px ?? 16))}
-            onChange={(e) => setUi({ shadow_px: Number(e.target.value) })}
-            sx={{ gridColumn: "1 / -1", ...fieldSx }}>
-            {SHADOWS.map(([v, t]) => <MenuItem key={v} value={v} sx={{ fontSize: 12.5 }}>{t}</MenuItem>)}
-          </TextField>
-        </Box>
+        <Stack spacing={1}>
+          <Row label="高度">
+            <TextField size="small" type="number" value={heightText}
+              onChange={(e) => setHeightText(e.target.value)}
+              onBlur={commitHeight}
+              onKeyDown={(e) => { if (e.key === "Enter") commitHeight(); }}
+              sx={fieldSx} />
+          </Row>
+          <Row label="圆角">
+            <TextField size="small" type="number" value={radiusText}
+              onChange={(e) => setRadiusText(e.target.value)}
+              onBlur={commitRadius}
+              onKeyDown={(e) => { if (e.key === "Enter") commitRadius(); }}
+              inputProps={{ min: 0, max: 28, step: 1 }}
+              sx={fieldSx} />
+          </Row>
+          <Row label="阴影">
+            <TextField select size="small" value={String(Math.round(spec.ui.shadow_px ?? 16))}
+              onChange={(e) => setUi({ shadow_px: Number(e.target.value) })}
+              sx={fieldSx}>
+              {SHADOWS.map(([v, t]) => <MenuItem key={v} value={v} sx={{ fontSize: 12.5 }}>{t}</MenuItem>)}
+            </TextField>
+          </Row>
+        </Stack>
 
         {/* 描边同属「外观」，不画分割线，只用行距分组：右侧开关，线宽/深浅挂在它下面 */}
         <Box
@@ -146,18 +150,22 @@ export default function StylePanel({
         </Box>
 
         {edgeOn && (
-          <Box sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 2 }}>
-            <TextField select size="small" label="线宽" value={String(spec.ui.edge_px ?? 1)}
-              onChange={(e) => setUi({ edge_px: Number(e.target.value) })}
-              sx={fieldSx}>
-              {EDGE_WIDTHS.map(([v, t]) => <MenuItem key={v} value={v} sx={{ fontSize: 12.5 }}>{t}</MenuItem>)}
-            </TextField>
-            <TextField select size="small" label="深浅" value={String(Math.round(spec.ui.edge_alpha ?? 22))}
-              onChange={(e) => setUi({ edge_alpha: Number(e.target.value) })}
-              sx={fieldSx}>
-              {EDGE_ALPHAS.map(([v, t]) => <MenuItem key={v} value={v} sx={{ fontSize: 12.5 }}>{t}</MenuItem>)}
-            </TextField>
-          </Box>
+          <Stack spacing={1}>
+            <Row label="线宽">
+              <TextField select size="small" value={String(spec.ui.edge_px ?? 1)}
+                onChange={(e) => setUi({ edge_px: Number(e.target.value) })}
+                sx={fieldSx}>
+                {EDGE_WIDTHS.map(([v, t]) => <MenuItem key={v} value={v} sx={{ fontSize: 12.5 }}>{t}</MenuItem>)}
+              </TextField>
+            </Row>
+            <Row label="深浅">
+              <TextField select size="small" value={String(Math.round(spec.ui.edge_alpha ?? 22))}
+                onChange={(e) => setUi({ edge_alpha: Number(e.target.value) })}
+                sx={fieldSx}>
+                {EDGE_ALPHAS.map(([v, t]) => <MenuItem key={v} value={v} sx={{ fontSize: 12.5 }}>{t}</MenuItem>)}
+              </TextField>
+            </Row>
+          </Stack>
         )}
       </Box>
     );
@@ -165,9 +173,10 @@ export default function StylePanel({
 
   return (
     <Box>
-      <Typography sx={{ fontSize: 11.5, fontWeight: 600, color: "#64748B", mb: 1.25 }}>外观</Typography>
-      <Box sx={{ display: "flex", gap: 0.75, flexWrap: "wrap", mb: 2 }}>
-        {ACCENTS.map(([key, color]) => (
+      <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 2 }}>
+        <Typography sx={{ fontSize: 11.5, color: "#64748B", width: 76, flexShrink: 0 }}>颜色</Typography>
+        <Box sx={{ display: "flex", gap: 0.75, flexWrap: "wrap" }}>
+          {ACCENTS.map(([key, color]) => (
           <Box
             key={key}
             onClick={() => setUi({ accent: key })}
@@ -180,7 +189,8 @@ export default function StylePanel({
               "&:hover": { transform: "scale(1.12)" },
             }}
           />
-        ))}
+          ))}
+        </Box>
       </Box>
 
       {kind === "wordcloud" && (
@@ -220,122 +230,48 @@ export default function StylePanel({
         </Box>
       )}
 
-      <Stack direction="row" spacing={1} sx={{ mb: 1.75 }}>
+      <Stack spacing={1} sx={{ mb: 1.75 }}>
         {kind !== "section" && (
-        <TextField select size="small" label="数字格式" value={spec.compute.format}
-          onChange={(e) => setCompute({ format: e.target.value as ComponentSpec["compute"]["format"] })}
-          sx={{ flex: 1, ...fieldSx }}>
-          {FORMATS.map(([v, t]) => <MenuItem key={v} value={v} sx={{ fontSize: 12.5 }}>{t}</MenuItem>)}
-        </TextField>
+          <Row label="数字格式">
+            <Autocomplete
+              size="small"
+              options={FORMATS.map(([v]) => v)}
+              value={spec.compute.format}
+              onChange={(_, value) => setCompute({ format: (value || "int") as ComponentSpec["compute"]["format"] })}
+              getOptionLabel={(v) => FORMATS.find(([fv]) => fv === v)?.[1] || v}
+              renderInput={(params) => (
+                <TextField {...params} size="small" placeholder="整数" sx={fieldSx} />
+              )}
+              sx={{ flex: 1, minWidth: 0 }}
+            />
+          </Row>
         )}
-        {kind === "kpi" && (
-          <TextField size="small" label="徽标" placeholder="TOP10" value={spec.ui.badge ?? ""}
-            onChange={(e) => setUi({ badge: e.target.value })}
-            sx={{ width: 84, ...fieldSx }} />
-        )}
-        <TextField size="small" type="number" label="高度" value={heightText}
-          onChange={(e) => setHeightText(e.target.value)}
-          onBlur={commitHeight}
-          onKeyDown={(e) => { if (e.key === "Enter") commitHeight(); }}
-          sx={{ width: 84, ...fieldSx }} />
+        <Row label="高度">
+          <TextField size="small" type="number" value={heightText}
+            onChange={(e) => setHeightText(e.target.value)}
+            onBlur={commitHeight}
+            onKeyDown={(e) => { if (e.key === "Enter") commitHeight(); }}
+            sx={fieldSx} />
+        </Row>
       </Stack>
 
       {kind === "kpi" && (
-        <Stack direction="row" spacing={1}>
-          <TextField select size="small" label="大数字" value={spec.compute.headline}
-            onChange={(e) => setCompute({ headline: e.target.value as ComponentSpec["compute"]["headline"] })}
-            sx={{ flex: 1, ...fieldSx }}>
-            {HEADLINES.map(([v, t]) => <MenuItem key={v} value={v} sx={{ fontSize: 12.5 }}>{t}</MenuItem>)}
-          </TextField>
-          <TextField select size="small" label="副标题规则" value={spec.compute.hint}
-            onChange={(e) => setCompute({ hint: e.target.value as ComponentSpec["compute"]["hint"] })}
-            sx={{ flex: 1, ...fieldSx }}>
-            {HINTS.map(([v, t]) => <MenuItem key={v} value={v} sx={{ fontSize: 12.5 }}>{t}</MenuItem>)}
-          </TextField>
+        <Stack spacing={1}>
+          <Row label="大数字">
+            <TextField select size="small" value={spec.compute.headline}
+              onChange={(e) => setCompute({ headline: e.target.value as ComponentSpec["compute"]["headline"] })}
+              sx={fieldSx}>
+              {HEADLINES.map(([v, t]) => <MenuItem key={v} value={v} sx={{ fontSize: 12.5 }}>{t}</MenuItem>)}
+            </TextField>
+          </Row>
+          <Row label="副标题规则">
+            <TextField select size="small" value={spec.compute.hint}
+              onChange={(e) => setCompute({ hint: e.target.value as ComponentSpec["compute"]["hint"] })}
+              sx={fieldSx}>
+              {HINTS.map(([v, t]) => <MenuItem key={v} value={v} sx={{ fontSize: 12.5 }}>{t}</MenuItem>)}
+            </TextField>
+          </Row>
         </Stack>
-      )}
-
-      {kind === "kpi" && (
-        <Box sx={{ mt: 1.5, pt: 1.25, borderTop: "1px solid #F1F5FC" }}>
-          <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <Typography sx={{ fontSize: 12.5, color: "#334155" }}>徽标弹窗</Typography>
-            <Switch
-              size="small"
-              checked={!!top.enabled}
-              onChange={(e) => {
-                const on = e.target.checked;
-                if (!on) { setTop({ enabled: false }); return; }
-                setTop({
-                  enabled: true,
-                  top_n: top.top_n || badgeTopN,
-                  dim: top.dim || (dimensionOptions.find((f) => f.name.includes("标题"))?.name ?? dimensionOptions[0]?.name ?? ""),
-                  metric: top.metric || spec.binding.metric || metricOptions[0]?.name || "",
-                  /* 排行用「合计」最符合直觉；卡片上的 COUNT(日销量) 是数行数，拿来排名会看不懂 */
-                  agg: top.agg || "SUM",
-                });
-              }}
-              sx={{ mr: -0.75 }}
-            />
-          </Box>
-
-          {top.enabled && (
-            <Box sx={{ mt: 1, display: "flex", flexDirection: "column", gap: 1 }}>
-              <TextField size="small" fullWidth label="弹窗标题" placeholder="默认：卡片标题 TOP N"
-                value={top.title}
-                onChange={(e) => setTop({ title: e.target.value })}
-                sx={fieldSx} />
-              <Box sx={{ display: "flex", gap: 1 }}>
-                <TextField select size="small" label="排名维度" value={top.dim}
-                  onChange={(e) => setTop({ dim: e.target.value })}
-                  sx={{ flex: 1.2, ...fieldSx }}>
-                  {[...dimensionOptions, ...identifierOptions].map((f) => (
-                    <MenuItem key={`d-${f.name}`} value={f.name} sx={{ fontSize: 12.5 }}>{f.name}</MenuItem>
-                  ))}
-                </TextField>
-                <TextField select size="small" label="指标" value={top.metric}
-                  onChange={(e) => setTop({ metric: e.target.value })}
-                  sx={{ flex: 1, ...fieldSx }}>
-                  {metricOptions.map((f) => (
-                    <MenuItem key={`m-${f.name}`} value={f.name} sx={{ fontSize: 12.5 }}>{f.name}</MenuItem>
-                  ))}
-                </TextField>
-              </Box>
-              <Box sx={{ display: "flex", gap: 1 }}>
-                <TextField select size="small" label="聚合" value={top.agg}
-                  onChange={(e) => setTop({ agg: e.target.value })}
-                  sx={{ flex: 1, ...fieldSx }}>
-                  {["SUM", "AVG", "MIN", "MAX", "COUNT", "COUNT_DISTINCT"].map((agg) => (
-                    <MenuItem key={agg} value={agg} sx={{ fontSize: 12.5 }}>{agg}</MenuItem>
-                  ))}
-                </TextField>
-                <TextField size="small" type="number" label="前 N 条" value={top.top_n}
-                  onChange={(e) => setTop({ top_n: Math.max(1, Math.min(200, Number(e.target.value) || 10)) })}
-                  sx={{ width: 84, ...fieldSx }} />
-              </Box>
-              <TextField select size="small" label="并列" value={top.ties ?? "strict"}
-                onChange={(e) => setTop({ ties: e.target.value as "strict" | "all" })}
-                sx={fieldSx}>
-                <MenuItem value="strict" sx={{ fontSize: 12.5 }}>严格前 N 条（同分按名称排序）</MenuItem>
-                <MenuItem value="all" sx={{ fontSize: 12.5 }}>并列全部展示</MenuItem>
-              </TextField>
-              {/* 排行口径就这一行：聚合 + 从大到小 + 前 N（弹窗里就是按这个算的） */}
-              <Typography sx={{ fontSize: 11.5, color: "#94A3B8", mt: -0.25 }}>
-                {`${(top.agg || "SUM").replace("COUNT_DISTINCT", "去重计数")}(${top.metric || "指标"}) 从大到小 · 前 ${top.top_n}${(top.ties ?? "strict") === "all" ? "（并列全展示）" : ""}`}
-              </Typography>
-              <TextField select size="small" label="附列" SelectProps={{ multiple: true }}
-                value={top.columns}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  setTop({ columns: (typeof value === "string" ? value.split(",") : value).slice(0, 6) });
-                }}
-                sx={fieldSx}>
-                {columnChoices.filter((name) => name !== top.dim).map((name) => (
-                  <MenuItem key={`c-${name}`} value={name} sx={{ fontSize: 12.5 }}>{name}</MenuItem>
-                ))}
-              </TextField>
-            </Box>
-          )}
-        </Box>
       )}
     </Box>
   );

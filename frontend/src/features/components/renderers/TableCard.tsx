@@ -1,15 +1,18 @@
-/** 明细表格卡 —— 列类型 / 排序 / 分页 / 查看更多 / 行点击（沿用页面表格规范） */
+/** 明细表格卡 —— 列类型 / 排序 / 卡内分页 / 行点击（沿用页面表格规范） */
 
-import { useContext, useEffect, useMemo, useRef, useState } from "react";
+import { useContext, useEffect, useMemo, useState } from "react";
 import {
-  Box, Button, CircularProgress, Dialog, Drawer, IconButton, Typography,
+  Box, Dialog, Drawer, IconButton, TextField, Typography,
 } from "@mui/material";
-import { Close as CloseIcon, Download as DownloadIcon, QrCode2 } from "@mui/icons-material";
+import { Close as CloseIcon, Download as DownloadIcon, QrCode2, SwapHoriz as SwapHorizIcon } from "@mui/icons-material";
 import { accentOf } from "../palette";
 import CardShell from "../skin/CardShell";
 import { TEXT } from "../skin/tokens";
 import QrCodeDialog from "../board/QrCodeDialog";
 import BoardViewer from "../board/BoardViewer";
+import DrawerShell from "../../../components/common/DrawerShell";
+import PageBar from "./PageBar";
+import ProductDetail, { ProductImages } from "./ProductDetail";
 import { CanvasDetailContext, autoKeyFieldOf, boardOf, boardViewItems, type BoardArea } from "../board/canvasDetail";
 import type { DetailConfig } from "../types";
 import type { ComponentSpec, RenderPayload, TableColumn, UiSpec } from "../types";
@@ -19,9 +22,8 @@ interface Props {
   payload: RenderPayload;
   ui: UiSpec;
   compact?: boolean;
-  onMore?: () => void;
-  /** 拉取该表格的全量行（弹窗「查看更多」用） */
-  onLoadAll?: () => Promise<{ rows: Record<string, unknown>[]; columns?: TableColumn[] }>;
+  /** 打开时的默认排序（指标卡徽标弹窗用）：只作用于这一份渲染，关闭即恢复，不写回文档 */
+  initialSort?: { key: string; desc: boolean } | null;
   /** 导出这张表的数据集（成品页才有） */
   onExport?: () => void;
   onRowClick?: (row: Record<string, unknown>) => void;
@@ -134,72 +136,64 @@ function rankTone(rank: number): { color: string; bg: string } {
   return { color: "#64748B", bg: "#F1F5F9" };
 }
 
-export default function TableCard({ payload, ui, compact, onMore, onLoadAll, onRowClick, onExport }: Props) {
+export default function TableCard({ payload, ui, compact, initialSort, onRowClick, onExport }: Props) {
   const token = accentOf(ui.accent);
   const rows = payload.rows ?? [];
   const columns = payload.columns?.length ? payload.columns : deriveColumns(rows);
-  const pageSize = payload.page_size ?? 10;
+  /** 打开时的默认排序：列必须真的在这张表里，否则忽略（配置的列被删掉的情况） */
+  const startSort = initialSort && columns.some((column) => column.key === initialSort.key) ? initialSort : null;
+  /** 每页条数：面板配的默认值打底，页脚下拉可临时改（不改文档） */
+  const defaultPageSize = Math.max(3, Math.min(Number(payload.page_size) || 10, 200));
+  const [pageSize, setPageSize] = useState(defaultPageSize);
+  useEffect(() => { setPageSize(defaultPageSize); }, [defaultPageSize]);
   /** 行详情面板配置（明细表配置里开启） */
   const detail = (payload as unknown as { detail?: DetailConfig }).detail;
   const detailInline = useContext(CanvasDetailContext);
 
-  const [sort, setSort] = useState<{ key: string; desc: boolean } | null>(null);
+  const [sort, setSort] = useState<{ key: string; desc: boolean } | null>(startSort);
   /** 链接列点「打开」→ 弹二维码 */
   const [qrUrl, setQrUrl] = useState<string | null>(null);
-  /** 行详情弹窗：点一行后按配置弹出（row + 目标画板） */
-  const [detailRow, setDetailRow] = useState<{ row: Record<string, unknown>; board: BoardArea } | null>(null);
+  /** 行详情抽屉：点一行后弹出（成品页用 DrawerShell 空壳，画板内容暂不渲染） */
+  const [detailRow, setDetailRow] = useState<{ row: Record<string, unknown> } | null>(null);
+  /** 抽屉视图：商品详情 / 商品图片 */
+  const [drawerMode, setDrawerMode] = useState<"detail" | "images">("detail");
   const [page, setPage] = useState(1);
-  /** 查看更多弹窗 */
-  const [allOpen, setAllOpen] = useState(false);
+  /** 标题右侧搜索框（配置启用） */
+  const [searchText, setSearchText] = useState("");
   const [previewSrc, setPreviewSrc] = useState("");
   /** 关闭动画里保留最后一张图，避免弹窗先变空白框 */
   const [previewShown, setPreviewShown] = useState("");
   useEffect(() => { if (previewSrc) setPreviewShown(previewSrc); }, [previewSrc]);
-  const [allRows, setAllRows] = useState<Record<string, unknown>[] | null>(null);
-  const [loadingAll, setLoadingAll] = useState(false);
 
-  const openAll = async () => {
-    setAllOpen(true);
-    if (allRows || !onLoadAll) return;
-    setLoadingAll(true);
-    try {
-      const data = await onLoadAll();
-      setAllRows(data?.rows ?? []);
-    } catch {
-      setAllRows([]);
-    } finally {
-      setLoadingAll(false);
-    }
-  };
-
-  /** 点一行：开了「点击行弹出」就按画板弹（编辑器里走内联面板，成品页走抽屉）；
-   *  没开就交给外层 onRowClick。表格本体和「查看更多」弹窗共用这一份。 */
+  /** 点一行：成品页弹右侧抽屉；设计界面（编辑器）不弹，避免编辑时误触 */
   const openRowDetail = (row: Record<string, unknown>): boolean => {
     if (!detail?.enabled) { onRowClick?.(row); return false; }
-    /* 没选画板时别直接结束：页面上只有一块画板就用它（多块不猜，交给面板选） */
-    const localBoards = (detailInline?.items ?? []).filter((it) => it.type === "board");
-    const fallbackKey = !detail.board_key && localBoards.length === 1 ? String(localBoards[0].key) : "";
-    const target = detail.board_key || fallbackKey;
-    const board = detailInline?.findBoard?.(target) ?? boardOf(detailInline?.items, target);
-    if (!board) return true;
-    if (detailInline?.open) {
-      detailInline.open({
-        detail, row, board,
-        tableKey: String((payload as unknown as { detailBoardKey?: string }).detailBoardKey || ""),
-      });
-    } else { setDetailRow({ row, board }); }
+    if (detailInline?.open) return true;
+    setDrawerMode("detail");
+    setDetailRow({ row });
     return true;
   };
 
   const compute = payload.compute ?? { format: "int", decimals: 0, scale: 1, offset: 0, prefix: "", suffix: "", transform: "raw" };
   const transform = compute.transform ?? "raw";
 
+  /** 搜索：按所有列模糊过滤（忽略大小写） */
+  const searched = useMemo(() => {
+    const q = searchText.trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter((row) => columns.some((column) => String(row[column.key] ?? "").toLowerCase().includes(q)));
+  }, [rows, columns, searchText]);
+
   const sorted = useMemo(() => {
-    if (!sort) return rows;
-    const list = [...rows];
+    if (!sort) return searched;
+    const list = [...searched];
     list.sort((a, b) => {
       const av = a[sort.key];
       const bv = b[sort.key];
+      // 空值永远排最后（升序降序都一样），否则空串会跑到第一页
+      const aEmpty = av == null || String(av).trim() === "";
+      const bEmpty = bv == null || String(bv).trim() === "";
+      if (aEmpty !== bEmpty) return aEmpty ? 1 : -1;
       if (isNumeric(av) && isNumeric(bv)) {
         return sort.desc ? Number(bv) - Number(av) : Number(av) - Number(bv);
       }
@@ -208,7 +202,7 @@ export default function TableCard({ payload, ui, compact, onMore, onLoadAll, onR
         : String(av ?? "").localeCompare(String(bv ?? ""), "zh-CN");
     });
     return list;
-  }, [rows, sort]);
+  }, [searched, sort]);
 
   /** 「运算」按列作用在显示顺序上：占比 / 指数化 / 环比差值 / 累计值 */
   const transformed = useMemo(() => {
@@ -240,10 +234,10 @@ export default function TableCard({ payload, ui, compact, onMore, onLoadAll, onR
     return out;
   }, [sorted, columns, transform]);
 
-  const total = payload.count ?? sorted.length;
-  const canMore = Boolean(payload.more !== false && total > rows.length);
   /** 行首缩略图：图来自 thumb_key 列的图片地址（不是图片地址就显示占位框） */
   const thumbKey = payload.thumb ? (payload.thumb_key ?? "") : "";
+  /** 标题右侧搜索框（配置启用） */
+  const searchEnabled = Boolean((payload as unknown as { search?: boolean }).search);
   const thumbSources = (row: Record<string, unknown>): string[] => thumbSourcesOf(thumbKey, row);
   const thumbsVisible = Boolean(payload.thumb) && Boolean(thumbKey);
   /** 缩略图字段不重复当普通列显示 */
@@ -256,9 +250,6 @@ export default function TableCard({ payload, ui, compact, onMore, onLoadAll, onR
   const [bodySetEl, bodyWidth] = useMeasuredWidth();
   const [hoverBar, setHoverBar] = useState(false);
   const bodyScroll = useSlimScrollbar();
-  const [dialogSetEl, dialogBodyWidth] = useMeasuredWidth(allOpen);
-  const [hoverBarDlg, setHoverBarDlg] = useState(false);
-  const dialogScroll = useSlimScrollbar();
 
   /** 文本列最多 12 个字，数值列给到 150；剩余宽度迭代分给还没到上限的列 */
   // 12 个字 + 省略号本身也要占位，所以留一个字宽
@@ -292,9 +283,6 @@ export default function TableCard({ payload, ui, compact, onMore, onLoadAll, onR
   };
 
   const cardWidths = bodyWidth ? layoutWidths(Math.max(240, bodyWidth - fixedPx)) : null;
-  const dialogWidths = dialogBodyWidth
-    ? layoutWidths(Math.max(240, dialogBodyWidth - ((payload.index_column !== false ? 56 : 0) + (thumbsVisible ? 84 : 0))))
-    : null;
 
   /** 列宽：自定义宽度优先，其次用分配结果 */
   const widthOf = (column: TableColumn, index: number): number | undefined => (
@@ -305,12 +293,12 @@ export default function TableCard({ payload, ui, compact, onMore, onLoadAll, onR
   const alignFor = (column: TableColumn) => (
     /排名|序号|No\.?/i.test(column.label || column.key) ? "center" : column.align
   );
-  const dialogWidthOf = (column: TableColumn, index: number): number | undefined => (
-    column.width || dialogWidths?.[index]
-  );
 
-  const pageRows = canMore ? transformed.slice(0, pageSize) : transformed.slice((page - 1) * pageSize, page * pageSize);
-  const pages = Math.max(1, Math.ceil(sorted.length / pageSize));
+  /** 卡内分页：数据是一次取回的行，这里只切显示（搜索 / 排序 / 运算之后的口径） */
+  const total = transformed.length;
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+  const current = Math.min(Math.max(1, page), pages);
+  const pageRows = transformed.slice((current - 1) * pageSize, current * pageSize);
 
   if (!rows.length) {
     return (
@@ -343,6 +331,8 @@ export default function TableCard({ payload, ui, compact, onMore, onLoadAll, onR
 
   /** 数值列先按「运算」换算，再按「数字格式」显示，最后补前后缀 */
   const formatNumeric = (raw: unknown, column: TableColumn): string => {
+    // 空值就是空值：以前 Number("") = 0，空着的数值列会显示成「0」（排序到最后才被发现）
+    if (raw == null || String(raw).trim() === "") return "—";
     const num = Number(raw);
     // 日期 / 文本落到数值列时原样显示，别变成「—」
     if (!Number.isFinite(num)) return String(raw ?? "—");
@@ -447,9 +437,25 @@ export default function TableCard({ payload, ui, compact, onMore, onLoadAll, onR
       compact={compact}
       title={payload.title || "明细"}
       accent={token.main}
-      meta={compact || payload.chart?.show_meta === false ? undefined : (payload.subtitle ? payload.subtitle : (
-        <Box component="span" sx={{ display: "inline-flex", alignItems: "center", gap: 0.75 }}>
-          共 {total} 条
+      meta={compact || payload.chart?.show_meta === false ? undefined : (
+        <Box sx={{ display: "inline-flex", alignItems: "center", gap: 1 }}>
+          {searchEnabled && (
+            <TextField
+              size="small"
+              placeholder="搜索"
+              value={searchText}
+              onChange={(event) => { setSearchText(event.target.value); setPage(1); }}
+              onClick={(event) => event.stopPropagation()}
+              onMouseDown={(event) => event.stopPropagation()}
+              sx={{ width: 150, "& .MuiOutlinedInput-root": { borderRadius: "8px", fontSize: 12, bgcolor: "#fff" } }}
+            />
+          )}
+          {payload.subtitle ? (
+            <Box component="span" sx={{ display: "inline-flex", alignItems: "center", ...TEXT.meta, whiteSpace: "nowrap", flexShrink: 0 }}>
+              {payload.subtitle}
+            </Box>
+          ) : null}
+          {/* 总条数在页脚（分页条）里显示，这里只放导出 */}
           {onExport && (
             <Box
               component="span"
@@ -466,13 +472,14 @@ export default function TableCard({ payload, ui, compact, onMore, onLoadAll, onR
             </Box>
           )}
         </Box>
-      ))}
+      )}
     >
       <Box sx={{ height: "100%", display: "flex", flexDirection: "column", minHeight: 0 }}>
         <Box
           onMouseEnter={() => setHoverBar(true)}
           onMouseLeave={() => setHoverBar(false)}
-          sx={{ flex: 1, minHeight: 0, position: "relative", mx: -0.5, minWidth: 0 }}
+          /* 表格与页脚、卡片标题统一按内容区左缘对齐（不再外扩 4px，避免页脚看起来缩进） */
+          sx={{ flex: 1, minHeight: 0, position: "relative", minWidth: 0 }}
         >
         <Box ref={(node: HTMLDivElement | null) => { bodySetEl(node); bodyScroll.setEl(node); }} sx={{
           height: "100%", overflow: "auto",
@@ -503,23 +510,26 @@ export default function TableCard({ payload, ui, compact, onMore, onLoadAll, onR
                   return (
                     <th
                       key={column.key}
+                      aria-sort={active ? (sort.desc ? "descending" : "ascending") : "none"}
+                      title={`按「${column.label}」排序`}
                       style={{
                         // 列宽按内容比例分，长文本列宽、短列窄，间距才均匀
                         ...headStyle(alignFor(column)),
 
                         width: widthOf(column, bodyColumns.indexOf(column)),
                         minWidth: undefined,
-                        cursor: payload.more || payload.sortable ? "pointer" : "default",
+                        cursor: "pointer",
                         color: active ? token.main : "#64748B",
                       }}
                       onClick={() => {
-                        if (!payload.sortable && !payload.more) return;
+                        // 列头升降序：始终可用（对已取回的全部行排序，然后回到第 1 页）
                         setSort((prev) =>
                           prev?.key === column.key ? { key: column.key, desc: !prev.desc } : { key: column.key, desc: true });
+                        setPage(1);
                       }}
                     >
                       {column.label}
-                      {active ? (sort?.desc ? " ↓" : " ↑") : ""}
+                      {active ? (sort.desc ? " ↓" : " ↑") : ""}
                     </th>
                   );
                 })}
@@ -537,7 +547,7 @@ export default function TableCard({ payload, ui, compact, onMore, onLoadAll, onR
                   {payload.index_column !== false && (
                     <td style={{ ...cellStyle("center"), padding: "8px 4px" }}>
                       <span style={{ color: "#A8B7CC", fontWeight: 700, fontSize: 11.5 }}>
-                        {(page - 1) * pageSize + index + 1}
+                        {(current - 1) * pageSize + index + 1}
                       </span>
                     </td>
                   )}
@@ -572,38 +582,23 @@ export default function TableCard({ payload, ui, compact, onMore, onLoadAll, onR
         )}
         </Box>
 
-        {(canMore || pages > 1) && (
-          <Box sx={{
-            display: "flex", alignItems: "center", justifyContent: "space-between",
-            pt: 1, mt: 0.5, borderTop: "1px solid #F4F7FC", flexShrink: 0,
-          }}>
-            <Typography sx={{ fontSize: 11, color: "#94A3B8" }}>
-              共 {total} 条{canMore ? ` · 当前显示 ${Math.min(pageSize, total)} 条` : ""}
-            </Typography>
-            {canMore ? (
-              <Button
-                size="small"
-                onClick={() => { void openAll(); onMore?.(); }}
-                sx={{ textTransform: "none", fontSize: 11.5, color: token.main, minWidth: 0, px: 1 }}
-              >
-                {payload.more_label || "查看更多"} →
-              </Button>
-            ) : (
-              <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-                <Button size="small" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  sx={{ minWidth: 0, px: 0.75, fontSize: 11.5, textTransform: "none" }}>上一页</Button>
-                <Typography sx={{ fontSize: 11.5, color: "#64748B" }}>{page} / {pages}</Typography>
-                <Button size="small" disabled={page >= pages} onClick={() => setPage((p) => Math.min(pages, p + 1))}
-                  sx={{ minWidth: 0, px: 0.75, fontSize: 11.5, textTransform: "none" }}>下一页</Button>
-              </Box>
-            )}
-          </Box>
+        {/* 卡内分页：总数 + 每页条数 + 页码（缩略预览不显示） */}
+        {!compact && (
+          <PageBar
+            total={total}
+            page={current}
+            pageSize={pageSize}
+            accent={token.main}
+            onPage={setPage}
+            onPageSize={(size) => { setPageSize(size); setPage(1); }}
+          />
         )}
       </Box>
 
-      {/* 点缩略图看大图 */}
+      {/* 点缩略图看大图（压过抽屉 / 画板浮层的 1500，图片永远在最前） */}
       <Dialog
         open={Boolean(previewSrc)} onClose={() => setPreviewSrc("")} maxWidth={false}
+        sx={{ zIndex: 2000 }}
         TransitionProps={{ onExited: () => setPreviewShown("") }}
         PaperProps={{ sx: { bgcolor: "transparent", boxShadow: "none", overflow: "visible" } }}
       >
@@ -617,144 +612,38 @@ export default function TableCard({ payload, ui, compact, onMore, onLoadAll, onR
         /> : null}
       </Dialog>
 
-      {/* 查看更多：整表弹窗（大表格样式，参考明细页） */}
-      <Dialog
-        open={allOpen} onClose={() => setAllOpen(false)} maxWidth={false}
-        PaperProps={{ sx: { width: "92vw", maxWidth: 1360, borderRadius: 3, overflow: "hidden" } }}
-      >
-        <Box sx={{
-          display: "flex", alignItems: "center", gap: 1.5,
-          px: 3, py: 2, borderBottom: "1px solid #EEF3FB", bgcolor: "#fff",
-        }}>
-          <Box sx={{ width: 3, height: 16, borderRadius: 1, bgcolor: token.main }} />
-          <Typography sx={{ fontSize: 15, fontWeight: 600, color: "#0F172A" }}>
-            {payload.title || "明细"}
-          </Typography>
-          <Box sx={{ flex: 1 }} />
-          <Typography sx={{ fontSize: 11.5, color: "#94A3B8" }}>
-            共 {allRows?.length ?? total} 条
-          </Typography>
-          <IconButton size="small" onClick={() => setAllOpen(false)} sx={{ color: "#94A3B8", "&:hover": { color: "#0F172A" } }}>
-            <CloseIcon sx={{ fontSize: 18 }} />
+
+      <DrawerShell
+        open={Boolean(detail?.enabled && detailRow)}
+        onClose={() => setDetailRow(null)}
+        width={560}
+        title={drawerMode === "detail" ? "商品详情" : "商品图片"}
+        action={
+          <IconButton
+            size="small"
+            aria-label={drawerMode === "detail" ? "查看商品图片" : "返回商品详情"}
+            onClick={() => setDrawerMode((m) => (m === "detail" ? "images" : "detail"))}
+            sx={{ color: "#64748B", "&:hover": { color: "#0F172A", bgcolor: "rgba(15,23,42,0.06)" } }}
+          >
+            <SwapHorizIcon sx={{ fontSize: 18 }} />
           </IconButton>
-        </Box>
-
-        <Box
-          onMouseEnter={() => setHoverBarDlg(true)}
-          onMouseLeave={() => setHoverBarDlg(false)}
-          sx={{ position: "relative", bgcolor: "#fff" }}
-        >
-        <Box ref={(node: HTMLDivElement | null) => { dialogSetEl(node); dialogScroll.setEl(node); }} sx={{
-          maxHeight: "72vh", overflow: "auto",
-          scrollbarWidth: "none",
-          "&::-webkit-scrollbar": { display: "none" },
-        }}>
-          {loadingAll ? (
-            <Box sx={{ py: 10, display: "grid", placeItems: "center" }}>
-              <CircularProgress size={22} />
-            </Box>
+        }
+      >
+        {detailRow ? (
+          drawerMode === "detail" ? (
+            <ProductDetail
+              datasetId={Number((payload as unknown as { dataset_id?: number }).dataset_id || 0)}
+              row={detailRow.row}
+              keyField={detail?.key_field || ""}
+              fields={detail?.fields}
+              wordclouds={detail?.wordclouds}
+              blocks={detail?.blocks}
+            />
           ) : (
-            <table style={{
-              width: "100%", tableLayout: "fixed", borderCollapse: "separate", borderSpacing: 0,
-              minWidth: (payload.index_column !== false ? 56 : 0)
-                + (thumbsVisible ? 84 : 0)
-                + bodyColumns.length * 120,
-            }}>
-              <thead>
-                <tr>
-                  {payload.index_column !== false && <th style={{ ...bigHead("center", 56), padding: "12px 6px" }} />}
-                  {thumbsVisible && <th style={{ ...bigHead("center", 84), padding: "12px 8px" }}>产品图</th>}
-                  {bodyColumns.map((column) => {
-                    const active = sort?.key === column.key;
-                    const clickable = payload.sortable || payload.more;
-                    return (
-                      <th
-                        key={column.key}
-                        style={{
-                          ...bigHead(alignFor(column)),
-  
-                          width: dialogWidthOf(column, bodyColumns.indexOf(column)),
-                          minWidth: undefined,
-                          cursor: clickable ? "pointer" : "default",
-                          color: active ? token.main : "#475569",
-                        }}
-                        onClick={() => {
-                          if (!clickable) return;
-                          setSort((prev) => (
-                            prev?.key === column.key ? { key: column.key, desc: !prev.desc } : { key: column.key, desc: true }
-                          ));
-                        }}
-                      >
-                        {column.label}
-                        {active ? (sort?.desc ? " ↓" : " ↑") : ""}
-                      </th>
-                    );
-                  })}
-                </tr>
-              </thead>
-              <tbody>
-                {(allRows ?? []).map((row, index) => (
-                  <tr
-                    key={index}
-                    onClick={() => {
-                      /* 弹窗里点行同样弹行详情：成品页让行详情抽屉叠在「查看更多」上面（方便接着点下一条）；
-                         编辑器里的行详情是画布内的内联面板，必须先把弹窗关掉才看得见。 */
-                      const inline = Boolean(detailInline?.open);
-                      openRowDetail(row);
-                      if (inline) setAllOpen(false);
-                    }}
-                    style={{ cursor: detail?.enabled || onRowClick ? "pointer" : "default" }}
-                    onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = "#F8FBFF"; }}
-                    onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = "transparent"; }}
-                  >
-                    {payload.index_column !== false && (
-                      <td style={{ ...bigCell("center"), padding: "9px 6px" }}>
-                        <span style={{ color: "#A8B7CC", fontWeight: 700, fontSize: 12 }}>{index + 1}</span>
-                      </td>
-                    )}
-                    {thumbsVisible && (
-                      <td style={{ ...bigCell("left"), padding: "9px 8px", width: 84 }}>
-                        <Thumb sources={thumbSources(row)} onOpen={setPreviewSrc} />
-                      </td>
-                    )}
-                    {bodyColumns.map((column) => (
-                      <td
-                        key={column.key}
-                        style={{
-                          ...bigCell(alignFor(column)),
-  
-                          fontSize: 13,
-                          color: "#1F2937",
-                          fontVariantNumeric: NUMBER_TYPES.has(column.type) ? "tabular-nums" : undefined,
-                        }}
-                      >
-                        {cell(column, row)}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </Box>
-        {dialogScroll.bar.visible && (
-          <Box
-            onPointerDown={dialogScroll.startDrag}
-            sx={{
-              position: "absolute", right: 2, width: 4, borderRadius: 999,
-              top: dialogScroll.bar.top, height: dialogScroll.bar.height,
-              bgcolor: "rgba(15,23,42,0.14)",
-              opacity: hoverBarDlg ? 1 : 0,
-              transition: "opacity .18s",
-              cursor: "pointer",
-              "&:hover": { bgcolor: "rgba(15,23,42,0.3)", width: 6, right: 1 },
-            }}
-          />
-        )}
-        </Box>
-      </Dialog>
-
-      <BoardPopup detail={detail ?? null} popup={detailRow} onClose={() => setDetailRow(null)} />
+            <ProductImages row={detailRow.row} images={detail?.images} />
+          )
+        ) : null}
+      </DrawerShell>
 
       <QrCodeDialog url={qrUrl} onClose={() => setQrUrl(null)} />
 
@@ -812,36 +701,7 @@ export function Thumb({ sources, onOpen }: { sources: string[]; onOpen?: (src: s
   );
 }
 
-/** 弹窗里的大表格：表头浅蓝、行高更松，和明细页观感一致 */
-function bigHead(align: string, width = 0): React.CSSProperties {
-  return {
-    position: "sticky", top: 0, zIndex: 1,
-    background: "#F7FAFF", color: "#475569",
-    fontSize: 12, fontWeight: 600, letterSpacing: 0.2,
-    textAlign: align as React.CSSProperties["textAlign"],
-    padding: "12px 20px",
-    borderBottom: "1px solid #EAF0FA",
-    whiteSpace: "nowrap",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    width: width || undefined,
-    minWidth: width || undefined,
-  };
-}
-
-function bigCell(align: string): React.CSSProperties {
-  return {
-    padding: "9px 20px",
-    fontSize: 12.5,
-    color: "#475569",
-    textAlign: align as React.CSSProperties["textAlign"],
-    borderBottom: "1px solid #F2F6FC",
-    whiteSpace: "nowrap",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-  };
-}
-
+/** 卡片内的表头：sticky 浅蓝底 + 细线，窄卡片里也不折行 */
 function headStyle(align: string, width = 0): React.CSSProperties {
   return {
     position: "sticky", top: 0, zIndex: 1,
@@ -908,15 +768,14 @@ function buildDetailItems(detail: DetailConfig, row: Record<string, unknown>, ca
   });
 }
 
-/** 行详情内容：标题 + 组件卡片（成品页抽屉 / 编辑器画布内面板共用） */
-export function RowDetailContent({ detail, row, onClose, width = 480 }: {
+/** 行详情内容：标题 + 内容（画板内容暂不渲染，先用空壳占位） */
+export function RowDetailContent({ detail, row, onClose }: {
   detail: DetailConfig;
   row: Record<string, unknown>;
   onClose: () => void;
-  /** 面板宽度：卡片按它等比排版（编辑器里的面板宽度会随画布变） */
+  /** 面板宽度（保留兼容，暂未使用） */
   width?: number;
 }) {
-  const items = useMemo(() => buildDetailItems(detail, row, width - 30), [detail, row, width]);
   const title = String(row[detail.key_field] ?? "");
   return (
     <Box sx={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
@@ -931,10 +790,8 @@ export function RowDetailContent({ detail, row, onClose, width = 480 }: {
           <CloseIcon sx={{ fontSize: 18 }} />
         </IconButton>
       </Box>
-      <Box sx={{ flex: 1, minHeight: 0, overflow: "auto", p: 1.5 }}>
-        {items.length ? <BoardViewer items={items} plain fitWidth={width - 30} /> : (
-          <Typography sx={{ fontSize: 12, color: "#94A3B8", p: 2 }}>行详情面板还没有组件</Typography>
-        )}
+      <Box sx={{ flex: 1, minHeight: 0, overflow: "auto", p: 2 }}>
+        <Typography sx={{ fontSize: 12.5, color: "#94A3B8" }}>行详情内容待配置</Typography>
       </Box>
     </Box>
   );
@@ -1006,8 +863,8 @@ function BoardPopup({ detail, popup, onClose }: {
   return (
     <Drawer
       anchor={placement === "left" ? "left" : "right"} open={open} onClose={onClose}
-      /* 层级压在「查看更多」弹窗之上；根节点不吃点击（pointer-events: none）——
-         这样抽屉悬浮在右侧，底下弹窗的行还能继续点，连着看下一条不用来回开关。 */
+      /* 层级压在卡片之上；根节点不吃点击（pointer-events: none）——
+         这样抽屉悬浮在右侧，底下表格的行还能继续点，连着看下一条不用来回开关。 */
       sx={{ zIndex: 1500 }}
       ModalProps={{ hideBackdrop: true, disableEnforceFocus: true, disableScrollLock: true }}
       PaperProps={{ sx: { width, maxWidth: "100vw", height: "100%", bgcolor: "#fff", pointerEvents: "auto" } }}

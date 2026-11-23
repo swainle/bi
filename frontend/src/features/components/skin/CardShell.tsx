@@ -55,12 +55,18 @@ export default function CardShell({ title, accent, meta, note, children, padding
           {title}
         </Typography>
         {showMeta ? (
-          <Typography
-            sx={{ ...TEXT.meta, flexShrink: 0, whiteSpace: "nowrap", ml: 1, maxWidth: "50%", overflow: "hidden" }}
-            noWrap
-          >
-            {meta}
-          </Typography>
+          typeof meta === "string" ? (
+            <Typography
+              sx={{ ...TEXT.meta, flexShrink: 0, whiteSpace: "nowrap", ml: 1, maxWidth: "50%", overflow: "hidden" }}
+              noWrap
+            >
+              {meta}
+            </Typography>
+          ) : (
+            <Box sx={{ flexShrink: 0, ml: 1, maxWidth: "60%", minWidth: 0, display: "flex", alignItems: "center", gap: 0.75 }}>
+              {meta}
+            </Box>
+          )
         ) : null}
       </Box>
       )}

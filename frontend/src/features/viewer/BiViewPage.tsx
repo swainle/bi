@@ -431,7 +431,7 @@ export default function BiViewPage() {
         ) : error ? (
           <Box sx={{ textAlign: "center", pt: 20, color: "error.main" }}>{error}</Box>
         ) : canvasItems && canvasItems.length > 0 ? (
-          <BoardViewer items={canvasItems} docId={Number(id) || undefined} />
+          <BoardViewer items={canvasItems} />
         ) : panels.length === 0 ? (
           <Box sx={{ textAlign: "center", pt: 20, color: "text.secondary" }}>暂无图表</Box>
         ) : (

@@ -120,6 +120,8 @@ export interface NavItem {
 export interface NavAction {
   label: string;
   kind: "primary" | "secondary";
+  /** 后端拼进来的「导出」按钮（点它才触发导出，不受文案影响） */
+  export?: boolean;
 }
 
 export interface NavSpec {
@@ -137,6 +139,12 @@ export interface NavSpec {
   export_scope?: "primary" | "all" | "dataset";
   /** export_scope=dataset 时导哪个数据集 */
   export_dataset_id?: number | null;
+  /** 导出按钮：显示 / 文字 / 样式 */
+  export_visible?: boolean;
+  export_label?: string;
+  export_kind?: "primary" | "secondary";
+  /** 状态区功能：time = 当前时间（每 10 秒刷）；空 = 不显示 */
+  status?: "" | "time";
 }
 
 export interface RankSpec {
@@ -187,15 +195,19 @@ export interface RelatedThumbnailSpec {
 
 export interface TableViewSpec {
   columns: TableColumn[];
-  sortable: boolean;
+  /** 每页条数（默认 10，面板可调 3–200；页脚也能临时切换） */
   page_size: number;
+  /** @deprecated 2026-11-21 起明细表改为卡内分页，不再有「查看更多」；字段只为兼容旧文档保留 */
   more: boolean;
+  /** @deprecated 同上 */
   more_label: string;
   index_column: boolean;
   /** 行首缩略图（图来自 thumb_key 那一列的图片地址） */
   thumb?: boolean;
   thumb_key?: string;
   related_thumb?: RelatedThumbnailSpec;
+  /** 标题右侧搜索框：启用后按所有列模糊过滤 */
+  search?: boolean;
   /** 行详情面板：点明细表一行，右侧滑出，内容由组件卡片纵向排列组成 */
   detail?: DetailConfig;
 }
@@ -222,6 +234,57 @@ export interface DetailConfig {
   key_field: string;
   /** 旧的「面板内嵌卡片」（保留兼容） */
   items: DetailCard[];
+  /** 抽屉内容字段映射：{title: 列名, platform: 列名, ...}（空 = 按字段名自动匹配） */
+  fields?: Record<string, string>;
+  /** 抽屉词云配置：{pain: {dataset_id, key_field, word_field, weight_field, split, palette}, ...} */
+  wordclouds?: Record<string, {
+    /** 关联表（数据集 id）；空 = 用当前明细表数据集 */
+    dataset_id?: number;
+    /** 关联字段（关联表里对应明细表行的字段） */
+    key_field?: string;
+    /** 词字段（关联表里的词列） */
+    word_field?: string;
+    /** 权重字段（关联表里的权重/次数列，可选） */
+    weight_field?: string;
+    /** 拆词符 */
+    split?: string;
+    /** 主题色 */
+    palette?: string;
+  }>;
+  /** 抽屉附加区块：{trend, reviews, skus}，各区块可单独指定关联表与字段 */
+  blocks?: Record<string, {
+    dataset_id?: number;
+    key_field?: string;
+    date_field?: string;
+    value_field?: string;
+    score_field?: string;
+    tag_field?: string;
+    text_field?: string;
+    spec_field?: string;
+    price_field?: string;
+    split?: string;
+    /** 近30天差评数：X轴（维度） / Y轴字段 / Y轴函数 */
+    dim_field?: string;
+    val_field?: string;
+    agg?: string;
+    /** 图表参数 */
+    bar_width?: number;
+    show_grid?: boolean;
+    accent?: string;
+  }>;
+  /** 抽屉图片区块：{main, sku, detail}，各可指定关联表 / 关联字段 / 图片字段 / 地址转换 */
+  images?: Record<string, {
+    dataset_id?: number;
+    key_field?: string;
+    field?: string;
+    operation?: "none" | "prefix" | "replace" | "regex";
+    pattern?: string;
+    replacement?: string;
+    /** 筛选字段（按它过滤图片行） */
+    filter_field?: string;
+    /** 筛选字段的匹配内容（去重值） */
+    filter_value?: string;
+  }>;
 }
 
 export interface BindingSpec {
@@ -329,8 +392,17 @@ export interface ComponentSpec {
 }
 
 /** 指标卡右上角徽标 → 弹窗（独立的 TOP N 榜单，不改页面状态） */
+/** 排序方向："" = 不指定（保持原顺序） */
+export type SortDir = "" | "desc" | "asc";
+
 export interface TopListSpec {
   enabled: boolean;
+  /** 指定弹出哪张明细表（元素 key） */
+  table_key?: string;
+  /** 弹窗打开时的默认排序：排序列（空 = 用明细表自己的顺序） */
+  sort_field?: string;
+  /** 排序方向：空 = 不指定（用明细表自己的顺序） */
+  sort?: SortDir;
   title: string;
   dim: string;
   metric: string;
@@ -428,7 +500,6 @@ export interface RenderPayload {
   index_column?: boolean;
   thumb?: boolean;
   thumb_key?: string;
-  sortable?: boolean;
   columns?: TableColumn[];
   page_size?: number;
   more?: boolean;

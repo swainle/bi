@@ -1,5 +1,6 @@
 /** 导航菜单卡 —— 页头导航条：左侧品牌 + 中间菜单（圆点 / 当前页）+ 右侧状态与操作 */
 
+import { useEffect, useState } from "react";
 import { Box, Typography } from "@mui/material";
 import type { NavAction, NavItem } from "../types";
 
@@ -8,12 +9,19 @@ export interface NavPayload {
   brand_accent?: string;
   brand_tone?: string;
   items?: NavItem[];
+  /** 旧版灰字状态（保留兼容；新文档用 status） */
   meta?: string;
   badge?: string;
   actions?: NavAction[];
   global_nav?: boolean;
   export_scope?: "primary" | "all" | "dataset";
   export_dataset_id?: number | null;
+  /** 导出按钮：显示 / 文字 / 样式（不配就是默认「导出 CSV」主按钮） */
+  export_visible?: boolean;
+  export_label?: string;
+  export_kind?: "primary" | "secondary";
+  /** 状态区：time = 当前时间（每 10 秒刷一次） */
+  status?: "" | "time";
 }
 
 export interface NavUi {
@@ -33,8 +41,8 @@ interface Props {
   currentPage?: string;
   /** 点了挂了页面的菜单项：预览页据此切页 */
   onNavigate?: (page: string) => void;
-  /** 右侧按钮被点（成品页据此执行动作，如导出 CSV） */
-  onAction?: (label: string) => void;
+  /** 右侧按钮被点（成品页据此执行动作，如导出 CSV）；第二个参数 = 这是导出按钮 */
+  onAction?: (label: string, isExport?: boolean) => void;
 }
 
 /** 品牌标记、圆点、选中胶囊用的同色系色板（选中胶囊跟随该项自己的圆点色） */
@@ -60,7 +68,33 @@ export default function NavCard({ payload, ui, compact, currentPage, onNavigate,
   const brand = payload.brand || "";
   const accent = payload.brand_accent || "";
   const items = (payload.items || []).filter((item) => item && item.label);
-  const actions = (payload.actions || []).filter((action) => action && action.label);
+  const rawActions = (payload.actions || []).filter((action) => action && action.label);
+  /** 导出按钮统一由「导出」配置生成：actions 里历史遗留的「导出」按钮不再单独渲染，避免两个导出 */
+  const actions: NavAction[] = [
+    ...rawActions.filter((action) => !action.export && !/导出|export/i.test(action.label)),
+    ...(payload.export_visible === false ? [] : [{
+      label: payload.export_label || "导出 CSV",
+      kind: payload.export_kind || "primary",
+      export: true,
+    }]),
+  ];
+
+  /** 状态区：默认「时间」（旧文档没存这个字段也按时间走），每 10 秒刷一次（组件卸载即停） */
+  const statusMode = payload.status === undefined ? "time" : payload.status;
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    if (statusMode !== "time") return;
+    setNow(new Date());
+    const timer = window.setInterval(() => setNow(new Date()), 10_000);
+    return () => window.clearInterval(timer);
+  }, [statusMode]);
+  const statusText = (() => {
+    if (statusMode === "time") {
+      const pad = (value: number) => String(value).padStart(2, "0");
+      return `数据同步 · ${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+    }
+    return payload.meta || "";
+  })();
 
   return (
     <Box sx={{
@@ -141,29 +175,19 @@ export default function NavCard({ payload, ui, compact, currentPage, onNavigate,
         })}
       </Box>
 
-      {/* 右侧：状态灰字 + 徽标 + 按钮 */}
+      {/* 右侧：状态（时间）+ 按钮（导出按钮由后端拼在 actions 里） */}
       <Box sx={{
         display: "flex", alignItems: "center", gap: 1.25, flexShrink: 0, ml: "auto",
         "@container (max-width: 900px)": { gap: 1 },
       }}>
-        {payload.meta ? (
+        {statusText ? (
           <Typography sx={{
             fontSize: 11.5, color: "#94A3B8", whiteSpace: "nowrap",
+            fontVariantNumeric: "tabular-nums",
             "@container (max-width: 1100px)": { display: "none" },
           }}>
-            {payload.meta}
+            {statusText}
           </Typography>
-        ) : null}
-        {payload.badge ? (
-          <Box sx={{
-            px: 1, height: 22, borderRadius: 999, bgcolor: "#E9F8F0",
-            display: "flex", alignItems: "center",
-            fontSize: 11, fontWeight: 600, color: "#0F9D58", whiteSpace: "nowrap",
-            /* 缩略图尺寸让位给菜单圆点，否则圆点会被挤没 */
-            "@container (max-width: 620px)": { display: "none" },
-          }}>
-            {payload.badge}
-          </Box>
         ) : null}
         <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, "@container (max-width: 620px)": { display: "none" } }}>
           {actions.map((action, index) => {
@@ -172,7 +196,7 @@ export default function NavCard({ payload, ui, compact, currentPage, onNavigate,
             return (
               <Box
                 key={`${action.label}-${index}`}
-                onClick={clickable ? (event) => { event.stopPropagation(); onAction?.(action.label); } : undefined}
+                onClick={clickable ? (event) => { event.stopPropagation(); onAction?.(action.label, !!action.export); } : undefined}
                 sx={{
                   px: 1.5, height: 32, borderRadius: 1.5, display: "flex", alignItems: "center",
                   fontSize: 12.5, fontWeight: primary ? 600 : 400, whiteSpace: "nowrap",

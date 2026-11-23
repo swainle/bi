@@ -28,18 +28,20 @@ def access(monkeypatch):
     monkeypatch.setattr(thumbnails, "can_access_dataset", lambda *args: True)
 
 
-def test_link_uses_one_batch_keeps_row_count_order_and_headers(access):
+def test_link_uses_one_batch_keeps_rows_order_and_headers(access):
+    """明细表不再按 top_n 截断（改为前端分页），缩略图一次批量取回所有行的图."""
     config = spec(operation="prefix", replacement="https://cdn.example/")
     rows = [{"商品": "甲", "image_id": 3}, {"商品": "乙", "image_id": 8}, {"商品": "丙", "image_id": 9}]
     payload = build_table(rows, config)
+    assert [row["商品"] for row in payload["rows"]] == ["甲", "乙", "丙"]
     execute = Mock(return_value=SimpleNamespace(rows=[{"image_id": 3, "url": "3.jpg"}]))
     result = thumbnails.attach_thumbnails(None, dataset(), config, payload, None, execute)
     execute.assert_called_once()
     query = execute.call_args.args[2]
-    assert query.filters[0].value == [3, 8]
+    assert query.filters[0].value == [3, 8, 9]
     assert query.table == "images"
-    assert [row["商品"] for row in result["rows"]] == ["甲", "乙"]
-    assert [row[thumbnails.THUMB_KEY] for row in result["rows"]] == ["https://cdn.example/3.jpg", ""]
+    assert [row["商品"] for row in result["rows"]] == ["甲", "乙", "丙"]
+    assert [row[thumbnails.THUMB_KEY] for row in result["rows"]] == ["https://cdn.example/3.jpg", "", ""]
     assert result["count"] == 3
     assert result["thumb"] and result["thumb_key"] == thumbnails.THUMB_KEY
     assert [column["key"] for column in result["columns"]] == ["商品"]

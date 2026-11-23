@@ -140,12 +140,16 @@ def build(
     select_parts: list[str] = []
     for dim in query.dimensions:
         alias = quote(dim.output_name, dialect)
+        if dim.expression:
+            select_parts.append(f"{dim.expression} AS {alias}")
+            continue
+        column = dim.column or ""
         if dim.grain:
             select_parts.append(
-                f"{grain_expression(quote(dim.column, dialect), dim.grain, dialect, cast=needs_cast(types.get(dim.column)))} AS {alias}"
+                f"{grain_expression(quote(column, dialect), dim.grain, dialect, cast=needs_cast(types.get(column)))} AS {alias}"
             )
-        elif dim.alias and dim.alias != dim.column:
-            select_parts.append(f"{quote(dim.column, dialect)} AS {alias}")
+        elif dim.alias and dim.alias != column:
+            select_parts.append(f"{quote(column, dialect)} AS {alias}")
         else:
             select_parts.append(alias)
 
@@ -225,11 +229,15 @@ def build(
     if where_clauses:
         sql += " WHERE " + " AND ".join(where_clauses)
     if has_metric and query.dimensions:
-        sql += " GROUP BY " + ", ".join(
-            grain_expression(quote(d.column, dialect), d.grain, dialect, cast=needs_cast(types.get(d.column)))
-            if d.grain else quote(d.column, dialect)
-            for d in query.dimensions
-        )
+        def _group_expr(d) -> str:
+            if d.expression:
+                return d.expression
+            column = d.column or ""
+            if d.grain:
+                return grain_expression(quote(column, dialect), d.grain, dialect, cast=needs_cast(types.get(column)))
+            return quote(column, dialect)
+
+        sql += " GROUP BY " + ", ".join(_group_expr(d) for d in query.dimensions)
     if having_clauses:
         sql += " HAVING " + " AND ".join(having_clauses)
     if order_parts:

@@ -36,7 +36,7 @@ import { KIND_LABEL } from "../features/components/registry";
 import type { CanvasItem } from "../features/components/boardTypes";
 import type {
   CanvasSize, ComponentItem, ComponentKind, ComponentSpec, DashboardDoc, DashboardRender,
-  DatasetBrief, DocItem, FilterFieldSpec, Guide, RenderPayload, ShapeKind, ShapeSpec,
+  DatasetBrief, DocItem, FilterFieldSpec, Guide, RenderPayload, ShapeKind, ShapeSpec, SortDir,
 } from "../features/components/types";
 
 import {
@@ -186,6 +186,20 @@ export default function CanvasBoardPage() {
     setSelectedKeys(key ? [key] : []);
     setDetailCardKey("");
   };
+
+  /** 刷新后选回上次最后选中的组件：按看板记在 localStorage（只恢复一次，之后听用户的） */
+  const lastKeyPref = `mzbi:canvas:last-selected:${docId}`;
+  const restoredRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (restoredRef.current === String(docId) || !items.length) return;
+    restoredRef.current = String(docId);
+    const saved = window.localStorage.getItem(lastKeyPref);
+    if (saved && items.some((item) => item.key === saved)) setSelectedKeys([saved]);
+  }, [docId, items, lastKeyPref]);
+  useEffect(() => {
+    if (!selected) return;
+    window.localStorage.setItem(lastKeyPref, selected);
+  }, [lastKeyPref, selected]);
 
 
 
@@ -1037,8 +1051,9 @@ export default function CanvasBoardPage() {
 
   /** 明细表「行详情」里正在编辑的组件卡片 */
   const [detailCardKey, setDetailCardKey] = useState("");
-  /** 指标卡右上角徽标 → TOP N 榜单弹窗（只读；编辑器里也能点开看） */
+  /** 指标卡右上角徽标 → 明细表弹窗（只读；排序配置只在弹窗内生效，关闭即恢复） */
   const [topKey, setTopKey] = useState<string | null>(null);
+  const [topSort, setTopSort] = useState<{ field: string; sort: SortDir } | null>(null);
   const detailCard = useMemo(() => {
     if (!selectedItem || !detailCardKey) return null;
     const detail = selectedItem.spec?.table_view?.detail;
@@ -1617,7 +1632,7 @@ export default function CanvasBoardPage() {
           ghostNav={ghostNav} filterDataIds={filterDataIds}
           stageRef={stageRef} rulerRef={rulerRef} canvasRef={canvasRef} surfaceRef={surfaceRef}
           setInlineDetail={setInlineDetail} setItems={setItems} setParams={setParams}
-          setSelectedKeys={setSelectedKeys} setTopKey={setTopKey} setDetailCardKey={setDetailCardKey}
+          setSelectedKeys={setSelectedKeys} setTopKey={setTopKey} setTopSort={setTopSort} setDetailCardKey={setDetailCardKey}
           setDirty={setDirty} setGuideMenu={setGuideMenu}
           selectOnly={selectOnly} toggleSelect={toggleSelect} duplicateForDrag={duplicateForDrag}
           requestDelete={requestDelete} findBoard={findBoard} commitDetailEdit={commitDetailEdit}
@@ -1644,7 +1659,7 @@ export default function CanvasBoardPage() {
       </Box>
 
       <CanvasDialogs
-        topKey={topKey} setTopKey={setTopKey} docId={docId} view={view} params={params} items={items} toDocItem={toDocItem}
+        topKey={topKey} setTopKey={setTopKey} topSort={topSort} setTopSort={setTopSort} docId={docId} view={view} params={params} items={items} toDocItem={toDocItem} cards={cards}
         deleteConfirm={deleteConfirm} setDeleteConfirm={setDeleteConfirm} removeItems={removeItems}
         pageMenu={pageMenu} setPageMenu={setPageMenu} doc={doc} setEditingPage={setEditingPage}
         duplicatePage={duplicatePage} copyText={copyText} setToast={setToast} deletePage={deletePage}

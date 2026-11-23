@@ -13,7 +13,7 @@ import {
 import CanvasRuler, { RULER_SIZE } from "../../features/components/editor/CanvasRuler";
 import client from "../../api/client";
 import type { CanvasItem } from "../../features/components/boardTypes";
-import type { CanvasSize, FilterFieldSpec, Guide, RenderPayload } from "../../features/components/types";
+import type { CanvasSize, FilterFieldSpec, Guide, RenderPayload, SortDir } from "../../features/components/types";
 import type { GuideMenuState } from "./CanvasDialogs";
 import { toDocItem } from "./spec";
 import { boardAt } from "./boardResize";
@@ -23,7 +23,7 @@ export default function CanvasStage({
   stageWidth, stageViewportH, boardWidth, stageScale, stageOffsetX, stageOffsetY, stageHeight, zoomTo,
   selectedKeys, selectedBounds, bleedMask, rendering, inlineDetail, detailEditKey, ghostNav, filterDataIds,
   stageRef, rulerRef, canvasRef, surfaceRef,
-  setInlineDetail, setItems, setParams, setSelectedKeys, setTopKey, setDetailCardKey, setDirty, setGuideMenu,
+  setInlineDetail, setItems, setParams, setSelectedKeys, setTopKey, setTopSort, setDetailCardKey, setDirty, setGuideMenu,
   selectOnly, toggleSelect, duplicateForDrag, requestDelete, findBoard, commitDetailEdit, cancelDetailEdit,
   patchItem, moveGuide, removeGuide, startPullGuide, handleDrop, onResizeCanvas,
 }: {
@@ -62,6 +62,8 @@ export default function CanvasStage({
   setParams: Dispatch<SetStateAction<Record<string, unknown>>>;
   setSelectedKeys: Dispatch<SetStateAction<string[]>>;
   setTopKey: (v: string | null) => void;
+  /** 徽标弹窗的默认排序（只在弹窗内生效，关闭即恢复） */
+  setTopSort: (v: { field: string; sort: SortDir } | null) => void;
   setDetailCardKey: (v: string) => void;
   setDirty: (v: boolean) => void;
   setGuideMenu: (v: GuideMenuState) => void;
@@ -214,17 +216,13 @@ export default function CanvasStage({
               filterFields={paramDefs}
               filterValues={params}
               filterDatasets={filterDataIds}
-              onTopList={(key) => setTopKey(key)}
+              onTopList={(key, top) => {
+                setTopKey(key);
+                setTopSort({ field: String(top?.sort_field || ""), sort: (top?.sort ?? "") as SortDir });
+              }}
               onFilterChange={(id, value) => setParams((p) => ({ ...p, [id]: value }))}
               onDuplicate={duplicateForDrag}
               currentPage={view}
-              onTableMore={async (target) => {
-                // 表格「查看更多」：按当前（未保存）版面和筛选拉全量行
-                const res = await client.post(`/bi/dashboards/${docId}/rows`, {
-                  view, params, items: items.map(toDocItem), item_key: target.key,
-                });
-                return { rows: res.data?.rows ?? [], columns: res.data?.columns ?? [] };
-              }}
               guides={guides}
               guidesVisible={guidesVisible}
               onGuideMove={moveGuide}

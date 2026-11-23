@@ -12,8 +12,6 @@ import { sectionPayload } from "./sectionPayload";
 
 interface Props {
   items: CanvasItem[];
-  /** 看板 id：表格「查看更多」要按它拉全量行 */
-  docId?: number;
   /** 嵌在抽屉/面板里用：去掉点阵背景与画布边框，宽度按可用空间排 */
   plain?: boolean;
   /** 可用宽度：数字 = 给定像素；"container" = 自己量父容器（滚动条出现也不受影响） */
@@ -23,7 +21,7 @@ interface Props {
   frameH?: number;
 }
 
-export default function BoardViewer({ items, docId, plain, fitWidth, frameW, frameH }: Props) {
+export default function BoardViewer({ items, plain, fitWidth, frameW, frameH }: Props) {
   const [cards, setCards] = useState<Record<string, RenderPayload>>({});
   const [loading, setLoading] = useState(true);
   /** fitWidth="container" 时自己量宽度：滚动条占位、面板缩放都能实时跟上 */
@@ -139,12 +137,6 @@ export default function BoardViewer({ items, docId, plain, fitWidth, frameW, fra
                 <Renderer
                   payload={payload}
                   ui={item.spec.ui}
-                  onLoadAll={docId ? async () => {
-                    const res = await client.post(`/bi/dashboards/${docId}/rows`, {
-                      view: null, params: {}, item_key: item.key,
-                    });
-                    return { rows: res.data?.rows ?? [], columns: res.data?.columns ?? [] };
-                  } : undefined}
                 />
               ) : (
                 <Box sx={{

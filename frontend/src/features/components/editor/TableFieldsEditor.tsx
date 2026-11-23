@@ -71,60 +71,79 @@ export function TableFieldsEditor({
 
   return (
     <>
-      <Slot label="字段">
-        <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.75 }}>
-          {fields.map((name, index) => (
-            <Box
-              key={name}
-              data-field-chip={name}
-              draggable
-              onDragStart={(e) => {
-                dragFromRef.current = index;
-                setDragFrom(index);
-                e.dataTransfer.effectAllowed = "move";
-                e.dataTransfer.setData("text/plain", name);
-              }}
-              onDragEnd={() => { dragFromRef.current = null; setDragFrom(null); setDragTo(null); }}
-              onDragOver={(e) => {
-                e.preventDefault();
-                e.dataTransfer.dropEffect = "move";
-                if (dragTo !== index) setDragTo(index);
-              }}
-              onDragLeave={() => setDragTo((cur) => (cur === index ? null : cur))}
-              onDrop={(e) => {
-                e.preventDefault();
-                if (dragFromRef.current !== null) moveField(dragFromRef.current, index);
-                dragFromRef.current = null;
-                setDragFrom(null);
-                setDragTo(null);
-              }}
-              sx={{
-                position: "relative",
-                // 缩略图字段只在后端挂载，不在字段列表里显示
-                display: name === spec.table_view.thumb_key ? "none" : "flex",
-                alignItems: "center", gap: 0.5, pl: 1.1, pr: 0.7, height: 28,
-                borderRadius: 1.5, border: "1px solid #E8EEF8", bgcolor: "#F8FAFD",
-                fontSize: 12.5, color: "#334155",
-                cursor: "grab", transition: "opacity .12s, border-color .12s",
-                opacity: dragFrom === index ? 0.45 : 1,
-                borderColor: dragTo === index && dragFrom !== index ? "rgba(79,70,229,0.45)" : "#E8EEF8",
-                "&:active": { cursor: "grabbing" },
-                // 落点提示：拖到哪个字段前就画一条竖线
-                "&::before": dragTo === index && dragFrom !== null && dragFrom !== index
-                  ? {
-                      content: '""', position: "absolute", left: -5, top: 3, bottom: 3, width: 2,
-                      borderRadius: 1, bgcolor: "#4F46E5",
-                    }
-                  : undefined,
-              }}
-            >
-              {name}
-              <Close
-                onClick={(e) => { e.stopPropagation(); remove(name); }}
-                sx={{ fontSize: 14, color: "#94A3B8", cursor: "pointer", "&:hover": { color: "#EF4444" } }}
-              />
-            </Box>
-          ))}
+      <Slot label="字段" collapsible>
+        <Stack spacing={1}>
+          {fields.map((name, index) => {
+            if (name === spec.table_view.thumb_key) return null;
+            const configured = spec.table_view.columns.find((column) => column.key === name);
+            return (
+              <Box
+                key={name}
+                data-field-chip={name}
+                draggable
+                onDragStart={(e) => {
+                  dragFromRef.current = index;
+                  setDragFrom(index);
+                  e.dataTransfer.effectAllowed = "move";
+                  e.dataTransfer.setData("text/plain", name);
+                }}
+                onDragEnd={() => { dragFromRef.current = null; setDragFrom(null); setDragTo(null); }}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "move";
+                  if (dragTo !== index) setDragTo(index);
+                }}
+                onDragLeave={() => setDragTo((cur) => (cur === index ? null : cur))}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  if (dragFromRef.current !== null) moveField(dragFromRef.current, index);
+                  dragFromRef.current = null;
+                  setDragFrom(null);
+                  setDragTo(null);
+                }}
+                sx={{
+                  position: "relative", display: "flex", alignItems: "center", gap: 1,
+                  opacity: dragFrom === index ? 0.45 : 1,
+                  cursor: "grab",
+                  "&:active": { cursor: "grabbing" },
+                  "&::before": dragTo === index && dragFrom !== null && dragFrom !== index
+                    ? {
+                        content: '""', position: "absolute", left: -5, top: 3, bottom: 3, width: 2,
+                        borderRadius: 1, bgcolor: "#4F46E5",
+                      }
+                    : undefined,
+                }}
+              >
+                <Box
+                  sx={{
+                    display: "flex", alignItems: "center", gap: 0.5, pl: 1.1, pr: 0.7, height: 28,
+                    borderRadius: 1.5, border: "1px solid #E8EEF8", bgcolor: "#F8FAFD",
+                    fontSize: 12.5, color: "#334155", flex: 1, minWidth: 0,
+                  }}
+                >
+                  <Typography noWrap sx={{ fontSize: 12.5, minWidth: 0, flex: 1 }}>{name}</Typography>
+                  <Close
+                    onClick={(e) => { e.stopPropagation(); remove(name); }}
+                    sx={{ fontSize: 14, color: "#94A3B8", cursor: "pointer", flexShrink: 0, "&:hover": { color: "#EF4444" } }}
+                  />
+                </Box>
+                <TextField
+                  size="small" fullWidth placeholder="显示名称" value={configured?.label ?? ""}
+                  inputProps={{ maxLength: 20 }}
+                  onChange={(event) => {
+                    const numeric = metricOptions.some((field) => field.name === name);
+                    const base = configured ?? payload?.columns?.find((column) => column.key === name)
+                      ?? { key: name, label: name, type: numeric ? "number" as const : "text" as const,
+                        align: numeric ? "right" as const : "left" as const, width: 0 };
+                    const columns = spec.table_view.columns.filter((column) => column.key !== name);
+                    columns.push({ ...base, label: event.target.value });
+                    onChange({ ...spec, table_view: { ...spec.table_view, columns } });
+                  }}
+                  sx={{ flex: 1, minWidth: 0, "& .MuiInputBase-input": { fontSize: 12 }, "& .MuiOutlinedInput-root": { borderRadius: "8px" } }}
+                />
+              </Box>
+            );
+          })}
           <Box
             onClick={(e) => setAnchor(e.currentTarget)}
             onDragOver={(e) => {
@@ -154,34 +173,9 @@ export function TableFieldsEditor({
           >
             ＋ 添加字段
           </Box>
-        </Box>
+        </Stack>
 
       </Slot>
-
-      {fields.filter((name) => name !== spec.table_view.thumb_key).length > 0 && (
-        <Slot label="列头名称">
-          <Stack spacing={1}>
-            {fields.filter((name) => name !== spec.table_view.thumb_key).map((name) => {
-              const configured = spec.table_view.columns.find((column) => column.key === name);
-              return (
-                <TextField key={name} size="small" fullWidth label={name}
-                  placeholder={name} value={configured?.label ?? ""}
-                  InputLabelProps={{ shrink: true }} inputProps={{ maxLength: 20 }}
-                  onChange={(event) => {
-                    const numeric = metricOptions.some((field) => field.name === name);
-                    const base = configured ?? payload?.columns?.find((column) => column.key === name)
-                      ?? { key: name, label: name, type: numeric ? "number" as const : "text" as const,
-                        align: numeric ? "right" as const : "left" as const, width: 0 };
-                    const columns = spec.table_view.columns.filter((column) => column.key !== name);
-                    columns.push({ ...base, label: event.target.value });
-                    onChange({ ...spec, table_view: { ...spec.table_view, columns } });
-                  }}
-                  sx={{ "& .MuiOutlinedInput-root": { fontSize: 12.5, borderRadius: 1.5 } }} />
-              );
-            })}
-          </Stack>
-        </Slot>
-      )}
 
       <Menu
         anchorEl={anchor} open={Boolean(anchor)} onClose={() => setAnchor(null)}

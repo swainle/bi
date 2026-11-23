@@ -413,9 +413,15 @@ class NavSpec(BaseModel):
     global_nav: bool = False          # 跳转页全展示：开启后每个页面都显示这张导航
     export_scope: str = "primary"     # 导出范围：primary=主数据集 / all=当前页全部数据集 / dataset=指定的某个数据集
     export_dataset_id: int | None = None   # export_scope=dataset 时导哪个数据集
+    # 导出按钮（右侧单独一个，不再塞进 actions）：显不显示 / 文字 / 样式
+    export_visible: bool = True
+    export_label: str = "导出 CSV"
+    export_kind: Literal["primary", "secondary"] = "primary"
+    # 状态区：目前只有「时间」一种（前端每 10 秒刷一次）；空 = 不显示
+    status: Literal["", "time"] = "time"
     actions: list[NavAction] = []     # 右侧按钮，建议 2 个以内
 
-    @field_validator("brand", "brand_accent", "meta", "badge")
+    @field_validator("brand", "brand_accent", "meta", "badge", "export_label")
     @classmethod
     def _clip(cls, v: str) -> str:
         return (v or "")[:40]
@@ -493,6 +499,16 @@ class TableDetailSpec(BaseModel):
     key_field: str = ""
     # 旧的「面板内嵌卡片」数据（保留兼容，不再使用）
     items: list[dict] = []
+    # 抽屉内容字段映射：{title: 列名, platform: 列名, ...}（空 = 前端按字段名自动匹配）
+    fields: dict[str, str] = Field(default_factory=dict)
+    # 抽屉词云配置：{pain: {dataset_id, key_field, word_field, weight_field, split, palette}, ...}
+    wordclouds: dict[str, dict] = Field(default_factory=dict)
+    # 抽屉附加区块：{trend: {dataset_id, key_field, date_field, value_field},
+    #               reviews: {dataset_id, key_field, score_field, date_field, tag_field, text_field},
+    #               skus: {dataset_id, key_field, spec_field, price_field}}
+    blocks: dict[str, dict] = Field(default_factory=dict)
+    # 抽屉图片区块：{main: {dataset_id, key_field, field}, sku: ..., detail: ...}
+    images: dict[str, dict] = Field(default_factory=dict)
 
     @field_validator("items")
     @classmethod
@@ -535,14 +551,18 @@ class TableViewSpec(BaseModel):
     """明细表的列与交互（富单元格 / 排序 / 分页 / 查看更多）."""
 
     columns: list[dict] = []          # [{key,label,type,align,width,format,tag_split,image}]
-    sortable: bool = False
+    # 列头点击排序：始终可用（2026-11-21 起不再有开关）；旧文档里的 sortable 字段读取时忽略
     page_size: int = 10
-    more: bool = True
+    # 旧版「查看更多」开关：2026-11-21 起明细表改为卡内分页，不再弹全表弹窗。
+    # 字段保留只为兼容旧文档（读取时忽略），新建 / 同步模板时写 False。
+    more: bool = False
     more_label: str = ""
     index_column: bool = True
     # 缩略图：true 时在行首放一个图框，图来自 thumb_key 这一列的图片地址
     thumb: bool = False
     thumb_key: str = ""
+    # 标题右侧搜索框（前端按所有列模糊过滤）
+    search: bool = False
     related_thumb: RelatedThumbnailSpec = Field(default_factory=RelatedThumbnailSpec)
     # 行详情面板（点一行右侧滑出，内容由组件卡片组成）
     detail: TableDetailSpec = Field(default_factory=TableDetailSpec)
@@ -668,13 +688,18 @@ class LayoutSpec(BaseModel):
 
 
 class TopListSpec(BaseModel):
-    """指标卡右上角徽标的弹窗：点开按「维度 + 指标」自己算一个 TOP N 榜单。
+    """指标卡右上角徽标的弹窗：点开把指定的明细表放大显示（弹窗内可再点列头临时改序）。
 
-    和卡片上那个数字是两套口径 —— 卡片显示的是聚合值（例如 COUNT(日销量)），
-    弹窗里是按指标排行的明细（例如 日销量 SUM 前 10 个产品）。不改页面任何状态。
+    和卡片上那个数字是两套口径 —— 卡片显示聚合值，弹窗展示明细行。不改页面任何状态。
     """
 
     enabled: bool = False
+    # 指定弹出哪张明细表（元素 key）
+    table_key: str = ""
+    # 弹窗打开时的默认排序：排序列（为空 = 用明细表自己的顺序）+ 方向（空 = 不指定）。
+    # 只作用于弹窗这一份渲染（关闭即恢复，页面上的明细表不受影响）
+    sort_field: str = ""
+    sort: Literal["", "desc", "asc"] = ""
     title: str = ""                   # 弹窗标题（空 = 「卡片标题 TOP N」）
     dim: str = ""                     # 排名维度（产品标题 / 产品id …）
     metric: str = ""                  # 排序指标（空 = 卡片绑定的指标）
@@ -684,6 +709,11 @@ class TopListSpec(BaseModel):
     page_size: int = 10
     # 并列怎么处理：strict = 严格前 N 条（同分按维度名排序，稳定）；all = 把并列的全部带出来
     ties: Literal["strict", "all"] = "strict"
+
+    @field_validator("sort_field")
+    @classmethod
+    def _sort_field(cls, v: str) -> str:
+        return str(v or "").strip()[:60]
 
     @field_validator("title")
     @classmethod

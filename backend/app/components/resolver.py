@@ -220,9 +220,12 @@ def _request_for(spec: ComponentSpec, kind: str) -> dict:
         order_by = [{"name": metrics[0]["name"], "desc": b.sort == "desc"}]
 
     limit = b.limit
-    if kind == "table" and b.sort_field:
-        limit = b.top_n
-    elif kind in ("rank_list", "scatter", "table"):
+    if kind == "table":
+        # 明细表：一次取到上限，分页在前端做（每页条数在 table_view.page_size）。
+        # 旧版「按排序字段取前 top_n 行」不再是显示口径 —— 行限制已从面板移除，
+        # 再按 top_n 取会让分页只剩一页（2026-11-21 改）。
+        limit = max(limit, 2000)
+    elif kind in ("rank_list", "scatter"):
         limit = max(limit, 2000)
     elif spec.compute.headline in ("max", "min"):
         limit = max(b.top_n * 5, 50)

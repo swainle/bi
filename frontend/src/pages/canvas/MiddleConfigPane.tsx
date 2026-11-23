@@ -175,6 +175,16 @@ export default function MiddleConfigPane({
               onChange={(next: ComponentSpec) => applySpec(selectedItem.key, next)}
               components={components}
               boards={boardOptions}
+              tables={(doc?.views ?? []).flatMap((v) => v.items ?? [])
+                .filter((item) => item.component === "base.table")
+                .map((item) => {
+                  /* 排序列候选 = 这张明细表实际渲染出来的列（优先用看板渲染结果，
+                     拿不到再退回配置里的维度 + 自定义列） */
+                  const rendered = (cards[item.key]?.columns ?? [])
+                    .map((column) => ({ key: String(column.key), label: String(column.label || column.key) }))
+                    .filter((column) => column.key);
+                  return { key: item.key, label: String(item.spec?.title || "明细表"), columns: rendered };
+                })}
               detailCardKey={detailCardKey}
               onEditDetailCard={setDetailCardKey}
               onEditDetailPanel={() => enterDetailEdit(selectedItem.key)}
@@ -187,6 +197,12 @@ export default function MiddleConfigPane({
               fieldOptions={[...groups.dimensions, ...groups.metrics, ...groups.identifiers]
                 .map((f) => ({ name: f.name, role: f.role }))}
               datasetId={fieldDatasetId}
+              onDatasetChange={(id: number) => patchItem(selectedItem.key, {
+                spec: {
+                  ...selectedItem.spec,
+                  binding: { ...selectedItem.spec.binding, dataset_id: id },
+                },
+              })}
               onChange={(spec) => patchItem(selectedItem.key, { spec })}
               onEmpty={() => {
                 /* 一个字段都不剩：这个筛选栏没有任何作用，跟着组件一起删掉，别留个空框 */

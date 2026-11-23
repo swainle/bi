@@ -19,6 +19,8 @@ export interface Props {
   components?: ComponentItem[];
   /** 页面上的画板（明细表「弹窗」选目标用） */
   boards?: { key: string; label: string }[];
+  /** 页面上的明细表元素（指标卡「徽标弹窗」选目标用） */
+  tables?: { key: string; label: string }[];
   /** 正在编辑的详情卡片 key */
   detailCardKey?: string | null;
   onEditDetailCard?: (key: string) => void;

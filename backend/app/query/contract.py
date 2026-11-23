@@ -59,16 +59,23 @@ def _check_alias(value: str | None, field: str = "alias") -> str | None:
 
 
 class DimensionSpec(BaseModel):
-    """维度：列 + 可选时间粒度."""
+    """维度：列（+ 可选时间粒度），或直接给表达式（仅语义层传入）."""
 
-    column: str
+    column: str | None = None
+    expression: str | None = None        # 例："to_char(date,'MM-DD')"，仅允许语义层传入
     grain: str | None = None
     alias: str | None = None
 
     @field_validator("column")
     @classmethod
-    def _column(cls, v: str) -> str:
-        return _check_ident(v, "column")
+    def _column(cls, v: str | None) -> str | None:
+        return None if v in (None, "") else _check_ident(v, "column")
+
+    @model_validator(mode="after")
+    def _need_one(self):
+        if not self.column and not self.expression:
+            raise ValueError("维度需要 column 或 expression")
+        return self
 
     @field_validator("alias")
     @classmethod
@@ -82,7 +89,7 @@ class DimensionSpec(BaseModel):
 
     @property
     def output_name(self) -> str:
-        return self.alias or self.column
+        return self.alias or self.column or "dim"
 
 
 class MetricSpec(BaseModel):

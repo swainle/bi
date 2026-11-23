@@ -3,12 +3,13 @@
  *  （2026-11-13）。老文档里已经写好的 column 数据照旧生效，只是不再提供编辑入口。 */
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Menu, MenuItem, Stack, Switch, TextField, Typography } from "@mui/material";
+import { Autocomplete, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Menu, MenuItem, Stack, Switch, TextField, Typography } from "@mui/material";
 import { Add, Check, Close, DeleteOutline, ExpandMore, KeyboardArrowDown } from "@mui/icons-material";
 import client from "../../../api/client";
 import type { FilterFieldSpec } from "../types";
 import { isSplitField } from "../split";
-import { PanelSection } from "./PanelSection";
+import { GROUP_CARD_SX, PanelSection } from "./PanelSection";
+import { Row, fieldSx } from "./Row";
 
 const COLUMN_OPS = ["=", "!=", ">", "<", ">=", "<=", "LIKE", "IN"];
 
@@ -31,6 +32,8 @@ interface Props {
   /** 页面数据集的字段（带角色）："+ 添加" 直接挑字段、改成日期时能自动挂上时间列 */
   fieldOptions?: { name: string; role?: string }[];
   datasetId: number | null;
+  /** 改筛选栏挂的数据集（弹窗里选「数据集」时用）：不传则数据集只读 */
+  onDatasetChange?: (id: number) => void;
   onChange: (fields: FilterFieldSpec[]) => void;
   onFieldsMapChange?: (map: Record<string, FilterFieldSpec[]>) => void;
   /** 底部背景（白底圆角卡片）：给了回调才显示开关（组件库编辑页不显示） */
@@ -159,7 +162,7 @@ function PlatformMap({ field, datasets, onChange }: {
   return (
     <Box>
       <Box sx={{ display: "flex", alignItems: "center", mb: 0.5 }}>
-        <Typography sx={{ fontSize: 11, color: "#94A3B8" }}>切换数据集</Typography>
+        <Typography sx={{ fontSize: 11, color: "#94A3B8" }}>数据集</Typography>
         <Box sx={{ flex: 1 }} />
         <Button size="small" startIcon={<Add sx={{ fontSize: 14 }} />}
           onClick={addRow}
@@ -204,8 +207,12 @@ function PlatformMap({ field, datasets, onChange }: {
   );
 }
 
+/** 「名称」行右侧那个删除按钮占的宽度（small IconButton + 16px 图标 = 26）：
+ *  其余行留同样空白，输入框右边缘才对得齐 */
+const ACTION_SLOT = 26;
+
 /** 筛选字段编辑器 —— 画布中栏与组件库编辑页共用同一套参数（名称/控件/选项/默认值/宽度） */
-export default function FilterFieldsEditor({ fields, platform, fieldsMap, columns, fieldOptions = [], datasetId, onChange, onFieldsMapChange, background, onBackgroundChange, onEmpty }: Props) {
+export default function FilterFieldsEditor({ fields, platform, fieldsMap, columns, fieldOptions = [], datasetId, onDatasetChange, onChange, onFieldsMapChange, background, onBackgroundChange, onEmpty }: Props) {
   /** 正在编辑哪一套字段："" = 通用，其它 = 该平台自己那套 */
   const [scope, setScope] = useState("");
   const map = fieldsMap ?? {};
@@ -349,6 +356,8 @@ export default function FilterFieldsEditor({ fields, platform, fieldsMap, column
 
   /** 可选数据集（切换器要挑表）：进面板拉一次 */
   const [datasets, setDatasets] = useState<{ id: number; name: string }[]>([]);
+  /** 当前筛选栏挂的数据集名 */
+  const datasetName = datasets.find((d) => d.id === Number(datasetId))?.name ?? "未选数据集";
   useEffect(() => {
     client.get("/bi/semantic/datasets")
       .then((res) => setDatasets(res.data?.datasets || []))
@@ -535,10 +544,6 @@ export default function FilterFieldsEditor({ fields, platform, fieldsMap, column
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [panelFields, fieldOptions]);
 
-  const label = (text: string) => (
-    <Typography sx={{ fontSize: 11, color: "#94A3B8", mb: 0.5 }}>{text}</Typography>
-  );
-
   /** 删一个选项：连带删它的区间档位；正被当默认值就清空默认值 */
   const removeOption = (index: number, optionIndex: number) => {
     const field = panelFields[index];
@@ -691,13 +696,12 @@ export default function FilterFieldsEditor({ fields, platform, fieldsMap, column
             setDropHint(null);
           }}
           sx={{
-          /* 每组字段一张白卡 + 一点投影：只靠细边框时相邻两卡看着像连在一起 */
-          border: "1px solid #E8EEF9", borderRadius: 2, p: 1.25, bgcolor: "#fff",
-          boxShadow: "0 1px 2px rgba(15,23,42,0.04), 0 6px 16px -12px rgba(15,23,42,0.18)",
+          /* 容器样式跟「导航菜单卡 > 菜单行」同一个共享组件（浅底 + 细边 + 同圆角 / 内距 / 行距）：
+             原来是自己画的白卡 + 投影，和别处的重复项卡片不一致 */
+          ...GROUP_CARD_SX,
           opacity: dragCard === index ? 0.4 : 1,
           transition: "opacity .12s",
           position: "relative",
-          display: "flex", flexDirection: "column", gap: 1,
         }}>
           {/* 落点提示线：在上半区 = 插到这张卡之前，下半区 = 插到它之后 */}
           {dropHint && dropHint.index === index && dragCard !== null && dragCard !== index && (
@@ -761,65 +765,68 @@ export default function FilterFieldsEditor({ fields, platform, fieldsMap, column
             }} />
           </Box>
           {!folded && (<>
-          <Box sx={{ display: "flex", gap: 1 }}>
-            <Box sx={{ flex: 1 }}>
-              {label("名称")}
-              <TextField size="small" fullWidth value={field.label}
-                onChange={(e) => updateField(index, { label: e.target.value })}
-                sx={{ "& .MuiOutlinedInput-root": { borderRadius: 1.5, fontSize: 12 } }} />
-              {/* 分套：勾上后这一页其余内容按该字段的取值分开放（不再要求字段名叫「平台」） */}
-              <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, mt: 0.25 }}>
-                <Switch size="small" checked={isSplitField(field)}
-                  onChange={(e) => setSplit(index, e.target.checked)}
-                  sx={{ mr: -0.5, transform: "scale(0.82)" }} />
-                <Typography sx={{ fontSize: 11, color: isSplitField(field) ? "#4F46E5" : "#94A3B8" }}>
-                  分套依据
-                </Typography>
-              </Box>
-            </Box>
-            <Box sx={{ width: 96 }}>
-              {label("控件")}
-              <TextField select size="small" fullWidth value={field.type}
-                onChange={(e) => {
-                  const nextType = e.target.value;
-                  /* 改成「日期」但还没绑字段：这张数据集只有一个时间列就自动挂上，
-                     省得选完日期发现「怎么都不生效」（2026-11-15 用户实测）。
-                     两个以上时间列不猜，留给用户自己拖。 */
-                  const timeColumns = fieldOptions.filter((f) => f.role === "time").map((f) => f.name);
-                  const autoColumn = !String(field.column || "").trim() && nextType === "date" && timeColumns.length === 1
-                    ? timeColumns[0]
-                    : (field.column ?? "");
-                  void bindColumn(index, autoColumn, { type: nextType });
-                }}
-                sx={{ "& .MuiOutlinedInput-root": { borderRadius: 1.5, fontSize: 12 } }}>
-                {[
-                  { v: "select", t: "下拉" },
-                  { v: "date", t: "日期" },
-                  { v: "chips", t: "按钮组" },
-                  { v: "segment", t: "分段" },
-                  { v: "search", t: "搜索" },
-                ].map((option) => (
-                  <MenuItem key={option.v} value={option.v} sx={{ fontSize: 12 }}>{option.t}</MenuItem>
-                ))}
-              </TextField>
-            </Box>
-          </Box>
+          <Row label="名称">
+            <TextField size="small" value={field.label}
+              onChange={(e) => updateField(index, { label: e.target.value })}
+              sx={fieldSx} />
+            <IconButton size="small" title="删除这个筛选字段"
+              onClick={() => removeField(index)}
+              sx={{ flexShrink: 0, opacity: "1 !important" }}>
+              <DeleteOutline sx={{ fontSize: 16, color: "#94A3B8", "&:hover": { color: "#DC2626" } }} />
+            </IconButton>
+          </Row>
+          <Row label="控件">
+            <TextField select size="small" value={field.type}
+              onChange={(e) => {
+                const nextType = e.target.value;
+                /* 改成「日期」但还没绑字段：这张数据集只有一个时间列就自动挂上，
+                   省得选完日期发现「怎么都不生效」（2026-11-15 用户实测）。
+                   两个以上时间列不猜，留给用户自己拖。 */
+                const timeColumns = fieldOptions.filter((f) => f.role === "time").map((f) => f.name);
+                const autoColumn = !String(field.column || "").trim() && nextType === "date" && timeColumns.length === 1
+                  ? timeColumns[0]
+                  : (field.column ?? "");
+                void bindColumn(index, autoColumn, { type: nextType });
+              }}
+              sx={fieldSx}>
+              {[
+                { v: "select", t: "下拉" },
+                { v: "date", t: "日期" },
+                { v: "chips", t: "按钮组" },
+                { v: "segment", t: "分段" },
+                { v: "search", t: "搜索" },
+              ].map((option) => (
+                <MenuItem key={option.v} value={option.v} sx={{ fontSize: 12 }}>{option.t}</MenuItem>
+              ))}
+            </TextField>
+            <Box sx={{ width: ACTION_SLOT, flexShrink: 0 }} />
+          </Row>
+          <Row label="宽度">
+            <TextField size="small" type="number" value={field.width}
+              onChange={(e) => updateField(index, { width: Number(e.target.value) })}
+              sx={fieldSx} />
+            <Box sx={{ width: ACTION_SLOT, flexShrink: 0 }} />
+          </Row>
 
-          {/* 数据集映射只属于「平台入口」（分套依据 / 已经配过映射的字段）：
-              别的字段也铺一块「切换数据集 + 添加平台」纯属噪音 */}
-          {(!scope || isGlobalCard(field)) && (isSplitField(field) || Object.keys(field.dataset_map || {}).length > 0) && (
-            <PlatformMap
-              field={field}
-              datasets={datasets}
-              onChange={(dataset_map, nextDefault) => updateField(index, { dataset_map, default: nextDefault })}
+          {/* 数据集 / 绑定字段：都是「能输入的下拉」，直接常显，不要按钮 */}
+          <Row label="数据集">
+            <Autocomplete
+              size="small"
+              options={datasets}
+              value={datasets.find((d) => d.id === Number(datasetId)) ?? null}
+              onChange={(_, next) => { if (next && onDatasetChange) onDatasetChange(next.id); }}
+              getOptionLabel={(option) => option.name}
+              disabled={!onDatasetChange}
+              renderInput={(params) => (
+                <TextField {...params} size="small" placeholder={datasetName} sx={fieldSx} />
+              )}
+              sx={{ flex: 1, minWidth: 0 }}
             />
-          )}
-
-          {/* 拖入框：把左栏字段拖进来 = 把这个筛选绑到那一列（绑过就直接取该列的候选值）。
-              只保留拖放这一条入口，原来的「绑定字段」输入框 + 快捷填入已按用户要求去掉。
-              平台切换字段（配了数据集映射）也要能绑：绑了「平台」列，切平台时卡片只显示这个平台的行，
-              否则用户会以为「选了平台却没过滤」（2026-11-13 用户实测反馈）。 */}
-          <Box
+            <Box sx={{ width: ACTION_SLOT, flexShrink: 0 }} />
+          </Row>
+          <Row label="绑定字段">
+            {/* 既能输入 / 选，也能把左侧字段拖进来直接绑上；边框与文字沿用原来拖入框那套样式 */}
+            <Box
               onDragOver={(e) => {
                 e.preventDefault();
                 e.dataTransfer.dropEffect = "copy";
@@ -836,18 +843,57 @@ export default function FilterFieldsEditor({ fields, platform, fieldsMap, column
                   /* 不是字段拖拽，忽略 */
                 }
               }}
-              onClick={(e) => setColumnMenu({ el: e.currentTarget, index })}
               sx={{
-                px: 1.25, py: 1, borderRadius: 2, cursor: "pointer",
-                border: "1px dashed", transition: "all .12s",
-                borderColor: dragIndex === index ? "#6366F1" : (field.column ? "#C7D2FE" : "#CBD5E1"),
-                bgcolor: dragIndex === index ? "rgba(99,102,241,0.05)" : (field.column ? "rgba(79,70,229,0.03)" : "#FBFCFE"),
-                color: dragIndex === index || field.column ? "#4F46E5" : "#94A3B8",
-                fontSize: 12,
+                flex: 1, minWidth: 0,
+                "& .MuiOutlinedInput-notchedOutline": {
+                  border: "1px dashed",
+                  borderColor: dragIndex === index ? "#818CF8" : "#C7D2FE",
+                },
+                "& .MuiOutlinedInput-root": {
+                  bgcolor: dragIndex === index ? "rgba(99,102,241,0.10)" : "rgba(99,102,241,0.05)",
+                  "&:hover .MuiOutlinedInput-notchedOutline": {
+                    borderColor: "#818CF8",
+                  },
+                },
+                "& .MuiAutocomplete-input": {
+                  color: "#4F46E5",
+                },
               }}
             >
-              {field.column ? `已绑定：${field.column}` : "把左侧字段拖到这里（或点击）"}
-          </Box>
+              <Autocomplete
+                size="small"
+                options={columns}
+                value={field.column || null}
+                onChange={(_, next) => {
+                  if (next) void bindColumn(index, next, { type: field.type });
+                  else updateField(index, { column: "" });
+                }}
+                renderInput={(params) => (
+                  <TextField {...params} size="small"
+                    placeholder={field.column ? "" : "拖到这里"} sx={fieldSx} />
+                )}
+                sx={{ flex: 1, minWidth: 0 }}
+              />
+            </Box>
+            <Box sx={{ width: ACTION_SLOT, flexShrink: 0 }} />
+          </Row>
+          <Row label="默认值">
+            {switchMode ? (
+              <TextField select size="small" value={String(field.default ?? entries[0]?.[0] ?? "")}
+                onChange={(e) => updateField(index, { default: e.target.value })}
+                sx={fieldSx}>
+                {entries.map(([name]) => (
+                  <MenuItem key={name} value={name} sx={{ fontSize: 12 }}>{name}</MenuItem>
+                ))}
+              </TextField>
+            ) : (
+              <TextField size="small" value={String(field.default ?? "")}
+                placeholder={field.type === "date" ? "YYYY-MM-DD 或 起~止（空 = 全部）" : ""}
+                onChange={(e) => updateField(index, { default: e.target.value })}
+                sx={fieldSx} />
+            )}
+            <Box sx={{ width: ACTION_SLOT, flexShrink: 0 }} />
+          </Row>
 
 
           {!switchMode && field.type !== "search" && field.type !== "date" && (() => {
@@ -919,64 +965,10 @@ export default function FilterFieldsEditor({ fields, platform, fieldsMap, column
             );
           })()}
 
-          <Box sx={{ display: "flex", gap: 1 }}>
-            <Box sx={{ flex: 1 }}>
-              {label("默认值")}
-              {switchMode ? (
-                <TextField select size="small" fullWidth value={String(field.default ?? entries[0]?.[0] ?? "")}
-                  onChange={(e) => updateField(index, { default: e.target.value })}
-                  sx={{ "& .MuiOutlinedInput-root": { borderRadius: 1.5, fontSize: 12 } }}>
-                  {entries.map(([name]) => (
-                    <MenuItem key={name} value={name} sx={{ fontSize: 12 }}>{name}</MenuItem>
-                  ))}
-                </TextField>
-              ) : (
-                <TextField size="small" fullWidth value={String(field.default ?? "")}
-                  placeholder={field.type === "date" ? "YYYY-MM-DD 或 起~止（空 = 全部）" : ""}
-                  onChange={(e) => updateField(index, { default: e.target.value })}
-                  sx={{ "& .MuiOutlinedInput-root": { borderRadius: 1.5, fontSize: 12 } }} />
-              )}
-            </Box>
-            <Box sx={{ width: 76 }}>
-              {label("宽度")}
-              <TextField size="small" type="number" fullWidth value={field.width}
-                onChange={(e) => updateField(index, { width: Number(e.target.value) })}
-                sx={{ "& .MuiOutlinedInput-root": { borderRadius: 1.5, fontSize: 12 } }} />
-            </Box>
-            <IconButton size="small" title="删除这个筛选字段"
-              onClick={() => removeField(index)}
-              sx={{ alignSelf: "flex-end", mb: 0.25 }}>
-              <DeleteOutline sx={{ fontSize: 16, color: "#94A3B8", "&:hover": { color: "#DC2626" } }} />
-            </IconButton>
-          </Box>
           </>)}
         </Box>
         );
       })}
-
-      {/* 点拖入框：从左侧字段里选一列绑上（拖不动的触屏/手滑也能用） */}
-      <Menu open={!!columnMenu} anchorEl={columnMenu?.el} onClose={() => setColumnMenu(null)}
-        slotProps={{ paper: { sx: { minWidth: 168, borderRadius: 2 } } }}>
-        {columns.length === 0 && <MenuItem disabled sx={{ fontSize: 12 }}>左侧还没有可选字段</MenuItem>}
-        {columns.map((column) => (
-          <MenuItem key={column} sx={{ fontSize: 12 }}
-            onClick={() => {
-              if (columnMenu) void bindColumn(columnMenu.index, column);
-              setColumnMenu(null);
-            }}>
-            绑定「{column}」
-          </MenuItem>
-        ))}
-        {columnMenu && (panelFields[columnMenu.index]?.column ?? "") !== "" && (
-          <MenuItem sx={{ fontSize: 12, color: "#DC2626" }}
-            onClick={() => {
-              if (columnMenu) updateField(columnMenu.index, { column: "" });
-              setColumnMenu(null);
-            }}>
-            清除绑定
-          </MenuItem>
-        )}
-      </Menu>
 
       {/* 删分套依据 = 这一页不再按它分套：先确认，别悄悄把分平台内容收起来 */}
       <Dialog open={!!confirmField} onClose={() => setConfirmField(null)} maxWidth="xs" fullWidth>

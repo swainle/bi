@@ -10,7 +10,7 @@ export const COMPONENT_SIZE: Partial<Record<ComponentKind, { w: number; h: numbe
   banner: { w: DESIGN_W, h: 200 },
   nav: { w: DESIGN_W, h: 64 },
   filter: { w: DESIGN_W, h: 56 },
-  /* 明细表也是整版块：贴左铺满 1440，默认高 560（10 行 + 表头 + "查看更多"那一行） */
+  /* 明细表也是整版块：贴左铺满 1440，默认高 560（10 行 + 表头 + 页脚分页条） */
   table: { w: DESIGN_W, h: 560 },
   section: { w: 1200, h: 56 },
   insight: { w: 420, h: 220 },

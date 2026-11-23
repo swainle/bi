@@ -63,7 +63,7 @@ interface Props {
   /** 本页卡片读的数据集：给了就做「逐级筛选」 */
   filterDatasets?: number[];
   /** 指标卡徽标点击（TOP N 榜单弹窗） */
-  onTopList?: (itemKey: string) => void;
+  onTopList?: (itemKey: string, top?: RenderPayload["top"]) => void;
   onFilterChange?: (id: string, value: unknown) => void;
   /** 手工参考线（拖标尺拉出来的） */
   guides?: DocGuide[];
@@ -73,8 +73,6 @@ interface Props {
   onGuideRemove?: (id: string) => void;
   onGuideMenu?: (event: React.MouseEvent, id: string) => void;
   onBlankMenu?: (event: React.MouseEvent) => void;
-  /** 表格「查看更多」：拉该元素的全量行 */
-  onTableMore?: (item: CanvasItem) => Promise<{ rows: Record<string, unknown>[]; columns?: unknown[] }>;
   /** ⌥ + 拖动：原位复制一份（PS 手感） */
   onDuplicate?: (key: string) => void;
   /** 当前页 key：卡片里的导航菜单卡据此高亮所在页 */
@@ -87,7 +85,7 @@ const BoardSurface = forwardRef<BoardSurfaceHandle, Props>(function BoardSurface
   scale = 1, offsetX = 0, offsetY = 0, bleedMask = true, ghostNav = null, designWidth, designHeight = 620,
   filterFields, filterValues, filterDatasets, onTopList, onFilterChange,
   guides = [], guidesVisible = true, onGuideMove, onGuideRemove, onGuideMenu, onBlankMenu,
-  onTableMore, onDuplicate, currentPage, onResizeCanvas,
+  onDuplicate, currentPage, onResizeCanvas,
 }, ref) {
   const designW = designWidth ?? 1440;
   const boardHeight = Math.max(designHeight, 160);
@@ -453,7 +451,6 @@ const BoardSurface = forwardRef<BoardSurfaceHandle, Props>(function BoardSurface
               filterDatasets={filterDatasets}
               onTopList={onTopList}
               onFilterChange={onFilterChange}
-              onLoadAll={onTableMore ? () => onTableMore(item) : undefined}
             />
           ))}
 

@@ -11,7 +11,7 @@ const TRANSFORMS: [string, string][] = [
   ["delta", "环比差值"], ["cumsum", "累计值"],
 ];
 
-const fieldSx = { "& .MuiOutlinedInput-root": { borderRadius: 2, fontSize: 12.5 } } as const;
+const fieldSx = { "& .MuiOutlinedInput-root": { borderRadius: "8px", fontSize: 12.5 } } as const;
 
 export default function ComputeFields({ kind, spec, onChange }: {
   kind: ComponentKind;
@@ -34,7 +34,7 @@ export default function ComputeFields({ kind, spec, onChange }: {
       <Box
         onClick={() => setOpen((prev) => !prev)}
         sx={{
-          display: "flex", alignItems: "center", gap: 0.5, cursor: "pointer", width: "fit-content", mt: 1.5,
+          display: "flex", alignItems: "center", gap: 0.5, cursor: "pointer", width: "fit-content", mt: 0, mb: open ? 1 : 2,
           color: "#64748B", "&:hover": { color: "#4F46E5" },
         }}
       >
@@ -47,32 +47,46 @@ export default function ComputeFields({ kind, spec, onChange }: {
         )}
       </Box>
       {open && (
-        <Box sx={{ mt: 1.25 }}>
-          <Stack direction="row" spacing={1} sx={{ mb: 1 }}>
-            <TextField select size="small" label="换算" value={compute.transform}
+        <Stack spacing={1} sx={{ mt: 1.25 }}>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+            <Typography sx={{ fontSize: 11.5, color: "#64748B", width: 76, flexShrink: 0 }}>换算</Typography>
+            <TextField select size="small" value={compute.transform}
               onChange={(e) => setCompute({ transform: e.target.value as never })}
-              sx={{ flex: 1, ...fieldSx }}>
+              sx={{ flex: 1, minWidth: 0, ...fieldSx }}>
               {TRANSFORMS.map(([v, t]) => <MenuItem key={v} value={v} sx={{ fontSize: 12.5 }}>{t}</MenuItem>)}
             </TextField>
-            <TextField size="small" type="number" label="小数位" value={compute.decimals}
+          </Box>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+            <Typography sx={{ fontSize: 11.5, color: "#64748B", width: 76, flexShrink: 0 }}>小数位</Typography>
+            <TextField size="small" type="number" value={compute.decimals}
               onChange={(e) => setCompute({ decimals: Number(e.target.value) })}
-              sx={{ width: 88, ...fieldSx }} />
-          </Stack>
-          <Stack direction="row" spacing={1}>
-            <TextField size="small" type="number" label="乘数" value={compute.scale}
+              sx={{ flex: 1, minWidth: 0, ...fieldSx }} />
+          </Box>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+            <Typography sx={{ fontSize: 11.5, color: "#64748B", width: 76, flexShrink: 0 }}>乘数</Typography>
+            <TextField size="small" type="number" value={compute.scale}
               onChange={(e) => setCompute({ scale: Number(e.target.value) })}
-              sx={{ flex: 1, ...fieldSx }} />
-            <TextField size="small" type="number" label="加数" value={compute.offset}
+              sx={{ flex: 1, minWidth: 0, ...fieldSx }} />
+          </Box>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+            <Typography sx={{ fontSize: 11.5, color: "#64748B", width: 76, flexShrink: 0 }}>加数</Typography>
+            <TextField size="small" type="number" value={compute.offset}
               onChange={(e) => setCompute({ offset: Number(e.target.value) })}
-              sx={{ flex: 1, ...fieldSx }} />
-            <TextField size="small" label="前缀" value={compute.prefix}
+              sx={{ flex: 1, minWidth: 0, ...fieldSx }} />
+          </Box>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+            <Typography sx={{ fontSize: 11.5, color: "#64748B", width: 76, flexShrink: 0 }}>前缀</Typography>
+            <TextField size="small" value={compute.prefix}
               onChange={(e) => setCompute({ prefix: e.target.value })}
-              sx={{ width: 76, ...fieldSx }} />
-            <TextField size="small" label="后缀" value={compute.suffix}
+              sx={{ flex: 1, minWidth: 0, ...fieldSx }} />
+          </Box>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+            <Typography sx={{ fontSize: 11.5, color: "#64748B", width: 76, flexShrink: 0 }}>后缀</Typography>
+            <TextField size="small" value={compute.suffix}
               onChange={(e) => setCompute({ suffix: e.target.value })}
-              sx={{ width: 76, ...fieldSx }} />
-          </Stack>
-        </Box>
+              sx={{ flex: 1, minWidth: 0, ...fieldSx }} />
+          </Box>
+        </Stack>
       )}
     </>
   );

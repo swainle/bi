@@ -17,6 +17,7 @@ def table_spec(**binding):
 
 @pytest.mark.parametrize("sort", ["asc", "desc"])
 def test_table_sorts_all_rows_before_limit(sort):
+    """明细表按排序字段全量排序后再取上限行（行限制已移除，一律取到 2000 行交给前端分页）."""
     spec = table_spec(sort=sort)
     request = _request_for(spec, "table")
     dataset = Dataset(id=1, name="商品", physical_table="products", fields=[
@@ -24,14 +25,14 @@ def test_table_sorts_all_rows_before_limit(sort):
         DatasetField(2, 1, "日销量", "daily_sales", role="measure", data_type="integer"),
     ])
     query = build(compile_query(dataset, request))
-    assert query.params["_limit"] == 10
+    assert query.params["_limit"] == 2000
     assert query.sql.index("ORDER BY") < query.sql.index("LIMIT")
     with sqlite3.connect(":memory:") as connection:
         connection.execute("CREATE TABLE products (item_id INTEGER, daily_sales INTEGER)")
         connection.executemany("INSERT INTO products VALUES (?, ?)", [(i, i) for i in range(3000)])
         connection.execute("INSERT INTO products VALUES (3000, NULL)")
         result = connection.execute(query.sql, query.params).fetchall()
-    expected = list(range(2999, 2989, -1)) if sort == "desc" else list(range(10))
+    expected = list(range(2999, 999, -1)) if sort == "desc" else list(range(2000))
     assert [row[1] for row in result] == expected
 
 

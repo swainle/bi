@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
-  Box, Button, Chip, Divider, IconButton, Menu, MenuItem, Stack, Switch, TextField, Typography,
+  Autocomplete, Box, Button, Chip, Divider, IconButton, Menu, MenuItem, Stack, Switch, TextField, Typography,
 } from "@mui/material";
 import { Add, Check, Close, ExpandMore } from "@mui/icons-material";
 import ChartOptionsPanel from "./ChartOptionsPanel";
@@ -19,6 +19,7 @@ import type { BannerStat, ComponentItem, ComponentKind, ComponentSpec, FieldOpti
 import { AGG, GRAINS, IMAGE_KEY, NEEDS_DIMENSION, OPS, STRONG_IMAGE_KEY, dash } from "./queryConstants";
 import type { Props } from "./queryTypes";
 import RelatedThumbnailSettings from "./RelatedThumbnailSettings";
+import { Slot } from "./Slot";
 
 export function TableThumbSettings({
   spec, onChange, dimensionOptions, identifierOptions, metricOptions,
@@ -71,26 +72,32 @@ export function TableThumbSettings({
     : "";
 
   return (
-    <Box sx={{ mt: 1.75, pt: 1.5, borderTop: "1px solid #F1F5FC" }}>
-      <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, flexWrap: "wrap" }}>
+    <Slot label="缩略图" collapsible>
+      <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+        <Typography sx={{ fontSize: 11.5, color: "#64748B", width: 76, flexShrink: 0 }}>关联字段</Typography>
         <Switch
           size="small" checked={!!spec.table_view.thumb}
           onChange={(e) => applyThumb(e.target.checked, spec.table_view.thumb_key ?? "")}
           sx={{ ml: -0.5 }}
         />
-        <Typography sx={{ fontSize: 12.5, color: "#334155" }}>缩略图</Typography>
-        {spec.table_view.thumb && (
-          <TextField select size="small" label="图片字段" value={thumbValue}
-            onChange={(e) => applyThumb(true, e.target.value)}
-            sx={{ width: 168, "& .MuiOutlinedInput-root": { borderRadius: 1.5, fontSize: 12 } }}>
-            {imageOptions.map((f) => (
-              <MenuItem key={f.name} value={f.name} sx={{ fontSize: 12 }}>{f.name}</MenuItem>
-            ))}
-          </TextField>
-        )}
       </Box>
+      {spec.table_view.thumb && (
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1, mt: 0.75 }}>
+          <Typography sx={{ fontSize: 11.5, color: "#64748B", width: 76, flexShrink: 0 }}>图片字段</Typography>
+          <Autocomplete
+            size="small"
+            options={imageOptions.map((f) => f.name)}
+            value={thumbValue || null}
+            onChange={(_, value) => applyThumb(true, value || "")}
+            renderInput={(params) => (
+              <TextField {...params} size="small" placeholder="选择图片字段" sx={{ "& .MuiInputBase-input": { fontSize: 12 } }} />
+            )}
+            sx={{ flex: 1, minWidth: 0 }}
+          />
+        </Box>
+      )}
       <RelatedThumbnailSettings spec={spec} onChange={onChange}
         fields={[...identifierOptions, ...dimensionOptions, ...metricOptions]} />
-    </Box>
+    </Slot>
   );
 }

@@ -29,10 +29,6 @@ export interface RendererProps {
   ui: UiSpec;
   /** 缩略图模式：不画标题/注释/坐标轴文字 */
   compact?: boolean;
-  /** 表格：查看更多（看板层把它接到浮层） */
-  onMore?: () => void;
-  /** 表格：拉全量行（查看更多弹窗用） */
-  onLoadAll?: () => Promise<{ rows: Record<string, unknown>[]; columns?: TableColumn[] }>;
   /** 表格：行点击 */
   onRowClick?: (row: Record<string, unknown>) => void;
   /** KPI / 榜卡：整卡点击 */

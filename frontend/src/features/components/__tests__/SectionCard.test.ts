@@ -22,4 +22,14 @@ describe("分节标题", () => {
     expect(html).toContain("分节标题");
     expect(html).toContain("说明");
   });
+
+  it("选了图标就画图标，没选仍显示编号", () => {
+    const withIcon = renderToStaticMarkup(createElement(SectionCard, { payload, ui: { accent: "indigo" } }));
+    expect(withIcon).toContain("MuiSvgIcon-root");
+    const plain = renderToStaticMarkup(createElement(SectionCard, {
+      payload: { ...payload, icon: "" }, ui: { accent: "indigo" },
+    }));
+    expect(plain).not.toContain("MuiSvgIcon-root");
+    expect(plain).toContain(">1<");
+  });
 });

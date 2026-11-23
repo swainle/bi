@@ -2,6 +2,7 @@
 
 import { Box, Typography } from "@mui/material";
 import { accentOf } from "../palette";
+import { SECTION_ICONS } from "./sectionIcon";
 
 interface Props {
   payload: {
@@ -19,6 +20,8 @@ const NUMERAL: Record<string, string> = { "一": "1", "二": "2", "三": "3", "�
 export default function SectionCard({ payload, ui, compact }: Props) {
   const token = accentOf(ui.accent);
   const gradient = `linear-gradient(135deg, ${token.main}, ${token.gradient[0]})`;
+  /** 面板选了图标就画图标（优先级高于编号）；没选仍显示「一 → 1」 */
+  const Icon = payload.icon ? SECTION_ICONS[payload.icon] : undefined;
 
   return (
     <Box sx={{
@@ -32,7 +35,7 @@ export default function SectionCard({ payload, ui, compact }: Props) {
         display: "grid", placeItems: "center", fontSize: 12, fontWeight: 700,
         boxShadow: "0 4px 10px -6px rgba(15,23,42,0.4)",
       }}>
-        {NUMERAL[payload.index || ""] || payload.index || "·"}
+        {Icon ? <Icon sx={{ fontSize: 15 }} /> : (NUMERAL[payload.index || ""] || payload.index || "·")}
       </Box>
       <Typography sx={{ fontSize: compact ? 13 : 15, fontWeight: 700, color: "#0F172A", letterSpacing: -0.2 }} noWrap>
         {payload.title || ""}

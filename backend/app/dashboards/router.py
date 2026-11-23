@@ -791,6 +791,8 @@ def dashboard_top_list(
             "thumb": bool(thumb_key) and page_table is not None and bool(page_table.table_view.thumb),
             "thumb_key": thumb_key,
             "index_column": bool(page_table.table_view.index_column) if page_table is not None else True,
+            # 行详情（点行弹抽屉）：沿用页面明细表的弹窗配置
+            "detail": (page_table.table_view.detail.model_dump() if page_table is not None and page_table.table_view.detail.enabled else None),
             "source": "table" if page_table is not None else "default",
             "top": top.model_dump(),
         }

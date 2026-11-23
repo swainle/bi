@@ -19,13 +19,38 @@ import type { BannerStat, ComponentItem, ComponentKind, ComponentSpec, FieldOpti
 import { AGG, GRAINS, IMAGE_KEY, NEEDS_DIMENSION, OPS, STRONG_IMAGE_KEY, dash } from "./queryConstants";
 import type { Props } from "./queryTypes";
 
-export function Slot({ label, children }: { label: string; children: React.ReactNode }) {
+export function Slot({ label, children, collapsible = false, defaultOpen = false }: {
+  label: string;
+  children: React.ReactNode;
+  collapsible?: boolean;
+  defaultOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  if (!collapsible) {
+    return (
+      <Box sx={{ mb: 2 }}>
+        <Typography sx={{ fontSize: 11.5, fontWeight: 600, color: "#64748B", mb: 1.25 }}>
+          {label}
+        </Typography>
+        {children}
+      </Box>
+    );
+  }
   return (
-    <Box sx={{ mb: 1.75 }}>
-      <Typography sx={{ fontSize: 11.5, fontWeight: 600, color: "#64748B", mb: 1.25 }}>
-        {label}
-      </Typography>
-      {children}
+    <Box sx={{ mb: 2 }}>
+      <Box
+        onClick={() => setOpen((v) => !v)}
+        sx={{
+          display: "flex", alignItems: "center", gap: 0.5, cursor: "pointer", width: "fit-content",
+          mb: open ? 1.25 : 0, color: "#64748B", "&:hover": { color: "#4F46E5" },
+        }}
+      >
+        <Typography sx={{ fontSize: 11.5, fontWeight: 600 }}>{label}</Typography>
+        <Box sx={{ display: "inline-flex", transition: "transform .14s", transform: open ? "rotate(180deg)" : "none" }}>
+          <ExpandMore sx={{ fontSize: 15 }} />
+        </Box>
+      </Box>
+      {open && children}
     </Box>
   );
 }

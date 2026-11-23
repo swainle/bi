@@ -104,7 +104,7 @@ export default function FieldPanel({ datasetName, groups, usedKeys, onPick }: Pr
               </InputAdornment>
             ),
           }}
-          sx={{ "& .MuiOutlinedInput-root": { borderRadius: 1.5, fontSize: 12, bgcolor: "#fff" } }}
+          sx={{ "& .MuiOutlinedInput-root": { borderRadius: "8px", fontSize: 12, bgcolor: "#fff" } }}
         />
       </Box>
 

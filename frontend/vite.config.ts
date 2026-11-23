@@ -19,6 +19,11 @@ export default defineConfig(({ mode }) => {
     host,
     port,
     strictPort: true,
+    // Windows 下写文件工具会先建 xxx.tmpdir/xxx.tmp 再原子替换；
+    // chokidar 监听到这些临时文件会 EBUSY 崩溃，这里直接忽略掉
+    watch: {
+      ignored: ["**/*.tmpdir/**", "**/*.tmp", "**/.tmp-*"],
+    },
     proxy: {
       "/api": { target: apiTarget, changeOrigin: true },
       "/uploads": { target: apiTarget, changeOrigin: true },

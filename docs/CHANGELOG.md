@@ -7,6 +7,658 @@
 > 交付顺序：改代码 → `tsc --noEmit` → 真机截图自检（对齐 / 折行 / 溢出 / 空态）→ 写这里。
 
 ---
+## 2026-11-21 · 修复：「数据」区输入框宽度不一致
+
+- **原因**：纵轴（指标）外面多包了一层拖拽区，带 `p: 0.25`（左右各 2px），所以纵轴的输入框比横轴窄 4px；
+  另外「粒度」「聚合」两行是普通 TextField，右边没有给拖拽框留 26px 占位，比上下行宽一截。
+- **修复**：拖拽区 `p: 0`；「粒度」「聚合」两行补 26px 占位。
+- **文件**：`frontend/src/features/components/editor/QueryPanel.tsx`。
+- **怎么验证**：doc1 柱状图展开「数据」—— 横轴 / 纵轴输入框都是 `left 337 / right 523`（完全一致）。`tsc --noEmit` 0。
+
+---
+## 2026-11-21 · 优化：导航菜单卡「首视页 / 全页面展示」归到 附加 · 首选项
+
+- 原来这两项各占一个分区（附加 ① 首视页、② 全页面展示），现在合成一个 **首选项** 分区，两行在里面：
+  `首视页`（下拉）+ `全页面展示`（开关）。后续再加「默认页 / 打开方式」之类的卡片级行为也往这里放。
+- **文件**：`frontend/src/features/components/editor/QueryPanel.tsx`（nav 分支）。
+- **怎么验证**：doc5 导航菜单卡 —— 附加段实测 `附加 | 首选项 | 首视页 | 全页面展示 | 品牌 | 菜单项 | …`。`tsc --noEmit` 0。
+  截图 `docs/_selfcheck/2026-11-21-nav-options.png`。
+
+---
+## 2026-11-21 · 修复：面板分组之间的间隙不统一
+
+- **原因**：四套间距规则混用 —— `PanelSection` 有 `mt 16 + mb 16`（flex 容器里不折叠 → 相邻两节 32）、
+  `Slot` 只有 `mb 16`、`通用/附加` 大标题 `mt 16 + mb 8`、`运算` 自带 `mt 12` 且没有下边距；
+  另外柱状图「附加 · 坐标轴」里还套了一层重复的「坐标轴」标题。
+- **修复**：统一成 **每个块只保留下边距 16**：`PanelSection` 去掉 `mt`、大标题改 `mt 0 / mb 16`、
+  `运算` 改 `mt 0 / mb（展开 8 / 收起 16）`；柱状图 `mode="axis"` 时不再画内层「坐标轴」标题。
+- **文件**：`editor/PanelSection.tsx`、`editor/QueryPanel.tsx`、`editor/ComputeFields.tsx`、`editor/ChartOptionsPanel.tsx`。
+- **怎么验证**：doc1 柱状图实测相邻标题间距 `16 / 16 / 16 / … / 16`（「排序→外观」中间夹着「运算」一行，
+  属正常块高，不是间距）；重复的「坐标轴」标题已消失。`tsc --noEmit` 0。
+  截图 `docs/_selfcheck/2026-11-21-panel-spacing.png`。
+
+---
+## 2026-11-21 · 修复：「附加」里的分区标题没有折叠按钮
+
+- **原因**：`PanelSection` 的 `collapsible` 默认是 `false`，而「附加」里的分区（坐标轴 / 列 / 缩略图 / 统计 …）
+  都没显式传 `collapsible` → 标题没有箭头、也点不动；只有「通用」里的分区显式开了。
+- **修复**：`PanelSection` 改成默认 `collapsible = true` / `defaultOpen = true`；
+  「通用」里的数据 / 外观 / 文字显式传 `defaultOpen={false}`，保持默认收起（上一轮的约定不变）。
+- **文件**：`editor/PanelSection.tsx`、`editor/QueryPanel.tsx`、`editor/ChartOptionsPanel.tsx`。
+- **怎么验证**：doc1 柱状图 —— 面板里 `折叠箭头` 共 7 个（通用 6 个 + 附加的坐标轴 1 个）；
+  通用只露出标题、附加的坐标轴默认展开且带箭头。`tsc --noEmit` 0。
+  截图 `docs/_selfcheck/2026-11-21-panels-collapsed.png`。
+
+---
+## 2026-11-21 · 优化：「通用」下的配置栏默认折叠
+
+- `PanelSection` / `Slot` 的 `defaultOpen` 默认值从 `true` 改成 `false`，`ComputeFields`（运算）的展开状态也默认收起 ——
+  选中组件后，通用区只列 `数据 / 过滤 / 排序 / 运算 / 外观 / 文字` 六行标题，点哪行展开哪行。
+- 附加里的分区（坐标轴、菜单项、右侧统计等）不受影响，仍是展开状态。
+- **文件**：`editor/PanelSection.tsx`、`editor/Slot.tsx`、`editor/ComputeFields.tsx`。
+- **怎么验证**：doc1 柱状图 —— 面板实测 `通用 | 数据 | 过滤 | 排序 | 运算 | 外观 | 文字 | 附加 | 坐标轴`（数据/运算的行都不出现）；
+  点「数据」后横轴/纵轴才出现。`tsc --noEmit` 0。截图 `docs/_selfcheck/2026-11-21-panels-collapsed.png`。
+
+---
+## 2026-11-21 · 优化：拖拽输入框统一浅紫色 + 横轴 / 纵轴改成水平「说明 + 输入」
+
+- **横轴 / 纵轴水平排列**：不再是标签在上、控件在下的槽位，改成 `说明（左） + 输入框（右）`；
+  时间维度时的「粒度」也换成同样的 Row。
+- **所有拖拽自动输入框统一浅紫**：底色 `rgba(99,102,241,0.05)`（拖入中 0.10）、`1px dashed #C7D2FE`
+  （拖入中 `#818CF8`）、文字紫色 `#4F46E5`；空态文案统一成 **「拖到这里」**。
+  涉及：图表横轴 / 纵轴（`AxisInput`）、头标卡统计「字段」、筛选字段「绑定字段」。
+- **文件**：`editor/AxisInput.tsx`、`editor/QueryPanel.tsx`、`editor/FilterFieldsEditor.tsx`。
+- **怎么验证**：doc1 柱状图 —— 横轴 / 纵轴两行实测 `horizontal=true`、`placeholder="拖到这里"`、
+  `bgcolor=rgba(99,102,241,0.05)`、`border-style=dashed`。`tsc --noEmit` 0。
+  截图 `docs/_selfcheck/2026-11-21-bar-axis-input.png`。
+
+---
+## 2026-11-21 · 优化：柱状图补上「附加」配置分栏（坐标轴 / 显示开关搬过去）
+
+- 之前柱状图没有「附加」，坐标轴（Y 最小 / Y 最大 / 柱宽 / 数值格式 / 标签旋转）和一排显示开关
+  （标题 / 说明 / 数值 / 网格 / 图例）都挤在「通用 · 文字」下面。
+- 现在：**通用** = 数据 / 过滤 / 排序 / 运算 / 外观 / 文字；**附加** = 坐标轴（含那排显示开关）。
+- 实现方式：`ChartOptionsPanel` 加 `mode` 参数（`all` / `text` / `axis`）——柱状图在「通用」只画文字、
+  在「附加」只画坐标轴，同一份代码不复制。
+- **文件**：`editor/ChartOptionsPanel.tsx`、`editor/QueryPanel.tsx`（`hasSpecial` 加 `bar` + 附加里的坐标轴分区）。
+- **怎么验证**：doc1 柱状图 —— 面板顺序实测 `通用(数据/过滤/排序/运算/外观/文字) → 附加(坐标轴: Y 最小 / Y 最大 / 柱宽 /
+  数值格式 / 标签旋转 + 标题/说明/数值/网格/图例)`，坐标轴位置索引在「附加」之后。`tsc --noEmit` 0。
+  截图 `docs/_selfcheck/2026-11-21-bar-extra-axis.png`。
+
+---
+## 2026-11-21 · 优化：头标卡统计项卡片（删除挪到标签行 / 字段可拖入 / 单位下拉 / 数值改默认值）
+
+- **删除按钮**从头标右侧挪到「标签」输入框右边（和筛选字段卡一致），常显垃圾桶图标；头标只留「色条 + 标签名 + 折叠箭头」。
+- **字段**改成能输入、能选、**能拖入**的输入框（复用 `AxisInput`），样式同拖入框；未绑定时右侧留 26px 占位，换状态宽度不跳。
+- **单位**改成下拉：内置 `个 / 件 / 台 / 单 / 人 / 家 / 天 / 条 / 次 / 笔 / 元 / 万元 / 亿 / 万 / % / ‰` + 「无单位」；
+  老文档里的自定义单位会在下拉里补一项，不会一保存就丢。
+- **「数值」改名「默认值」**：没有绑定字段时才出现（静态展示用）。
+- **文件**：`editor/QueryPanel.tsx`（`BANNER_UNITS`）、`editor/AxisInput.tsx`（常驻占位 + gap 与 Row 对齐）。
+- **怎么验证**：临时给 doc5 加头标卡（验完已删除并还原）—— 行顺序 `标签(带🗑) → 字段(虚线可拖) → 单位(下拉显示「个」) → 默认值`，
+  四行输入框实测 `left 350 / right 510`；删除按钮 2 个（两张统计卡各一个）。`tsc --noEmit` 0。
+  截图 `docs/_selfcheck/2026-11-21-banner-stat-card.png`。
+
+---
+## 2026-11-21 · 优化：图表横轴 / 纵轴改成「说明 + 输入框」（可拖入），标签旋转改下拉
+
+- **横轴 / 纵轴 = 说明 + 输入框**：原来维度槽是「下拉 + ✕」、指标槽是普通下拉；现在统一成
+  能输入、能选、也能**把左侧字段拖进来直接绑定**的输入框（新组件 `editor/AxisInput.tsx`），
+  样式沿用原来的拖入框：未绑虚线 `#CBD5E1`、已绑 `#C7D2FE` + 淡紫底 + 紫色字、拖入中 `#6366F1`；已绑时右侧有 ✕ 清除。
+- **标签旋转改下拉**：`自动 / 30° / 45° / 90°`（原来是四个 ToggleButton）。
+- **文件**：`editor/AxisInput.tsx`（新增）、`editor/QueryPanel.tsx`、`editor/ChartOptionsPanel.tsx`。
+- **怎么验证**：doc1 柱状图 —— 面板数据区是「横轴（分类）/ 纵轴（数值）」两行输入框；
+  往横轴输入框派发 `{kind:"field", name:"brand"}` 的 drop → 值变成 `brand`（事件确实到达）；
+  坐标轴里「标签旋转」是下拉。截图 `docs/_selfcheck/2026-11-21-bar-axis-input.png`。`tsc --noEmit` 0。
+- **还没做**（等确认）：① 柱状图的「附加」配置分栏（现在坐标轴 / 显示开关仍在「通用 · 文字」下面）；
+  ② 「图标配置是多选输入框」这条没看懂指的是哪个配置项。
+
+---
+## 2026-11-21 · 优化：头标卡按「通用 / 附加」分组 + 统计项卡片对齐导航菜单卡样式
+
+- **通用** = `外观`（高度 / 圆角 / 阴影 / 描边 / 线宽 / 深浅，原来是面板底部一个 `mt:3` 裸块）。
+- **附加** = `标题文案`（顶部小字 / 大标题 / 强调段 / 副标题 / 底色）+ `右侧统计`。
+- **统计项卡片**改成导航菜单卡 / 筛选字段同一套：
+  色条 + 标签名 + 删除（垃圾桶）+ 折叠箭头，点标题收起该卡；
+  行顺序 = `标签 / 字段 / 聚合 / 单位`（绑定字段时才有「聚合」，静态数值时出「数值」），
+  后面接 `格式` 与可折叠的 `运算`。
+- **输入框等宽**：原来「聚合 / 格式」限宽 160、「单位」限宽 140，现在全部跟第一行等宽 ——
+  实测 `标签 / 字段 / 单位` 都是 `left 350 / right 544`。
+- **文件**：`frontend/src/features/components/editor/QueryPanel.tsx`（banner 分支 + `bannerFolded`）。
+- **怎么验证**：临时给 doc5 加一张头标卡（验完已删除并还原文档）——
+  面板顺序 `头标卡 | 通用 | 外观(高度/圆角/阴影/描边/线宽/深浅) | 附加 | 标题文案(顶部小字/大标题/强调段/副标题/底色) | 右侧统计`，
+  统计卡头标显示「在架产品 / 月销量」，行是 标签 → 字段 → 单位 → 数值。
+  截图 `docs/_selfcheck/2026-11-21-banner-stat-card.png`。`tsc --noEmit` 0。
+
+---
+## 2026-11-21 · 优化：导航菜单卡「附加」重排 + 导出 / 状态各自独立配置栏
+
+- **附加顺序**（用户指定）：① 首视页（下拉）→ ② 全页面展示（开关）→ ③ 品牌 → ④ 菜单项 → ⑤ 按钮 → ⑥ 导出 → ⑦ 状态。
+- **删掉「灰字状态」「绿色徽标」**：状态统一由新的「状态」配置栏管 —— 状态功能下拉，暂时只有「时间」
+  （显示当前时间，前端每 10 秒刷一次；「不显示」可关）。
+- **导出独立配置栏**：`显示按钮`（开关）/ `文字` / `样式`（主 / 次）+ 原来的 `导出范围`。
+  导出按钮由这份配置生成；`actions` 里历史遗留的「导出…」按钮不再单独渲染，避免出现两个导出。
+  点导出按钮靠后端标记触发（`export: true`），不再靠「文案里有没有导出两个字」猜。
+- **后端**：`NavSpec` 新增 `export_visible` / `export_label` / `export_kind` / `status`；`compute.build_content(nav)` 透传；
+  `seed_base` 模板同步（`meta` / `badge` / `actions` 清空、`status=time`、导出默认开），
+  组件库 `base.nav`（id 22）已按同一套更新（`meta`/`badge` 已清空）。
+- **文件**：`backend/app/components/spec.py`、`compute.py`、`seed_base.py`；
+  `frontend/src/features/components/types.ts`、`renderers/NavCard.tsx`、`editor/QueryPanel.tsx`、`viewer/DashboardPage.tsx`。
+- **怎么验证**：doc5 导航菜单卡 —— 面板顺序实测
+  `附件：首视页 → 全页面展示 → 品牌 → 菜单项 → 按钮 → 导出(显示按钮/文字/样式/导出范围) → 状态(时间/不显示)`，
+  「灰字状态」「绿色徽标」都不再出现；把导出文字改成「下载数据」→ 卡片按钮同步变字；关「显示按钮」→ 按钮消失；
+  卡片状态显示当前时间（`数据同步 · 2026-11-21 20:47`）。`tsc --noEmit` 0；`pytest tests/test_component_seed.py` 14 passed。
+- 后端改了 `spec.py` / `compute.py` / `seed_base.py`：dev 服务会自动重载，**前端刷新页面**即可。
+
+---
+## 2026-11-21 · 优化：导航菜单卡面板按「通用 / 附加」两大分组
+
+- **通用** = `外观`（高度 / 圆角 / 阴影 / 描边 / 线宽 / 深浅，来自 StylePanel）。
+  原来是挂在面板最底部的一个 `mt: 3` 裸块，现在提到通用里、独立成可折叠分区。
+- **附加** = `品牌` / `菜单项`（含首视页）/ `右侧状态` / `按钮` / `导出`。
+- 数据 / 过滤 / 排序 / 运算 / 文字对导航菜单卡不成立 → 按「空分组不显示」的口径不渲染。
+- **文件**：`frontend/src/features/components/editor/QueryPanel.tsx`（nav 分支）。
+- **怎么验证**：doc5 导航菜单卡，面板文本顺序实测
+  `导航菜单卡 | 通用 | 外观(高度/圆角/阴影/描边/线宽/深浅) | 附加 | 品牌(品牌名/强调尾段/品牌标记配色) | 菜单项 …`。
+  截图 `docs/_selfcheck/2026-11-21-nav-panel-groups.png`。`tsc --noEmit` 0。
+
+---
+## 2026-11-21 · 新增：画板刷新后自动选回上次最后选中的组件
+
+- 选中组件时把 key 写进 `localStorage`（`mzbi:canvas:last-selected:<docId>`，按看板分开），
+  刷新 / 重新进画板时自动选中回来，右侧配置面板直接可用，不用再找一遍。
+- **只恢复一次**：恢复后用户再点、再取消都听用户的，不会被反复拉回去。
+- 存的 key 在当前页元素里找不到（元素被删 / 切了页面）就静默跳过，不报错、不空白。
+- **文件**：`frontend/src/pages/CanvasBoardPage.tsx`（`lastKeyPref` / `restoredRef` + 两个 effect）。
+- **怎么验证**：`/bi/canvas?doc=1` 点明细表 → `localStorage['mzbi:canvas:last-selected:1'] = c_mwonh8e228`；
+  刷新后中栏依然是「元素 c_mwonh8e228」，明细表面板已展开。截图 `docs/_selfcheck/2026-11-21-canvas-restore-selection.png`。`tsc --noEmit` 0。
+
+---
+## 2026-11-21 · 优化：导航菜单卡「菜单项」四项调整（垃圾桶 / 对齐 / 色卡 / 首视页）
+
+- **删除按钮改垃圾桶**：`Close(✕)` → `DeleteOutline`，并且常显（不受卡片 hover 规则隐藏）。
+- **输入框宽度对齐**：「标签」行右侧固定 6px 状态点占位 + 26px 垃圾桶，另两行留等宽空位 ——
+  实测「标签」「跳转页面」输入框都是 `left 350 / right 496`。
+- **「圆点」改颜色卡片组**：从下拉改成 7 个颜色圆点（灰 / 靛蓝 / 天蓝 / 青绿 / 琥珀 / 玫红 / 紫），
+  点一下即选、选中项描边高亮；并把它挪到卡片**最后一行**。
+- **「首视页」上收为卡片级下拉**：不再每项一个开关，放到「菜单项」列表下面，
+  值 = 被标 `active` 的那一项的页面；选别的页面会自动取消其余项。没有菜单项挂页面时，
+  下拉里给一条禁用提示「先在菜单项里选「跳转页面」」。
+- **文件**：`frontend/src/features/components/editor/QueryPanel.tsx`（`NAV_TONE_DOTS` / `firstPage` / `firstPageOptions`）。
+- **怎么验证**：doc5 导航菜单卡 —— 4 个垃圾桶图标、28 个颜色圆点（4×7）、末尾「首视页」下拉；
+  把「市场总览」的跳转页面设为 `temp` 后，首视页下拉出现「市场总览」选项，选中后值变为「市场总览」。
+  截图 `docs/_selfcheck/2026-11-21-nav-item-config.png`。`tsc --noEmit` 0。
+- · 迭代：「标签」输入框右侧那个 6px 状态小圆点去掉（用户要求），其余行占位改成 26px
+  （Row 自带 8px gap，`8 + 26` 正好等于「标签」行的 `8 + 删除按钮26`），
+  实测「标签」「跳转页面」输入框仍是 `left 350 / right 510` 对齐；小圆点数量 0。
+
+---
+## 2026-11-21 · 优化：导航菜单卡「菜单项」补上和筛选字段一样的折叠头标
+
+- **容器本来就一致**：菜单项和筛选字段卡都直接用 `GROUP_CARD_SX`，实测都是
+  `bg #FBFCFE / 1px solid #EEF3FB / radius 16px / padding 12px / gap 14px`；
+  真正差的是筛选字段有可折叠头标（色条 + 字段名 + 箭头），菜单项没有。
+- **现在菜单项也加**：`色条 + 标签名 + 箭头`，点标题收起 / 展开这一项（箭头旋转 90°）；
+  收起时卡片只留头标一行，长菜单不用一路往下滚。
+- 折叠状态只在前端内存（按索引记），不写文档、不影响看板。
+- **文件**：`frontend/src/features/components/editor/QueryPanel.tsx`（nav 分支 + `NAV_ITEM_ACCENTS` / `navFolded`）。
+- **怎么验证**：doc5 导航菜单卡 —— 面板依次是「市场总览 / 榜单端 / 需求端 / 竞品端」四张卡；
+  点「市场总览」标题 → 它的 `标签 / 圆点 / 跳转页面` 三行收起（其余三项不变），再点展开复原。
+  截图 `docs/_selfcheck/2026-11-21-nav-item-fold.png`。`tsc --noEmit` 0。
+
+---
+## 2026-11-21 · 重构：筛选字段卡去掉「分套依据 / 数据字段」，数据集与绑定字段改成输入下拉
+
+- **卡片顺序**（用户指定）：`名称 / 控件 / 宽度 / 数据集 / 绑定字段 / 默认值`（+ 选项），一列到底、左说明对齐。
+- **删「分套依据」开关**：动手前查过 doc1 / doc5，`items_map`、`fields_map`、`split` 字段、`dataset_map` **都没有**，
+  没有任何数据依赖它；连带的「数据集 + 添加平台」映射块也从卡片里移除。
+- **删「数据字段」拖入框**：换成常显的 **「数据集」+「绑定字段」两个可输入下拉**（`Autocomplete`，输入即过滤），
+  不要按钮、不弹窗、不折叠 —— 选字段即写回 `column` 并重新取该列候选值。
+- **宽度**从卡片底部挪到「控件」下面。
+- 「数据集」下拉可换（写 `spec.binding.dataset_id`）：画布侧经
+  `MiddleConfigPane → panels.tsx` 透传 `onDatasetChange`；组件库编辑页没有数据集上下文，该项置灰只读。
+- **文件**：`editor/FilterFieldsEditor.tsx`、`pages/canvas/panels.tsx`、`pages/canvas/MiddleConfigPane.tsx`。
+- **怎么验证**：`/bi/components/23/edit` 卡片顺序实测
+  `名称 / 控件 / 宽度 / 数据集 / 绑定字段(平台) / 默认值 / 选项 3`；「绑定字段」按钮数量 **0**；
+  `.MuiAutocomplete-root` 10 个（5 个字段 × 2）；页面里不再出现「分套依据」「数据字段」。
+  截图 `docs/_selfcheck/2026-11-21-filter-bind-inline.png`。`tsc --noEmit` 0。
+- 遗留：`PlatformMap` 组件现在没有引用了（保留未删，等确认不再需要平台映射再清理）。
+- · 迭代：数据集 / 绑定字段两行右侧补 26px 占位（和删除按钮同宽），六行输入框右边缘对齐 ——
+  实测 `名称 / 控件 / 宽度 / 数据集 / 绑定字段 / 默认值` 都是 `left 650 / right 1080 / width 430`。
+- · 迭代：「绑定字段」除了输入/选择，还能**把左侧字段直接拖进来绑定**，并沿用原拖入框的视觉
+  （`1px dashed #CBD5E1`，已绑定 `#C7D2FE` + 淡紫底 + 紫色字，拖入中 `#6366F1` 高亮），未绑定时占位文案
+  「把左侧字段拖进来（或输入选择）」。验证：对输入框派发 `{kind:"field",name:"品牌"}` 的 drop，
+  值从 `平台` 变成 `品牌`，边框计算样式 `1px dashed rgb(199,210,254)` / `radius 8px`。
+  截图 `docs/_selfcheck/2026-11-21-filter-bind-drag.png`。
+
+---
+## 2026-11-21 · 优化：筛选字段卡「删除」挪到名称行右侧、输入框统一等宽
+
+- **删除按钮**从「宽度」行尾移到「名称」输入框右侧，并**保持常显**（不受卡片 hover 才显示的规则影响，
+  否则挪过去等于看不见）。
+- **其余行右侧留 26px 等宽空位**（small IconButton 的实际宽度），所以
+  `名称 / 控件 / 数据字段 / 默认值 / 宽度` 五个输入框左右边缘完全对齐。
+- 「宽度」不再单独限宽 120，跟其它输入框等宽。
+- **文件**：`frontend/src/features/components/editor/FilterFieldsEditor.tsx`。
+- **怎么验证**：`/bi/components/23/edit` 实测五行 `.MuiOutlinedInput-root` 都是 `left 650 / right 1080 / width 430`；
+  删除按钮 `opacity: 1`、距名称输入框 8px。截图 `docs/_selfcheck/2026-11-21-filter-card-rows.png`。`tsc --noEmit` 0。
+
+---
+## 2026-11-21 · 优化：筛选字段卡改成「说明 + 输入」竖排六行
+
+- **之前**：「名称 / 控件」横排两列、「默认值 / 宽度」横排两列，标签是 11px 灰字贴在输入框上方，
+  和全站「76px 左说明 + 右控件」的规矩不一致。
+- **现在**：一列到底，竖向依次 —— **名称 / 控件 / 分套依据 / 数据集（配了平台映射才出现）/ 数据字段 / 选项 / 默认值 / 宽度**，
+  左边缘统一对齐 76px；输入框圆角统一 8px（原来 12px）。
+- 「切换数据集」标签简化为「数据集」；数据字段的拖入框撑满剩余宽度（`flex: 1`）。
+- **文件**：`frontend/src/features/components/editor/FilterFieldsEditor.tsx`（删掉不再使用的 `label()` 小工具）。
+- **怎么验证**：`/bi/components/23/edit` 实测字段卡文本顺序
+  `名称 → 控件(下拉) → 分套依据 → 数据字段(已绑定：平台) → 选项 3 → 默认值 → 宽度`，左边缘一条线。
+  截图 `docs/_selfcheck/2026-11-21-filter-card-rows.png`。`tsc --noEmit` 0。
+
+---
+## 2026-11-21 · 优化：筛选栏字段卡容器对齐「导航菜单卡 · 菜单行」
+
+- **之前**：筛选栏每个字段是自己画的白底卡 + 投影（`#E8EEF9` 边 / 内距 10 / 行距 8），
+  和别处「重复项卡片」（导航菜单卡的菜单行、按钮行）不是一套。
+- **现在**：直接复用同一个共享容器 `GROUP_CARD_SX` —— `#FBFCFE` 浅底、`1px #EEF3FB`、圆角 16、
+  内距 12、行距 14，删除类图标按钮同样是 hover / focus 才出现（同一套破坏性操作规范）。
+- **保留**：拖拽排序需要的 `position: relative`、拖动中 `opacity .4`、落点提示线。
+- **文件**：`frontend/src/features/components/editor/FilterFieldsEditor.tsx`。
+- **怎么验证**：组件库 `/bi/components/23/edit`（筛选栏，6 个字段）计算样式实测
+  `bg rgb(251,252,254)` / `border 1px rgb(238,243,251)` / `radius 16px` / `padding 12px` / `gap 14px`，
+  与菜单行一致。截图 `docs/_selfcheck/2026-11-21-filter-card-container.png`。`tsc --noEmit` 0。
+
+---
+## 2026-11-21 · 优化：分节标题面板按「通用 / 附加」分组
+
+- **改成什么**：分节标题不再平铺一堆控件，跟其它组件同一套骨架 ——
+  **通用** = 外观（颜色 / 高度）；**附加** = 标题 / 编号 / 图标 / 说明。
+- **空分组不显示**：数据 / 过滤 / 排序 / 运算 / 文字对分节标题不成立（它不产数据、ChartOptionsPanel 对它返回 null），
+  这五组直接不渲染，不占位置。
+- 顺手去掉分组之间那条 `Divider`（两个大标题已经足够分隔），并清掉因此不再使用的 import。
+- **文件**：`frontend/src/features/components/editor/QueryPanel.tsx`（section 分支）。
+- **怎么验证**：真机 doc 1 选分节标题 —— 面板文本依次为
+  「分节标题 | 通用 | 外观 | 颜色 | 高度 | 附加 | 标题 | 编号 | 图标 | 说明」，五个空分组一个都不出现。
+  截图 `docs/_selfcheck/2026-11-21-section-panel-groups.png`。`tsc --noEmit` 0。
+
+---
+## 2026-11-21 · 修复：分节标题「图标」下拉选了没反应
+
+- **现象**：组件 > 分节标题，在面板「图标」里选了网格 / 饼图等，画板上的分节标题没有任何变化。
+- **原因**：这个配置项**只有写没有读** —— 面板写 `spec.content.icon`、`sectionPayload` 也把它带进 payload，
+  但 `SectionCard` 压根没用 `payload.icon`，永远只画编号数字（`NUMERAL[index]`）。属于「配了不生效」的死配置。
+- **修复**：新增 `renderers/sectionIcon.tsx`（key → 图标组件唯一映射：网格 / 图表 / 饼图 / 表格 / 词云 / 标签 / 结论），
+  `SectionCard` 在 `payload.icon` 有值时画图标、否则仍画编号；底块渐变仍随外观主色。
+- **文件**：`frontend/src/features/components/renderers/sectionIcon.tsx`（新增）、
+  `frontend/src/features/components/renderers/SectionCard.tsx`、`__tests__/SectionCard.test.ts`（补用例）。
+- **怎么验证**：画布上选分节标题 → 面板图标当前值「网格」，卡片里是 `GridViewOutlinedIcon`；
+  改选「饼图」→ 立刻变 `PieChartOutlineIcon`；改回「默认」→ 图标消失、编号 `1` 回来。
+  查看页 `/bi/dashboards/1` 也能看到该图标（`GridViewOutlinedIcon` 1 个，服务端 payload 本来就带 icon）。
+  截图 `docs/_selfcheck/2026-11-21-section-icon.png`。`tsc --noEmit` 0；`vitest` SectionCard 3 用例通过。
+
+---
+## 2026-11-21 · 新增：画板外的控件不铺在页面上（只在弹窗里出现）
+
+- **需求**：想拿一张明细表当弹窗内容时，可以把它拖到画板外（溢出区）放着 —— 页面上不显示，点指标卡徽标才弹出来。
+- **做法**：查看页渲染时跳过「中心点落在画板范围（`canvas.width × canvas.height`）之外」的元素；
+  编辑态（含 `?edit=1`）照常显示，否则拖出去就再也找不到它了。
+- **不受影响**：服务端照旧渲染这些元素，所以徽标弹窗 / 行详情仍能拿到数据（`cards[key]` 一直在）。
+- **文件**：`frontend/src/features/viewer/DashboardPage.tsx`（`outsidePage` 计算 + 渲染过滤）。
+- **怎么验证**：把 doc 1 的明细表临时挪到 `x=1700`（画板宽 1504）—— 查看页 `table` 0 个、正文无 `item_id`；
+  点指标卡 TOP10 徽标 → 弹窗里 `table` 1 个；`?edit=1` 仍显示 1 个；还原后查看页恢复 1 个、库内 `layout` 回到 `{x:300,y:368}`。
+  截图 `docs/_selfcheck/2026-11-21-offpage-hidden.png`。`tsc --noEmit` 0。
+
+---
+## 2026-11-21 · 优化：指标卡「右上胶囊」文本挪到「附加 · 徽标弹窗」
+
+- **改了什么**：改胶囊文字原来要去「外观」找「徽标」，现在放在指标卡「附加」区最上面（「徽标弹窗」之上），
+  标签叫「右上胶囊」，placeholder =「如 TOP10（留空则不显示）」。
+- **为什么**：胶囊就是弹窗的入口，两件事拆在两个分区不好找。
+- **单一入口**：同时删掉「外观」里的旧「徽标」输入，避免两条路径写出不一致的值。
+- **不影响行为**：仍写 `spec.ui.badge`；留空 = 不显示胶囊；配了徽标弹窗时胶囊可点、带 `›`。
+- **文件**：`frontend/src/features/components/editor/KpiTopSettings.tsx`（新增 Row）、
+  `frontend/src/features/components/editor/StylePanel.tsx`（删除旧 Row）。
+- **怎么验证**：真机 doc 1 指标卡 —— 输入框存在且值 `TOP10`；改成「看明细」卡片胶囊即时变并保留 `›`；
+  面板内不再有第二个「徽标」入口；改回 `TOP10` 后库内 `spec.ui.badge` 仍为 `TOP10`（未留脏数据）。
+  截图 `docs/_selfcheck/2026-11-21-kpi-capsule-config.png`。`tsc --noEmit` 0。
+
+---
+## 2026-11-21 · 修复：徽标弹窗点周围空白关不掉
+
+- **现象**：弹出的明细表四周看着是空的，点下去却没反应，只能再想别的办法退出。
+- **原因**：Dialog 的 Paper 虽然 `bgcolor: transparent`，仍是铺满视口（左右各让 32px）的实心盒子；
+  点击落在 Paper 上不会冒到遮罩，`onClose` 的 backdropClick 自然不触发。
+- **修复**：Paper 设 `pointerEvents: "none"`，只给表格那一层 `pointerEvents: "auto"` ——
+  空白处点击穿透到遮罩 → 关闭；表格内部点击、点行弹抽屉都不受影响。
+- **文件**：`frontend/src/features/components/board/TopListDialog.tsx`
+- **怎么验证**：真机（doc 1 / 指标卡 TOP10 徽标）—— 点 (45,500) 空白：`elementFromPoint` 命中 `MuiDialog-container`，
+  弹窗从「有表格」变 0；点表格内部 (840,470)：仍为 1；点行：抽屉打开（`.MuiDrawer-root` = 1）。
+  截图 `docs/_selfcheck/2026-11-21-topl-dialog-blank-close.png`、`2026-11-21-topl-dialog-row-drawer.png`。`tsc --noEmit` 0。
+
+---
+## 2026-11-21 · 新增：指标卡徽标弹窗可指定「排序列 + 排序」（只作用于弹窗）
+
+- **面板（指标卡 · 附加）**：「弹出明细表」下面新增「排序列」与「排序」两行。
+  「排序列」候选 = 弹出那张明细表**实际渲染出来的列**（取看板渲染结果的 `columns`，显示列名、存列 key）；
+  「排序」是三态：`不指定` / `降序` / `升序`。选了列会自动落到「降序」，避免「选了列却没生效」的错觉。
+- **只影响弹窗**：配置存在 `spec.top.sort_field` + `spec.top.sort`，弹窗打开时作为 `TableCard` 的 `initialSort`；
+  弹窗关闭即卸载（状态不写回文档），页面上的明细表完全不受影响。
+- **弹窗内仍可手动改**：列头点击排序保持可用，点了就以手动结果为准（`initialSort` 只是初值）。
+- 列已不存在（模板改了列）时自动忽略该排序，不报错、不空白。
+- 文件：`backend/app/components/spec.py`（`sort: Literal["", "desc", "asc"]`，默认 `""`）、
+  `frontend/src/features/components/types.ts`（`SortDir`）、`editor/KpiTopSettings.tsx`（两个下拉）、
+  `board/TopListDialog.tsx`（`sortField` / `sort` → `initialSort`）、`renderers/TableCard.tsx`（沿用已有 `initialSort`）、
+  `pages/canvas/CanvasStage.tsx`、`CanvasBoardPage.tsx`、`CanvasDialogs.tsx`、`MiddleConfigPane.tsx`、`viewer/DashboardPage.tsx`（排序值透传）。
+- 验证：`tsc --noEmit` 通过；`npm test` 12 文件 53 用例全绿；
+  `python -c "TopListSpec()"` 默认 `sort''`、`TopListSpec(sort='asc')` 解析正确；`pytest tests/test_component_seed.py` 14 项通过。
+  后端 `spec.py` 有改动，**需重启后端**再刷新页面。
+
+---
+
+## 2026-11-21 · 修复：图片预览被抽屉盖住（预览必须压在最前）
+
+- **现象**：在明细表行详情抽屉的「商品图片」里点图放大，整张预览图被右侧抽屉盖掉一截（大约 560px），
+  只露出左边一部分，底部工具栏也被压住。
+- **原因**：预览用的是 MUI Dialog 默认 `z-index: 1300`，而抽屉 / 画板浮层是 `1500` —— 层级反了。
+- **修复**：图片预览统一抬到 `zIndex: 2000`（抽屉 1500 之上）：
+  `ProductDetail.tsx` 的 `ImageViewer`（抽屉里点图放大）+ `TableCard.tsx` 的缩略图看大图（同一个语义，一起统一）。
+- **验证**：抽屉里点图 → 全屏预览铺满视口，抽屉区域中心点命中的是预览层（`elementFromPoint` 不再是抽屉）；
+  表格缩略图点开 → Dialog `z-index: 2000`、中心点命中 `IMG`；两张截图存 `docs/_selfcheck/2026-11-21-image-preview-top.png`、
+  `2026-11-21-thumb-preview-top.png`。`tsc --noEmit` 0。
+- 水印层（`WatermarkOverlay`，z 9999）仍在预览之上 —— 属于数据水印/防截屏，不动。
+
+---
+
+## 2026-11-21 · 修复：明细表列头升序 / 降序失效（上一轮去「查看更多」时带掉的）
+
+- **原因**：列头点击排序以前挂在 `payload.more` 上（「查看更多」默认开，所以能点）；上一轮把「查看更多」删掉后，
+  只剩 `table_view.sortable` 这个「从无面板入口、默认 false」的条件 → 列头点了没反应。
+- **现在**：列头**始终可点** —— 第一次点降序、再点升序（带 ↑ / ↓ 指示 + `aria-sort`）；
+  排序针对**已取回的全部行**（≤2000），排完自动回到第 1 页，翻页保持这份顺序。
+- **空值处理**：排序时空值固定排最后（升序 / 降序都不占第一页）；
+  顺手修了「空数值列显示成 0」——`Number("") = 0` 把空值格式化成 0，现在显示「—」（418 个空 `daily_deal` 之前全显示 0）。
+- **清掉废弃字段**：删除 `table_view.sortable`（后端 spec / 渲染 payload / 前端类型 / 新增卡片默认值 / 组件库那一行），
+  旧文档里残留的该字段读取时忽略。
+- **为什么**：用户反馈「明细表列头升序降序的功能呢」——这是上一轮改动的回归，排序是明细表的标配件，不该有隐藏开关。
+- **涉及文件**：`renderers/TableCard.tsx`、`components/types.ts`、`pages/canvas/spec.ts`、`editor/TableDetailSettings.tsx`；
+  `components/spec.py`、`components/compute.py`。
+- **怎么验证**：真机（`daily_deal`：9700…3，另 418 个空值）——降序首行 9700、升序首行 3、升序最后一页全是「—」、
+  第 3 页点列头回到第 1 页；文本列 `product_title` 降 / 升切换，另一列 `aria-sort` 回到 `none`。
+  `tsc --noEmit` 0；`pytest` 全绿；`vitest` 131 passed（`mylayout` 计时基准在忙时超阈值，与本改动无关，单跑通过）。
+  截图：`docs/_selfcheck/2026-11-21-table-header-sort.png`。
+
+---
+
+## 2026-11-21 · 新增：明细表卡内分页（去掉「查看更多」）
+
+- **分页条（新增）**：明细表底部统一改成卡内分页 —— 左「共 N 条」，右「每页 10/20/50/100 条」+ `‹ 1 2 3 … ›`
+  （页码当前页高亮、首末页固定、中间省略；上一页 / 下一页在边界置灰）。组件：`frontend/src/features/components/renderers/PageBar.tsx`，
+  页码序列纯函数在 `pagerItems.ts`（单测 `__tests__/pager.test.ts`）。
+- **去掉「查看更多」**：删除卡片右下「查看更多 →」按钮 + 92vw 全表弹窗，以及 `onMore / onLoadAll / onTableMore`
+  整套拉全量链路（`TableCard` / `registry` / `DashboardPage` / `BoardCard` / `BoardSurface` / `BoardViewer` / `CanvasStage` / `BiViewPage`）。
+  后端 `/bi/dashboards/{id}/rows` 接口保留（不再被界面调用，避免影响外部脚本）。
+- **面板「行限制」→「每页条数」**：明细表的中栏面板不再有「行限制」，改成「每页条数」（3–200，默认 10，落 `table_view.page_size`）；
+  其它图表仍是「行限制」。页脚下的每页条数可临时切换（只影响本次浏览，不改文档）。
+- **后端行为**：明细表一次取到上限 2000 行（原来按 `binding.top_n` 截断成 10 行，再靠「查看更多」拉全量），
+  `build_table` 不再截断、也不再下发 `more / more_label`；分页在前端做（`resolver._request_for` / `compute.build_table`）。
+  spec 里的 `more / more_label` 保留只为兼容旧文档（默认 `False`，读取时忽略）。
+- **为什么**：用户要求「明细表不需要查看更多，添加分页组件」。行限制 + 查看更多是同一件事的两套入口，按 §3.1 收敛成一个分页条。
+- **涉及文件**：`TableCard.tsx`、`PageBar.tsx`、`pagerItems.ts`、`__tests__/pager.test.ts`、`QueryPanel.tsx`、`registry.tsx`、
+  `DashboardPage.tsx`、`BoardCard/BoardSurface/BoardViewer`、`CanvasStage.tsx`、`BiViewPage.tsx`、`sizes.ts`、`types.ts`（前端）；
+  `components/compute.py`、`components/resolver.py`、`components/spec.py`、`components/seed_base.py`、`components/seed_pages.py`、
+  `tests/test_table_sort.py`、`tests/test_related_thumbnail.py`（后端）。
+- **组件库同步**：`base.table`（`bi_component` id=2）`table_view.more` 改 `false`、`more_label` 清空、描述改「卡内分页」；
+  `seed_base` 模板同口径（下次重灌种子也是新的）。
+- **怎么验证**：`tsc --noEmit` 0；`uv run pytest -q` 全绿（`test_table_sort` / `test_related_thumbnail` 两条旧「按行限制截断」断言同步改成新口径）；
+  `npm test` 132 passed（新增分页 4 条；`mylayout` 计时基准偶发超 10ms 与本改动无关）；
+  真机 1440×900：成品页 10 行 / 共 2000 条 / 无「查看更多」、点第 2 页首行序号 11、每页 50 条变 50 行；
+  编辑器选中明细表 → 面板「每页条数」且无「行限制」、卡内可翻页；组件库缩略图页脚正常缩放；
+  接口：`page_size=20` 落库并下发，非法值 `999→200`、`1→3`（超范围按 spec 夹取，字符串给错误卡不 500）。
+  截图：`docs/_selfcheck/2026-11-21-table-pagination*.png`、`2026-11-21-table-library-card.png`。
+- **注意（性能）**：每张明细表卡一次返回最多 2000 行（原来 10 行 + 按需拉全量），一张页上多张明细表时响应体会变大；
+  真要按页取数（LIMIT/OFFSET + 真总数）属二期，本次按「前端翻页」口径交付。
+- **· 迭代（顺手修）**：`__tests__/tableHeaderInput.test.ts` 之前是红的（面板把「列头名称」并入字段行后，输入框从 `label` 改成
+  `placeholder="显示名称"`），已按新结构更新断言。
+- **· 迭代（对齐）**：分页条整行统一 24px 行高 —— 文字 / 下拉框 / 页码 / 箭头用同一个行盒、同一条基线。
+  改前实测：下拉框里的「10」比其它文字高 2.3px、页码数字低 0.8px（最大偏差 2.33px）；改后各元素基线都是 24.62px。
+  省略号从「…」字符换成 `MoreHoriz` 图标（字符压在基线上、看着偏低），下拉箭头从实心三角换成 `ExpandMore`（与左右箭头同款），
+  页码方块 24×24、圆角 8px；明细表不再向左外扩 4px，页脚与表格、卡片标题落在同一条左缘（303.51px）。
+  验证：canvas 文本度量各元素基线一致 + 真机 3x 截图；成品页 / 编辑器卡内翻页回归 2/2 通过。
+
+---
+## 2026-11-20 · 新增：右侧抽屉弹窗壳子 DrawerShell（独立组件，暂未接看板）
+
+- **DrawerShell（新增）**：`frontend/src/components/common/DrawerShell.tsx` —— 看板弹窗的通用右侧抽屉容器。
+  标题栏（标题 + 副标题 + 关闭）+ 半透明遮罩 + 滑入滑出动画 + 独立滚动内容区 + 可选 loading；
+  宽 780 可配置、`96vw` 响应式、左缘圆角 `12px`；`open/onClose/title/subtitle/width/loading/children` 由调用方控制，
+  调用方保持挂载、只切 `open` 即可获得退出动画（MUI Drawer 原生过渡，不整棵卸载）。
+- **Story（新增）**：`frontend/src/components/common/DrawerShell.stories.tsx` —— `Common/DrawerShell` 两个 story
+  （Default / Loading），storybook 里直接看打开/关闭/滚动/loading。
+- **验证**：`tsc --noEmit` 通过；`build-storybook` 编译通过；Playwright DOM 断言 **13/13 通过**
+  （初始关闭 / 打开 / 宽度 780 / 标题 / 副标题 / 关闭按钮 / 遮罩 rgba(15,23,42,.5) / 圆角 12px / 内容区滚动 /
+  ESC 关闭 / 点遮罩关闭 / 关闭按钮关闭 / loading spinner）。截图存 `docs/_selfcheck/drawershell-*.png`（不入库）。
+- **· 迭代（接入明细表）**：明细表「点击行弹出」已接入 —— `TableCard.tsx` 点行改弹 `DrawerShell`（标题取行标识列值、
+  内容空壳占位），替换掉原来的「画板弹窗」（画板先不用）；`TableDetailSettings.tsx` 隐藏「弹窗画板」「弹出位置」，
+  保留「点击行弹出」开关 + 「行标识列」；后端 `detail` 字段结构不变；编辑器内联面板同步置空。
+  Playwright 正反 **6/6 通过**（初始无抽屉 / 点行弹出 / 标题=行标识列 / 空壳占位 / 关闭消失 / 未启用不弹）。
+- **· 迭代（商品详情模板）**：抽屉内容从空壳换成商品详情 —— `ProductDetail.tsx`（新增）：标题 + 行标识 +
+  平台/品牌/品类/榜单标签 + 4 指标卡（热卖价/日销量/热销指数/霸榜天数）+ 差评云（痛点拆词）+ 卖点云（主/副卖点）+ 差评数；
+  按数据集字段自动映射（中/英文都认，有则渲染、无则跳过），用「行标识列」取完整一行（`GET /datasets/{id}` + `POST /datasets/{id}/query` columns）。
+  `TableCard.tsx` 抽屉内容改用它（传 dataset_id + row + key_field）。
+  验证：`tsc --noEmit` 通过；真实环境（看板 1 / 数据集 10）点行 → 抽屉弹出、标题/标签/指标卡渲染 **5/5 通过**；
+  数据集 10 的 hot_index/on_rank_days/bad_cnt/brand_name 本身为空 → 显示 —，无卖点/痛点字段 → 词云不显示（部分降级）。
+  · 迭代（样式）：按演示截图重排 —— 头部（标题 + 链接ID + 关闭按钮）、差评云（词云 + 「字号大=提及越多」说明）、
+  卖点云（主/副卖点两个卡片）、近30天每日差评数区块；缺数据的区块统一显示空态。
+  · 迭代（字段可配置）：明细表「弹窗」配置下新增「抽屉字段」14 项下拉（标题/平台/品牌/品类/榜单/排名/热卖价/
+  日销量/热卖指数/霸榜天数/差评数/差评云（痛点）/主卖点/副卖点），可选数据集字段或「（自动匹配）」；
+  存 `table_view.detail.fields`（后端 `TableDetailSpec.fields`），`ProductDetail` 优先按配置取列、未配置回退字段名自动匹配。
+  验证：`tsc --noEmit` 通过；编辑器面板出现「抽屉字段」（14 项）；临时给看板 1 配置 fields 后点行 → 抽屉按配置渲染（PUT 200），
+  验证后已恢复原 doc（restore 200）。
+  · 迭代（词云组件）：差评云 / 主卖点 / 副卖点改用词云组件（`WordCloudCard`）；
+  明细表「弹窗」配置下新增「词云」区（每块：拆词符 + 主题色，6 套主题色可选），
+  存 `table_view.detail.wordclouds`（后端 `TableDetailSpec.wordclouds`）；无频次数据时按词序给权重（仅字号示意）。
+  验证：`tsc --noEmit` 通过；编辑器面板出现「词云」（3 块 × 拆词符 + 主题色）。
+  · 迭代（词云关联他表）：每个词云新增「关联表 / 关联字段 / 词字段 / 权重字段」，可从其他数据集按明细表行值取数；
+  存 `table_view.detail.wordclouds[块]`（后端 `TableDetailSpec.wordclouds`）；没配关联表时回退当前数据集字段。
+  验证：`tsc --noEmit` 通过；面板 3 块词云均出现关联表下拉 + 关联字段/词字段/权重字段；
+  临时配置关联表=数据集10、关联字段=product_title、词字段=item_id → 点行，抽屉差评云显示该行 item_id（100293054147），验证后恢复原 doc。
+  · 迭代（权重字段接入）：「权重字段」已参与字号（关联表每行按权重累加，没配则按词序）。
+  验证：`tsc --noEmit` 通过；关联表=数据集10 / 词字段=platform_name / 权重字段=final_price → 抽屉差评云显示「京东」，验证后恢复原 doc。
+  · 迭代（输入框统一）：明细表配置面板的 TextField / Select 全部改成可输入下拉（Autocomplete）——左说明 + 输入框内灰色默认值；
+  涉及 `LeftDatasetPane`（数据集）、`QueryPanel`（排序字段 / 排序）、`StylePanel`（数字格式）、`TableDetailSettings`（词云关联表 / 主题色 / 拆词符 / 关联字段）。
+  验证：`tsc --noEmit` 通过；面板 `.MuiSelect-select` 数量 **0**，Autocomplete **37** 个。
+  · 迭代（文本输入框样式）：列头名称 / 卡片标题 / 右上说明 改为「左说明 + 右输入框」（字号 12、圆角 2）；
+  数字框（行限制 / 高度）保留原生上下箭头不变。
+  验证：`tsc --noEmit` 通过；面板 3 个文本输入框均为左说明，`input[type=number]` 2 个（行限制 / 高度）。
+  · 迭代（设计界面不弹 + 数字框左说明）：设计界面（画布编辑器）点明细表行不再弹抽屉，成品页照旧弹；
+  行限制 / 高度改为「左说明 + 数字输入框」（保留上下箭头），说明宽度统一 76（列头 / 卡片标题 / 右上说明 / 排序字段 / 行限制 / 数字格式 / 高度边缘对齐）。
+  验证：`tsc --noEmit` 通过；设计界面点行后 `.MuiDrawer-paper` 数量 0；`input[type=number]` 2 个。
+  · 迭代（圆角统一 + 每字段一行）：配置界面所有输入框圆角统一 **8px**（与自动补全框一致）；
+  排序字段 / 行限制 / 排序、数字格式 / 高度 / 徽标 改为纵向「一行一个配置字段」；缩略图「图片字段」改可输入下拉。
+  验证：`tsc --noEmit` 通过；面板输入框 computed `borderRadius` 全部 8px（non-8px 为空）。
+  · 迭代（配置分区折叠）：明细表配置分区（字段 / 列头名称 / 缩略图 / 弹窗 / 运算 / 文字）默认展开、点标题收起（箭头旋转）；
+  `Slot` / `PanelSection` 增加 `collapsible` + `defaultOpen` 选项（事件不冒泡到右侧操作）。
+  验证：`tsc --noEmit` 通过；面板 8 个折叠箭头；点「弹窗」标题后内容收起、再点恢复（1 → 0 → 1）。
+  · 修复（Vite 崩溃）：`frontend/vite.config.ts` 的 `server.watch.ignored` 增加 `**/*.tmpdir/**`、`**/*.tmp`、`**/.tmp-*`，
+  避免 Windows 下写文件工具的临时文件被 chokidar 监听到 `EBUSY` 导致 vite 进程退出。
+  验证：启动 vite 后写一次 `src` 文件，vite 仍返回 HTTP 200（不再崩）。
+  · 迭代（去掉多余「计算」标题 + 过滤折叠 + 运算左说明）：QueryPanel 去掉包着过滤 / 排序 / 运算的「计算」外层标题；
+  过滤 Slot 加折叠；运算（换算 / 小数位 / 乘数 / 加数 / 前缀 / 后缀）改为「左说明 + 输入框」纵向排列，圆角 8px。
+  验证：`tsc --noEmit` 通过；面板无「计算」标题、过滤可折叠（ExpandMore 9 个）、运算 6 个字段齐全。
+  · 迭代（外观折叠）：「外观」分区（StylePanel）包可折叠标题，默认展开、点标题收起；去掉 banner / nav 分支内部重复的「外观」标题。
+  验证：`tsc --noEmit` 通过；面板「外观」可折叠（ExpandMore 10 个），点标题内容收起 / 恢复（1 → 0 → 1）。
+  · 迭代（颜色卡组）：去掉颜色卡组上方的「外观」标题，改为「颜色」说明 + 颜色选项（左说明 76，与其它字段边缘对齐）。
+  验证：`tsc --noEmit` 通过；面板出现「颜色」说明。
+  · 迭代（排序分组）：排序字段 / 行限制 / 排序 收进「排序」折叠分组（默认展开，点标题收起）。
+  验证：`tsc --noEmit` 通过；点「排序」标题后排序字段收起 / 恢复（1 → 0 → 1），ExpandMore 11 个。
+  · 修复（面板间距不一致）：`Slot` 的 `mb 1.75` → `2`、`PanelSection` 的 `mt 3` → `2`（统一 16px）；
+  去掉「外观」和「文字」之间多余的 `Divider`。
+  验证：`tsc --noEmit` 通过；各配置分区标题间距统一。
+  · 修复（文字与缩略图贴死）：缩略图外包 `Box sx={{ mt: 2 }}`，补上「文字」分组和「缩略图」之间的 16px 间隔（原先「文字」没有下边距、「缩略图」只有下边距，两者贴在一起）。
+  验证：`tsc --noEmit` 通过；面板中「文字」与「缩略图」不再贴死。
+  · 修复（列头名称与过滤之间多出间距）：去掉「计算区」外层 `Box` 的 `mt: 3`（24px），统一走 `Slot` 的 16px。
+  验证：`tsc --noEmit` 通过；「列头名称 → 过滤」与其它分区同为 16px。
+  · 迭代（抽屉字段精简）：去掉「抽屉字段」里的 差评云（痛点）/ 主卖点 / 副卖点（14 → 11 项）；词云没配关联表时回退改用默认字段名。
+  验证：`tsc --noEmit` 通过；「抽屉字段」不再出现「差评云（痛点）」，词云区「差评云 / 主卖点 / 副卖点」保留。
+  · 迭代（开关说明对齐）：缩略图的「关联字段」「关联外部字段」、弹窗的「点击行弹出」三个开关统一为「左说明（宽 76）+ 右开关」。
+  验证：`tsc --noEmit` 通过；面板三个说明齐全，开关 3 个。
+  · 迭代（行标识对齐）：弹窗区「行标识」改为「左说明（宽 76）+ 右可输入下拉」，与其它字段左边缘对齐。
+  验证：`tsc --noEmit` 通过；面板出现「行标识」说明。
+  · 新增（抽屉附加区块）：抽屉增加「近 30 天差评数」（柱状图）「差评明细」「产品 SKU」三个区块，可从关联表按行标识取数；
+  明细表配置面板新增「附加区块」配置（每块：关联表 / 关联字段 / 日期 / 数值 / 评分 / 标签 / 内容 / 规格 / 价格）；
+  存 `table_view.detail.blocks`（后端 `TableDetailSpec.blocks`）。
+  验证：`tsc --noEmit` 通过；面板出现「附加区块」（近30天差评数 / 差评明细 / 产品 SKU）。
+  注意：后端 `TableDetailSpec` 新增了 `blocks` 字段，需**重启后端**才会保存进库。
+  · 新增（卖点 / 痛点标签区块）：抽屉增加「产品卖点」「差评痛点标签」两个标签区块
+  （从关联表按行标识取标签字段，拆词后横向排列）；附加区块配置支持这两块（关联表 / 关联字段 / 标签字段 / 拆词符）。
+  验证：`tsc --noEmit` 通过；面板出现「产品卖点」「差评痛点标签」。
+  · 迭代（差评柱状图用组件）：近 30 天差评数改用柱状图组件 `BarCard` 渲染（rose 红柱 + 日期分类轴 + 虚线网格 + 顶部值），不再自绘 div 柱。
+  验证：`tsc --noEmit` 通过；空数据时显示空态，有数据时走 `BarCard`（payload series = 日期/数值）。
+  · 迭代（差评柱状图参数）：近30天差评数改为「关联表 + 维度/指标 + 图表参数（柱宽 / 网格 / 颜色）」，
+  去掉「日期字段 / 数值字段」；`TrendChart` 用 `BarCard` 的 `chart` 参数（bar_width / show_grid）+ `ui.accent`。
+  验证：`tsc --noEmit` 通过；面板出现「维度 / 指标 / 柱宽 / 网格 / 颜色」，「数值字段」不再出现。
+  · 迭代（差评柱状图 X/Y 轴）：近30天差评数改为「X轴（维度）+ Y轴函数（内置聚合 COUNT/SUM/AVG/MAX/MIN/COUNT_DISTINCT）+ Y轴字段」，
+  查询走语义层 `dimensions + metrics`（按 X轴分组、Y轴聚合）；「维度 / 指标」改名「X轴 / Y轴」。
+  验证：`tsc --noEmit` 通过；面板出现 X轴 / Y轴函数 / Y轴字段。
+  · 迭代（trend 颜色用圆点）：近30天差评数的「颜色」改成颜色圆点组（点选 7 套配色，再点取消）。
+  验证：`tsc --noEmit` 通过；面板出现颜色圆点（title=rose 等）。
+  · 迭代（X轴日期）：近30天差评数查询加日期过滤（X轴日期 ≥ 今天-30天）；柱状图日期标签去掉年份（2024-09-20 → 09-20）。
+  验证：`tsc --noEmit` 通过；聚合查询生成 `GROUP BY 日期`，日期过滤进 WHERE。
+  · 新增（X轴写 SQL 表达式）：X轴 / Y轴 支持直接写 SQL（如 `to_char(listed_date,'MM-DD')` / `COUNT(*)`）；
+  维度表达式走后端 `compile_dimension_expression`（sqlglot 白名单 + 只读网关 + PG 方言），生成 `SELECT 表达式 AS dim ... GROUP BY 表达式`；
+  Y轴写聚合表达式走 metrics CUSTOM。
+  验证：后端 `compile_dimension_expression` 生成 `TO_CHAR(...)`，builder 生成 `GROUP BY TO_CHAR(...)`；普通字段维度不变。
+  注意：后端改动需**重启后端**。
+  · 迭代（近30天差评数还原选字段）：X轴 / Y轴 改回「选字段」（X轴字段 / Y轴函数 / Y轴字段），不再要求写 SQL；
+  查询恢复为 `dimensions=[X轴] + metrics=[{Y轴字段, Y轴函数}]`；后端表达式能力保留但不再启用。
+  验证：`tsc --noEmit` 通过；面板出现 X轴字段 / Y轴函数 / Y轴字段。
+  · 迭代（差评柱状图空态）：无数据时不再显示「暂无每日差评数据」文字，改为空白柱状图框架（坐标轴 + 网格，由 `BarCard` 空态渲染）。
+  验证：`tsc --noEmit` 通过；看板抽屉里无数据时「暂无每日差评数据」不再出现，区块框架保留。
+  · 迭代（差评柱状图空态回退）：近30天差评无数据时恢复上一版的空容器（「暂无每日差评数据」），
+  不再画空白柱状图框架；`BarCard` 空态恢复「暂无数据」。
+  验证：`tsc --noEmit` 通过；看板抽屉里无数据时「暂无每日差评数据」重新出现。
+  · 迭代（差评空态文案）：空态文字改为「近30天无差评」。
+  · 迭代（差评明细评分）：评分直接显示字段文本，不再额外拼「★」，避免字段本身带星时重复。
+  · 新增（差评明细分页）：差评明细列表改为前端分页，默认每页 10 条；底部显示「共 N 条 · 第 X/Y 页」+ 左右翻页按钮，单页时隐藏分页条；无数据仍为空容器。
+  验证：`tsc --noEmit` 通过。
+  · 迭代（差评明细分页对齐）：分页条改为右对齐（文本「共 N 条 · 第 X/Y 页」+ 翻页按钮都在右侧）。
+  · 新增（产品 SKU 分页）：产品 SKU 列表改为前端分页，默认每页 10 行；底部右对齐「共 N 条 · 第 X/Y 页」+ 翻页按钮；
+  价格为空不显示 ¥，字段值自带 ¥ 时不再重复拼接。
+  验证：`tsc --noEmit` 通过；抽屉里 SKU 12 条显示「共 12 条 · 第 1/2 页」，价格 `¥6.89` 正常。
+  · 优化（过滤条件行）：过滤条件改为一行 = 字段（补全输入）+ 运算符（下拉）+ 值（输入）+ 减号（删除），行内直接编辑；
+  「把字段拖到这里过滤」拖拽容器始终存在（拖入 / 点击即加一行，不再用「添加」弹层）；输入框圆角统一 8px。
+  验证：`tsc --noEmit` 通过；面板拖拽容器常在，点击后新增一行（字段 / 值 / 减号），拖拽容器仍保留。
+  · 优化（字段栏 + 过滤行宽度）：明细表字段改为一行一个 = 字段胶囊 + 显示名称输入框（显示名称即表格列头），删除「列头名称」栏；
+  过滤行宽度改为 3:1:1:1（字段 : 运算符 : 值 : 减号）。
+  验证：`tsc --noEmit` 通过；面板「列头名称」不再出现，字段行带「显示名称」输入框。
+  · 优化（过滤容器样式 + 箭头）：过滤拖拽容器改为与「添加字段」一致的虚线框（12.5 字号、hover 反馈、圆角一致）；
+  过滤运算符下拉框隐藏下拉箭头。
+  验证：`tsc --noEmit` 通过；`.MuiSelect-icon` display 为 none（两个运算符下拉都不显示箭头）。
+  · 优化（过滤行比例）：过滤条件行宽度改为 3 : 1.5 : 1 : 0.5（字段 : 运算符 : 值 : 减号）。
+  · 优化（抽屉词云空态）：差评云 / 主卖点 / 副卖点无数据时显示空白词云占位（170 高白卡），不再整块隐藏；
+  空白占位不显示「暂无数据」文字。
+  验证：`tsc --noEmit` 通过；抽屉里「暂无数据」不再出现，差评云 / 卖点云标题与空白占位都在。
+  · 优化（抽屉词云空态文案）：无数据时改用「近30天无差评」同款空容器（虚线框 + 浅底），
+  文字分别为「暂无差评 / 暂无主卖点 / 暂无副卖点」。
+  验证：`tsc --noEmit` 通过；抽屉里三个空态文字都出现。
+  · 优化（过滤容器文案）：拖拽容器文字改为「＋ 添加条件」（与「＋ 添加字段」一致）。
+  · 优化（字段行宽度）：字段胶囊与显示名称输入框宽度 1:1（胶囊 `flex: 1`，去掉 `maxWidth 200` 限制）。
+  · 修复（胶囊文字省略）：胶囊里字段名改为 `flex: 1` + `minWidth: 0`，过长时用「…」截断；
+  删除按钮 `flexShrink: 0` 固定在胶囊右端，不被文字挤走。
+  · 新增（抽屉商品图片页）：抽屉左上角标题「商品详情」，右侧加切换按钮（图片图标），点一下切到「商品图片」页：
+  主图 / SKU图 / 详情图 三块图片，从当前行自动取图片字段（主图 / main_image / image…），取不到显示「暂无主图」等空态。
+  验证：`tsc --noEmit` 通过；抽屉标题出现「商品详情」，切换按钮 1 个，切过去后主图 / SKU图 / 详情图都在。
+  · 迭代（抽屉标题 + 切换按钮）：切换按钮改为双向箭头（SwapHoriz）并放在标题旁边；标题不加粗（fontWeight 400）。
+  · 迭代（商品图片橱窗）：主图 / SKU图 / 详情图 三组改为横向滚动橱窗（88×88 正方形图片），点击图片弹出放大预览；
+  无真实图片时用内联 SVG 演示图占位（每组 3 张），不依赖网络。
+  验证：`tsc --noEmit` 通过；抽屉切到商品图片后 9 张图（3 组 × 3 张），点图后 Dialog 打开。
+  · 迭代（商品图片缩略图网格）：由横向滚动改为缩略图网格平铺（每行自适应、正方形最小 56px、hover 描边），点击放大预览。
+  · 迭代（抽屉标题切换 + 缩略图放大）：切换后标题改为「商品图片」（返回改回「商品详情」）；商品图片页缩略图放大 3 倍（56 → 168px）。
+  · 迭代（商品图片横向滚动）：恢复横向滚动橱窗，演示图每组 5 张（168px），一屏放不下时出现水平滚动条。
+  · 新增（图片放大预览组件）：仓库内没有现成的 lightbox / 图片预览依赖，自写 `ImageViewer`——
+  全屏深色遮罩，左键拖动平移、滚轮缩放（0.3 ~ 8 倍）、右上角关闭按钮。
+  验证：`tsc --noEmit` 通过；实测滚轮后 scale 1 → 1.45，拖动后 translate 变化，关闭按钮存在。
+  · 新增（图片组展开/收起）：三组图片标题右侧加展开箭头（展开/收起两态）——收起时横向滚动；
+  展开后主图 / SKU图缩略图尺寸不变、自动换行显示全部，详情图满宽纵向排列（等比例放大）。
+  验证：`tsc --noEmit` 通过；展开后主图/SKU图仍 166px、详情图 524px（满宽）。
+  · 优化（预览点击空白关闭）：放大预览时点击空白处（未拖动）关闭；拖动（位移 ≥ 5px）与滚轮缩放照常生效。
+  验证：`tsc --noEmit` 通过；实测点空白后 Dialog 1 → 0。
+  · 重构（明细表弹窗配置分组）：弹窗下改成 11 个独立可折叠块（差评云 / 主卖点 / 副卖点 / 近30天差评数 / 差评明细 / 产品SKU / 产品卖点 / 差评痛点标签 / 主图 / SKU图 / 详情图）；
+  图片块参考缩略图「关联外部字段」配置（关联表 / 关联字段 / 图片字段），存 `detail.images`；抽屉图片页读配置字段。
+  后端 `TableDetailSpec` 同步新增 `images`。
+  验证：`tsc --noEmit` 通过；面板 11 个块标题都在（21 个折叠箭头）；后端 spec 导入正常。
+  注意：后端改动需**重启后端**。
+  · 修复（关联外部字段样式）：缩略图「关联外部字段」的配置项（当前数据集关联字段 / 图片资源表 / 资源表关联字段 / 图片地址字段 / 地址转换 / 匹配正则 / URL 前缀）改为「说明 + 输入框」左说明样式，圆角统一 8px。
+  验证：`tsc --noEmit` 通过；面板这三类说明都在。
+  · 新增（图片地址转换）：主图 / SKU图 / 详情图的图片配置增加「地址转换」（不处理 / 前缀拼接 / 文本替换 / 正则替换 +
+  匹配正则 / URL 前缀 / 替换内容），抽屉图片按配置转换图片地址（`detail.images[x].operation/pattern/replacement`）。
+  验证：`tsc --noEmit` 通过；面板「地址转换」出现 3 次（三个图片块各一）。
+  · 新增（图片筛选字段）：图片配置增加「筛选字段」+「匹配内容」——选筛选字段后出现匹配内容下拉（去重值来自该字段查询），
+  抽屉图片按「筛选字段 = 匹配内容」从关联表取图（`detail.images[x].filter_field / filter_value`）。
+  验证：`tsc --noEmit` 通过；面板「筛选字段」出现 3 次；未选筛选字段时不显示「匹配内容」。
+  · 修复（缩略图 hover 边框被遮挡）：横向滚动容器 `overflow-x: auto` 会把 `overflow-y` 也变成 auto，
+  导致 hover 的 2px 外发光在上下边缘被裁剪；容器加上下 padding（pt 4px / pb 6px）后不再遮挡。
+  验证：`tsc --noEmit` 通过；图片条 padding 4/6px，hover `box-shadow 0 0 0 2px` 正常显示。
+  · 迭代（左侧光晕遮挡）：图片条再补左内边距（`pl` 4px），第一张图左侧 hover 光晕不再被裁。
+  验证：图片条 padding-left 4px。
+  · 新增（预览工具栏）：放大预览底部加工具栏（上一张 / 页码 / 下一张 / 下载），左右切换循环、切换后重置缩放与位置；下载走 `a[download]`。
+  验证：`tsc --noEmit` 通过；抽屉实测上一张/下一张/下载都存在，点下一张页码 3/200 → 4/200。
+  · 修复（预览页码按分组）：图片查询补上关联字段过滤（`key_field = 当前行 item_id`），预览页码只算当前商品该分组的图片；
+  此前只按 `file_type` 过滤，导致每组返回全表 200 张。
+  验证：`tsc --noEmit` 通过；主图组 3 张，页码 3/3。
+  · 优化（抽屉默认态）：点行打开抽屉默认「商品详情」（打开时重置视图，不保留上次的图片页）；商品图片页的「详情图」默认展开。
+  验证：`tsc --noEmit` 通过；打开抽屉标题为「商品详情」，切到图片页后详情图有「收起」按钮（已展开）。
+  · 新增（明细表标题搜索）：表格配置增加「搜索」开关；开启后标题右侧显示搜索框，按所有列模糊过滤（忽略大小写），
+  「共 N 条」随过滤结果更新。后端 `TableViewSpec.search` + payload `search`。
+  验证：`tsc --noEmit` 通过；面板「搜索 / 标题搜索」出现。
+  注意：后端改动需**重启后端**。
+  · 重构（面板通用/特有分区 + 说明+输入样式）：所有组件配置面板统一为「通用（数据 / 过滤 / 排序 / 运算 / 外观 / 文字）+ 组件特有」两层；
+  所有配置项改为「左说明 76 + 右控件」（输入框圆角 8px），涉及 QueryPanel（43 处）、ChartOptionsPanel（14 处）、StylePanel（14 处）、TableDetailSettings、RelatedThumbnailSettings；新增共享 `Row` / `fieldSx`（`editor/Row.tsx`）。
+  验证：`tsc --noEmit` 通过；明细表面板出现「通用 / 明细表」分区、24 个折叠箭头。
+  · 迭代（面板通用区）：通用改为大号加粗文字（可读性更好、不折叠）；口径组件去掉「查看 SQL」黑底 SQL；
+  明细表不显示空的「数据」分组；指标区为「指标 + 聚合 + 自定义 SQL」说明+输入。
+  验证：`tsc --noEmit` 通过；通用 fontWeight 700、无「查看 SQL」、明细表无「数据」分组。
+  · 迭代（口径 → SQL）：删除口径组件（DataCheckPanel 不再使用），面板顶部默认显示黑底 SQL（`payload.sql`）。
+  验证：`tsc --noEmit` 通过；面板无「口径」，黑底 SQL 默认显示。
+  · 迭代（指标卡数据区）：指标卡的数据改为「指标 / 聚合 / 自定义 SQL」三行「说明 + 输入」，不再用槽标题；
+  选「自定义 SQL」后出现自定义 SQL 输入框（等宽字体）。
+  验证：`tsc --noEmit` 通过；指标卡面板出现「指标 / 聚合」。
+  · 迭代（指标卡指标输入）：指标改为可输入下拉（Autocomplete），去掉删除按钮；自定义 SQL 仅在选「自定义 SQL」时出现，
+  占满整行（含说明宽度）、无左侧说明、下方带说明文字；「数据」分组可折叠。
+  验证：`tsc --noEmit` 通过；面板出现「数据 / 指标」，指标为可输入下拉。
+  · 迭代（面板默认展开 + 空分组隐藏）：所有配置栏默认展开（运算区也默认展开）；
+  空分组隐藏——指标卡不再显示空的「排序 / 行限制」，明细表不显示「数据」，分节标题不显示「文字」。
+  验证：`tsc --noEmit` 通过；指标卡面板无「排序 / 行限制」、「运算」默认展开。
+  · 迭代（指标卡特有 + 间距）：徽标弹窗从「外观」移到「指标卡」特有分组（放最后）；`PanelSection` 补 `mb: 2`，
+  修复折叠后相邻分区（PanelSection 无 mb、Slot 无 mt）间距为 0 的问题。
+  验证：`tsc --noEmit` 通过；指标卡面板「指标卡 / 徽标弹窗」都在。
+  · 迭代（面板两大栏）：配置面板分「通用 / 附加」两个大栏，组件特有配置统一放「附加」（不再用组件名当标题）。
+  验证：`tsc --noEmit` 通过；面板「通用 / 附加」都在，「特有」不再出现。
+  · 迭代（附加同层级）：附加与通用同级（大号加粗 Typography，都不折叠）。
+  验证：`tsc --noEmit` 通过；通用 / 附加均为 `P`、`fontWeight 700`。
+  · 新增（SQL 预览）：面板顶部 SQL 改为格式化 + 语法高亮（关键词紫、标识符蓝、字符串绿、数字红），
+  等宽字体（ui-monospace / Menlo / Consolas）、字号 12（原 10），最大高度 160 可滚动。
+  验证：`tsc --noEmit` 通过；SQL 已按子句换行，fontFamily 等宽、fontSize 12px。
+  · 迭代（SQL 缩进 + 水平滚动）：子句换行、`SELECT / WHERE` 内逗号换行并缩进两格；`whiteSpace: pre` + `overflowX: auto`，
+  超宽可水平滚动、不自动折行，最大高度 180。
+  验证：`tsc --noEmit` 通过；whiteSpace=pre、overflowX=auto、scrollWidth > clientWidth（可横向滚动）。
+  · 迭代（自定义 SQL 字体）：自定义 SQL 输入框改用代码字体（ui-monospace / SFMono-Regular / Menlo / Consolas），字号 12。
+  验证：`tsc --noEmit` 通过；textarea 字体为 ui-monospace……
+  · 重构（徽标弹窗用明细表组件）：`TopListDialog` 的表格渲染改为 `TableCard`（与看板明细表同款：列头 / 缩略图 / 序号 / 条数 / 滚动条）；
+  保留标题、口径说明、加载 / 错误 / 空态。
+  验证：`tsc --noEmit` 通过。
+  · 迭代（徽标弹窗无外层 + 行详情）：弹窗去掉白色外框（Paper 透明），直接显示明细表；
+  后端 `top-list` 返回 `detail`（沿用页面明细表的行详情配置），弹窗内点行可弹抽屉。
+  验证：`tsc --noEmit` 通过。
+  · 修复（弹窗透明边框 + 抽屉层级）：Dialog Paper 去掉 `border` / `outline`（透明边框消失）；
+  `DrawerShell` 的 `ModalProps.sx.zIndex` 提到 **1500**（抽屉压在弹窗之上，不再被遮挡）。
+  验证：`tsc --noEmit` 通过。
+  · 迭代（弹窗彻底无框）：Dialog Paper 加 `backdropFilter: none`（去毛玻璃），去掉标题 / 子标题 / 关闭按钮，
+  只保留明细表（点遮罩或表内关闭即退出）。
+  验证：`tsc --noEmit` 通过。
+
+---
+
 ## 2026-11-17 · 发布：v0.3.0 —— 板块化收敛落地版 · 脱敏收口
 
 - **版本与治理**：`docs/仓库操作规范.md` 更名为 **`docs/发布github仓库操作规范.md`**（内容全量保留，补「Gitea 镜像推送」步骤、

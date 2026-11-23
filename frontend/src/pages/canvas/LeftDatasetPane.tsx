@@ -1,6 +1,6 @@
 /** 画布编辑器 · 左栏（数据集切换 + 字段清单） */
 
-import { Box, MenuItem, TextField, Typography } from "@mui/material";
+import { Autocomplete, Box, MenuItem, TextField, Typography } from "@mui/material";
 
 import FieldPanel, { type FieldGroup, type FieldGroupKey } from "../../features/components/editor/FieldPanel";
 import OverlayScrollbar from "../../features/components/editor/OverlayScrollbar";
@@ -44,33 +44,35 @@ export default function LeftDatasetPane({
           <OverlayScrollbar targetRef={leftW.paneRef} />
           <CollapseButton dir="left" title="收起数据集" onClick={() => togglePane("left")} />
           <Box sx={{ px: 1.25, py: 1, borderBottom: "1px solid #F1F5FC", flexShrink: 0 }}>
-            <Typography sx={{ fontSize: 10.5, color: "#94A3B8", mb: 0.5 }}>数据集</Typography>
-            <TextField
-              select size="small" fullWidth
-              value={fieldDatasetId ?? ""}
-              onChange={(e) => {
-                const id = Number(e.target.value);
-                setActiveDatasetId(id);
-                if (selectedItem && (selectedItem.type || "chart") === "chart") {
-                  patchItem(selectedItem.key, {
-                    spec: {
-                      ...selectedItem.spec,
-                      binding: {
-                        ...selectedItem.spec.binding,
-                        dataset_id: id, dimension: null, metric: null, series: null, split: null,
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+              <Typography sx={{ fontSize: 10.5, color: "#94A3B8", flexShrink: 0 }}>数据集</Typography>
+              <Autocomplete
+                size="small"
+                options={datasets}
+                getOptionLabel={(d) => d.name}
+                value={datasets.find((d) => d.id === fieldDatasetId) || null}
+                onChange={(_, d) => {
+                  if (!d) return;
+                  const id = d.id;
+                  setActiveDatasetId(id);
+                  if (selectedItem && (selectedItem.type || "chart") === "chart") {
+                    patchItem(selectedItem.key, {
+                      spec: {
+                        ...selectedItem.spec,
+                        binding: {
+                          ...selectedItem.spec.binding,
+                          dataset_id: id, dimension: null, metric: null, series: null, split: null,
+                        },
                       },
-                    },
-                  });
-                }
-              }}
-              sx={{ "& .MuiOutlinedInput-root": { borderRadius: 1.5, fontSize: 12, bgcolor: "#fff" } }}
-            >
-              {datasets.map((dataset) => (
-                <MenuItem key={dataset.id} value={dataset.id} sx={{ fontSize: 12 }}>
-                  {dataset.name}
-                </MenuItem>
-              ))}
-            </TextField>
+                    });
+                  }
+                }}
+                renderInput={(params) => (
+                  <TextField {...params} size="small" placeholder="（选择数据集）" sx={{ "& .MuiInputBase-input": { fontSize: 12 } }} />
+                )}
+                sx={{ flex: 1, minWidth: 0 }}
+              />
+            </Box>
             {datasetUsage > 0 && (
               <Typography sx={{ fontSize: 10.5, color: "#94A3B8", mt: 0.75 }}>
                 本看板 {datasetUsage} 个元素在用

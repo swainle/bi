@@ -27,7 +27,7 @@ import { useDatasetFields } from "../components/board/useDatasetFields";
 import TopListDialog from "../components/board/TopListDialog";
 import type {
   Accent, ComponentItem, ComponentSpec, DashboardDoc, DashboardRender, DashboardSummary,
-  DatasetBrief, DocAction, DocItem, FilterFieldSpec, RenderPayload, UiSpec,
+  DatasetBrief, DocAction, DocItem, FilterFieldSpec, RenderPayload, SortDir, UiSpec,
 } from "../components/types";
 
 import { GRID_GAP, DESIGN_W, toCsvText, downloadCsv, PAGE_X, DEFAULT_UI, FLOAT_BTN_SX, cellText, NUMERAL, ICONS, ACCENT_KEYS, readParamQuery, buildSearch } from "./utils";
@@ -293,8 +293,9 @@ export default function DashboardPage() {
     return [{ ...globalNavItem, key: `${globalNavItem.key}__global` }, ...items];
   }, [items, globalNavItem]);
   const cards = render?.cards ?? {};
-  /** 指标卡右上角徽标 → TOP N 榜单弹窗（只读，不动页面状态） */
+  /** 指标卡右上角徽标 → 明细表弹窗（只读，不动页面状态；排序配置只在弹窗内生效） */
   const [topKey, setTopKey] = useState<string | null>(null);
+  const [topSort, setTopSort] = useState<{ field: string; sort: SortDir } | null>(null);
   /** 这一页的卡片实际读的数据集（后端按平台分套切过表）：筛选栏「逐级筛选」按它取候选值 */
   const pageDatasets = useMemo(() => {
     const usage = new Map<number, number>();
@@ -315,6 +316,19 @@ export default function DashboardPage() {
     if (!layout) return max;
     return Math.max(max, layout.y + layout.h);
   }, 320) + 24);
+
+  /** 画板（设计区）之外的控件不铺在页面上：它们只是弹窗内容，点了才弹出来。
+   *  编辑态（含编辑器）仍照常显示，否则拖出去就再也找不回来了。 */
+  const outsidePage = useMemo(() => {
+    const keys = new Set<string>();
+    canvasItems.forEach((it) => {
+      if (it.type === "board") return;
+      const cx = it.x + it.w / 2;
+      const cy = it.y + it.h / 2;
+      if (cx < 0 || cy < 0 || cx > designWidth || cy > surfaceHeight) keys.add(String(it.key));
+    });
+    return keys;
+  }, [canvasItems, designWidth, surfaceHeight]);
 
   useEffect(() => {
     const el = surfaceRef.current;
@@ -872,7 +886,8 @@ export default function DashboardPage() {
             position: "absolute", top: 0, left: surfaceOffsetX, width: designWidth, height: surfaceHeight,
             transform: `scale(${surfaceScale})`, transformOrigin: "top left",
           }}>
-            {renderItems.filter((item) => !hiddenByBoard.has(String(item.key))).map((item, index) => {
+            {renderItems.filter((item) => !hiddenByBoard.has(String(item.key))
+              && (editing || !outsidePage.has(String(item.key)))).map((item, index) => {
               const type = item.type || "chart";
               const layout = item.layout || { x: 12, y: 12, w: 400, h: item.h || 260 };
               const payload = cards[item.key];
@@ -901,8 +916,8 @@ export default function DashboardPage() {
                       payload={item.spec.nav as unknown as NavPayload}
                       ui={(item.spec.ui ?? DEFAULT_UI) as unknown as NavUi}
                       currentPage={view}
-                      onAction={(label) => {
-                        if (/导出|export/i.test(label)) {
+                      onAction={(label, isExport) => {
+                        if (isExport || /导出|export/i.test(label)) {
                           const navSpec = item.spec?.nav;
                           void exportCurrentPageData(
                             (navSpec?.export_scope as "primary" | "all" | "dataset") || "primary",
@@ -942,7 +957,11 @@ export default function DashboardPage() {
                                 window.scrollTo({ top: 0, behavior: "smooth" });
                               }
                             }}
-                            onTopList={payload.top?.enabled ? () => setTopKey(String(item.key)) : undefined}
+                            onTopList={payload.top?.enabled ? () => {
+                              const top = payload.top as { table_key?: string; sort_field?: string; sort?: SortDir } | undefined;
+                              setTopSort({ field: String(top?.sort_field || ""), sort: top?.sort ?? "" });
+                              setTopKey(String(top?.table_key || ""));
+                            } : undefined}
                             onExport={payload.kind === "table" && typeof item.spec?.binding?.dataset_id === "number"
                               ? () => { void exportDatasets([item.spec?.binding?.dataset_id as number]); }
                               : undefined}
@@ -956,16 +975,7 @@ export default function DashboardPage() {
                                 ));
                               }
                               : undefined}
-                            onMore={item.action ? () => openOverlay(item, "primary") : undefined}
                             onRowClick={item.row_action ? (row) => openOverlay(item, "row", row) : undefined}
-                            onLoadAll={payload.kind === "table" ? async () => {
-                              // 行限制小于总条数时，弹窗看全部（与当前筛选同一口径）
-                              const res = await client.post(`/bi/dashboards/${dashboardId}/rows`, {
-                                view, params, item_key: item.key,
-                                cross_filters: crossFilter ? [{ column: crossFilter.column, value: crossFilter.value }] : [],
-                              });
-                              return { rows: res.data?.rows ?? [], columns: res.data?.columns ?? [] };
-                            } : undefined}
                           />
                         );
                       })()}
@@ -996,15 +1006,14 @@ export default function DashboardPage() {
         onDelete={() => selectedIndex >= 0 && removeItem(selectedIndex)}
       />
 
-      {/* 指标卡右上角徽标 → 独立 TOP N 榜单（只读，不改页面状态） */}
+      {/* 指标卡右上角徽标 → 明细表弹窗（只读，不改页面状态；排序只在弹窗内生效） */}
       {topKey && (
         <TopListDialog
           open
-          onClose={() => setTopKey(null)}
-          dashboardId={Number(id)}
-          itemKey={topKey}
-          view={view}
-          params={params}
+          onClose={() => { setTopKey(null); setTopSort(null); }}
+          payload={cards[topKey] ?? null}
+          sortField={topSort?.field ?? ""}
+          sort={topSort?.sort ?? ""}
         />
       )}
 

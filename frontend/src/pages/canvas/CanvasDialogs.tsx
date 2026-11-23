@@ -10,6 +10,7 @@ import TopListDialog from "../../features/components/board/TopListDialog";
 import { SHAPE_KINDS, SHAPE_LABEL, ShapeIcon } from "../../features/components/shapes";
 import type { CanvasItem } from "../../features/components/boardTypes";
 import type { CanvasSize, DashboardDoc, DocItem, Guide, ShapeKind } from "../../features/components/types";
+import type { RenderPayload, SortDir } from "../../features/components/types";
 import type { EditingPage, PageMenuState } from "./PageTabs";
 import { validBoardSize } from "./boardResize";
 
@@ -18,7 +19,7 @@ export type DeleteConfirm = { keys: string[]; platforms: string[] } | null;
 export type GuideMenuState = { x: number; y: number; id?: string; boardKey?: string } | null;
 
 export default function CanvasDialogs({
-  topKey, setTopKey, docId, view, params, items, toDocItem,
+  topKey, setTopKey, topSort, setTopSort, docId, view, params, items, toDocItem, cards,
   deleteConfirm, setDeleteConfirm, removeItems,
   pageMenu, setPageMenu, doc, setEditingPage, duplicatePage, copyText, setToast, deletePage,
   shapeAnchor, setShapeAnchor, addShape,
@@ -27,11 +28,16 @@ export default function CanvasDialogs({
 }: {
   topKey: string | null;
   setTopKey: (v: string | null) => void;
+  /** 徽标弹窗的默认排序（只在弹窗内生效，关闭即恢复） */
+  topSort: { field: string; sort: SortDir } | null;
+  setTopSort: (v: { field: string; sort: SortDir } | null) => void;
   docId: number;
   view: string;
   params: Record<string, unknown>;
   items: CanvasItem[];
   toDocItem: (item: CanvasItem) => DocItem;
+  /** 看板渲染结果（徽标弹窗直接显示指定明细表） */
+  cards: Record<string, RenderPayload>;
   deleteConfirm: DeleteConfirm;
   setDeleteConfirm: (v: DeleteConfirm) => void;
   removeItems: (keys: string[]) => void;
@@ -74,12 +80,10 @@ export default function CanvasDialogs({
       {topKey && (
         <TopListDialog
           open
-          onClose={() => setTopKey(null)}
-          dashboardId={docId}
-          itemKey={topKey}
-          view={view}
-          params={params}
-          items={items.map(toDocItem)}
+          onClose={() => { setTopKey(null); setTopSort(null); }}
+          payload={cards[topKey] ?? null}
+          sortField={topSort?.field ?? ""}
+          sort={topSort?.sort ?? ""}
         />
       )}
 

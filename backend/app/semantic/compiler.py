@@ -49,6 +49,15 @@ def compile_query(dataset: Dataset, request: dict) -> QueryObject:
     for item in request.get("dimensions", []) or []:
         if isinstance(item, str):
             item = {"name": item}
+        if item.get("expression"):
+            from app.semantic.aggregate_expression import compile_dimension_expression
+
+            expr = compile_dimension_expression(item["expression"], dataset)
+            dimensions.append(DimensionSpec(
+                expression=expr,
+                alias=item.get("alias") or item.get("name") or "dim",
+            ))
+            continue
         field = _field(dataset, item.get("name", ""))
         if not field.is_groupable:
             raise SemanticError(f"字段不可分组：{field.name}")

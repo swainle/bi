@@ -19,7 +19,8 @@ function findInput(node: unknown): ReactElement<Record<string, any>> | undefined
   if (Array.isArray(node)) return node.map(findInput).find(Boolean);
   if (!node || typeof node !== "object" || !("props" in node)) return undefined;
   const element = node as ReactElement<Record<string, any>>;
-  return element.type === "input" && element.props.label === "item_id"
+  // 列头名称输入框现在是字段行里的「显示名称」（placeholder），不再是 label=字段名 的独立分区
+  return element.type === "input" && element.props.placeholder === "显示名称"
     ? element : findInput(element.props.children);
 }
 

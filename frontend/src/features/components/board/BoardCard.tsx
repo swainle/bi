@@ -46,12 +46,10 @@ interface Props {
   onFilterChange?: (id: string, value: unknown) => void;
   /** 本页卡片读的数据集：给了就做「逐级筛选」（下游下拉随上游条件收窄） */
   filterDatasets?: number[];
-  /** 指标卡右上角徽标被点（打开独立的 TOP N 榜单弹窗） */
-  onTopList?: (itemKey: string) => void;
+  /** 指标卡右上角徽标被点（打开指定明细表弹窗；带上这张卡的弹窗配置，排序只在弹窗内生效） */
+  onTopList?: (itemKey: string, top?: RenderPayload["top"]) => void;
   /** 当前编辑的页面 key：导航卡据此高亮「你在哪一页」 */
   currentPage?: string;
-  /** 表格「查看更多」→ 拉全量行 */
-  onLoadAll?: () => Promise<{ rows: Record<string, unknown>[]; columns?: unknown[] }>;
 }
 
 type DragState = {
@@ -129,7 +127,7 @@ function plainResize(base: Rect, edge: ResizeEdge, dx: number, dy: number, min: 
 export default function BoardCard({
   item, payload, error, selected, onSelect, onLayoutChange, onDelete, scale = 1, zIndex,
   others = [], guideLines, designWidth = 1440, designHeight = 620, onGuides,
-  filterFields, filterValues, onFilterChange, filterDatasets, onTopList, onLoadAll, currentPage,
+  filterFields, filterValues, onFilterChange, filterDatasets, onTopList, currentPage,
   registerNode, onDuplicateForDrag, onGhostStart, onGhost, onGhostEnd,
   followers, getCardNode,
 }: Props) {
@@ -438,8 +436,7 @@ export default function BoardCard({
               ...(item.kind === "section" ? sectionPayload(item.spec) : {}),
             }}
             ui={item.spec.ui}
-            onLoadAll={onLoadAll as never}
-            onTopList={() => onTopList?.(item.key)}
+            onTopList={() => onTopList?.(String((payload?.top as { table_key?: string } | undefined)?.table_key || ""), payload?.top)}
           />
         ) : (
           <Box sx={{

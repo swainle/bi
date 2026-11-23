@@ -172,7 +172,7 @@ def seed_rank(db: Session, ds: int) -> None:
     _put(db, "rank.detail", "榜单明细", "table", cat, "13 列明细 · 点击行看详情",
          _spec("榜单明细", subtitle="前 10 条", height=460, accent="slate",
                binding=detail_binding,
-               table_view={"page_size": 10, "more": True, "more_label": "查看全部",
+               table_view={"page_size": 10, "more": False,
                            "columns": [
                                {"key": "商品标题", "type": "text", "width": 260},
                                {"key": "平台", "type": "badge", "align": "center", "width": 90},
@@ -504,12 +504,12 @@ def seed_demand(db: Session, ids: dict) -> None:
         if key == "rel":
             metrics = [{"name": "点击率", "agg": "AVG"}, {"name": "支付转化率", "agg": "MAX"},
                        {"name": "支付买家数", "agg": "MAX"}, {"name": "天猫点击占比", "agg": "MAX"}]
-        _put(db, f"{prefix}.table", f"{title}明细", "table", view_cat, "前 10 条 · 查看更多",
+        _put(db, f"{prefix}.table", f"{title}明细", "table", view_cat, "前 10 条 · 卡内分页",
              _spec(f"{title}明细", height=460, accent="slate",
                    binding=_binding(ds, dim="搜索词", metric="搜索人气",
                                     metrics=metrics, dimensions=dimensions,
                                     top_n=10, filters=filters),
-                   table_view={"page_size": 10, "more": True, "more_label": "查看更多",
+                   table_view={"page_size": 10, "more": False,
                                "columns": columns}))
 
         # 结论

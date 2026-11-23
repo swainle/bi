@@ -1,7 +1,6 @@
-/** 数据口径 —— 让用户核对「这张卡的数字到底怎么来的」 */
+/** 数据口径 —— 让用户核对「这张卡的数字到底怎么来的」（不展示 SQL） */
 
-import { useState } from "react";
-import { Box, Collapse, Typography } from "@mui/material";
+import { Box, Typography } from "@mui/material";
 import type { RenderPayload } from "../types";
 
 interface Props {
@@ -24,7 +23,6 @@ const label = { fontSize: 11, color: "#94A3B8", flexShrink: 0 } as const;
 const value = { fontSize: 11.5, color: "#334155", fontWeight: 600 } as const;
 
 export default function DataCheckPanel({ payload, dimension, metric, agg, expression, transform, fields, kind, dimensionLabel, metricLabel }: Props) {
-  const [openSql, setOpenSql] = useState(false);
   const total = payload?.total;
   const count = payload?.count ?? payload?.rows?.length ?? payload?.series?.length ?? 0;
 
@@ -32,12 +30,6 @@ export default function DataCheckPanel({ payload, dimension, metric, agg, expres
     <Box sx={{ bgcolor: "#F8FAFD", border: "1px solid #EEF3FB", borderRadius: 2, p: 1.25, mb: 1.5 }}>
       <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 0.75 }}>
         <Typography sx={{ fontSize: 11, fontWeight: 600, color: "#64748B" }}>口径</Typography>
-        <Typography
-          onClick={() => setOpenSql((v) => !v)}
-          sx={{ fontSize: 10.5, color: "#6366F1", cursor: "pointer" }}
-        >
-          {openSql ? "收起 SQL" : "查看 SQL"}
-        </Typography>
       </Box>
 
       {kind === "table" ? (
@@ -75,16 +67,6 @@ export default function DataCheckPanel({ payload, dimension, metric, agg, expres
           </Box>
         </>
       )}
-
-      <Collapse in={openSql}>
-        <Box sx={{
-          mt: 0.75, p: 0.75, borderRadius: 1.25, bgcolor: "#0F172A", color: "#CBD5E1",
-          fontSize: 10, fontFamily: "ui-monospace, Menlo, monospace",
-          maxHeight: 96, overflow: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all",
-        }}>
-          {payload?.sql || "—"}
-        </Box>
-      </Collapse>
     </Box>
   );
 }

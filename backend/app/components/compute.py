@@ -447,19 +447,17 @@ def build_table(rows: list[dict], spec: ComponentSpec) -> dict:
     if view.thumb and view.thumb_key:
         columns = [col for col in columns if str(col.get("key")) != view.thumb_key]
 
-    # 行限制就是「显示多少行」，别再被 page_size 顶掉
-    limit = max(1, spec.binding.top_n or len(rows))
+    # 明细表不再按「行限制」截断：一次取回多少行就交给前端分页（每页条数 = view.page_size）。
+    # 「查看更多」已停用（view.more 只保留在 spec 里兼容旧文档，不再下发）。
     return {
-        "rows": rows[:limit],
+        "rows": rows,
         "columns": columns,
         "count": len(rows),
         "page_size": view.page_size,
-        "more": view.more,
-        "more_label": view.more_label,
-        "sortable": view.sortable,
         "index_column": view.index_column,
         "thumb": view.thumb,
         "thumb_key": view.thumb_key,
+        "search": view.search,
         # 行详情面板（开启时前端点行才滑出）
         "detail": view.detail.model_dump(),
     }
@@ -478,6 +476,11 @@ def build_content(kind: str, spec: ComponentSpec, values: dict | None = None) ->
             "global_nav": spec.nav.global_nav,
             "export_scope": spec.nav.export_scope,
             "export_dataset_id": spec.nav.export_dataset_id,
+            # 导出按钮 / 状态区都由前端按 spec 直接渲染（见 NavCard），这里透传配置即可
+            "export_visible": spec.nav.export_visible,
+            "export_label": spec.nav.export_label,
+            "export_kind": spec.nav.export_kind,
+            "status": spec.nav.status,
         }
     if kind == "banner":
         return {
