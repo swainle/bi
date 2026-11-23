@@ -122,6 +122,42 @@ def save(db: Session, dashboard_id: int, doc: DashboardDoc | dict, name: str | N
     return get(db, dashboard_id)
 
 
+def save_view(db: Session, dashboard_id: int, view_key: str, view: dict,
+              name: str | None = None) -> DashboardRow | None:
+    """只保存某一页（其它页保持数据库里的最新状态）。
+
+    先 `FOR UPDATE` 锁行再读整份 doc 改一页写回 —— 两个页面同时保存时互不覆盖。
+    """
+    got = db.execute(
+        text("SELECT doc FROM bi_canvas WHERE id = :id AND deleted_at IS NULL FOR UPDATE"),
+        {"id": dashboard_id},
+    ).first()
+    if got is None:
+        db.rollback()
+        return None
+    doc = dict(got[0] or {})
+    views = list(doc.get("views") or [])
+    index = next((i for i, v in enumerate(views) if str((v or {}).get("key")) == str(view_key)), -1)
+    if index >= 0:
+        views[index] = view
+    else:
+        views.append(view)
+    doc["views"] = views
+    payload = validate_doc(doc).model_dump()
+    sql = "UPDATE bi_canvas SET doc = :doc, updated_at = now()"
+    params: dict = {"doc": json.dumps(payload, ensure_ascii=False), "id": dashboard_id}
+    if name:
+        sql += ", name = :name"
+        params["name"] = name[:120]
+    sql += " WHERE id = :id AND deleted_at IS NULL"
+    result = db.execute(text(sql), params)
+    if result.rowcount == 0:
+        db.rollback()
+        return None
+    db.commit()
+    return get(db, dashboard_id)
+
+
 def rename(db: Session, dashboard_id: int, name: str) -> DashboardRow | None:
     db.execute(
         text("UPDATE bi_canvas SET name = :name, updated_at = now() "

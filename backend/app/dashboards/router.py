@@ -397,6 +397,33 @@ def set_team_permissions(
     return {"id": dashboard_id, "permissions": cleaned}
 
 
+@router.put("/{dashboard_id}/views/{view_key}")
+def save_dashboard_view(
+    dashboard_id: int,
+    view_key: str,
+    payload: dict = Body(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """只保存某一页（页面级保存：别的页不会被这份（可能过期的）副本覆盖）."""
+    _require_edit(repo.get(db, dashboard_id), current_user, db)
+    view = payload.get("view")
+    if not isinstance(view, dict):
+        raise HTTPException(400, "缺少 view")
+    try:
+        saved = repo.save_view(db, dashboard_id, view_key, view)
+    except Exception as exc:
+        raise _guard(exc) from exc
+    if saved is not None:
+        render_cache.invalidate(dashboard_id)
+        try:
+            sources.rebuild(db, dashboard_id, saved.doc)
+        except Exception as exc:  # 账本写失败不影响保存本身
+            print(f"[dashboards] 数据源账本重建失败：{exc}")
+        log_audit(current_user.id, "dashboard.save_view", "canvas", dashboard_id, {"view": view_key})
+    return saved.to_dict() if saved else {"id": dashboard_id}
+
+
 @router.put("/{dashboard_id}")
 def save_dashboard(
     dashboard_id: int,

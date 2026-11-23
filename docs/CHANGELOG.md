@@ -7,6 +7,55 @@
 > 交付顺序：改代码 → `tsc --noEmit` → 真机截图自检（对齐 / 折行 / 溢出 / 空态）→ 写这里。
 
 ---
+## 2026-11-23 · 修复：切页面后「未保存」被误标（目标页没改也显示编辑中）
+
+- **原因**：`doSwitchView` 里用「当前页已保存的 items」和「目标页的 items」做比较来判定 `changed`
+  —— 两页内容本来就不同，条件永远成立 → 一切页就置 `dirty=true`，还会连带弹出「当前页有未保存改动」。
+- **修复**：切页本身不算编辑，删掉这段推断：`dirty` 只由真实改动（改属性 / 拖拽 / 增删元素 / 页面结构）设置，
+  切页既不置 true 也不清 false（清了会抹掉上一页真实未保存改动）。
+  另外平台首次装载（`previous` 为空）也不再标脏，只有用户真的换平台才算改动。
+- **文件**：`frontend/src/pages/CanvasBoardPage.tsx`。
+- **怎么验证**：doc5 实测 —— `初始 dirty=false` → 切「页面2」`false` → 切「页面3」`false`，且不再弹未保存对话框。
+  `tsc --noEmit` 0。
+
+---
+## 2026-11-23 · 修复：新建页面后必须再保存一次 / 「未保存」清不掉
+
+- **原因**：改成按页保存后，保存只写**当前页**；而「新建页面 / 删除页面 / 页面改名 / 复制页面」是**文档结构改动**，
+  永远不会被按页保存带上 → 新页面一直没落库，`dirty` 也一直清不干净。
+- **修复**：新增 `docDirty` 标记（上述四个操作置 true）。保存时：
+  - `docDirty` 或发布 → **整份文档** `PUT /bi/dashboards/{id}`；
+  - 否则 → 按页保存 `PUT …/views/{key}`。
+  保存成功后清 `dirty` 与 `docDirty`；切页拦截条件也改成 `dirty || docDirty`。
+- **文件**：`frontend/src/pages/CanvasBoardPage.tsx`。
+- **怎么验证**：doc5 实测 —— 点「新建页面」→ 点「保存」→ 查库：`main,page_mwszb6l1,page_mwszc89x,page_mwszjnu3(页面4)`
+  （新页面确实落库）；测试页面已删除，doc5 恢复为 `main,page_mwszb6l1,page_mwszc89x`。`tsc --noEmit` 0。
+
+---
+## 2026-11-23 · 新增：切页前提示「当前页有未保存改动」
+
+- 编辑画布切页面时，如果当前页有未保存改动（`dirty`），先弹窗：**取消 / 不保存 / 保存后切换**。
+- 「保存后切换」先按页面级保存 `PUT …/views/{key}`（只存当前页），成功后再切。
+- 内部把原来的 `switchView` 拆成 `doSwitchView`（真正切页）+ `switchView`（带拦截），
+  页面重命名 / 复制等其他入口调用时不触发该提示。
+- **文件**：`frontend/src/pages/CanvasBoardPage.tsx`。
+- **怎么验证**：`tsc --noEmit` 0。⚠️ 界面弹窗还没点过 —— 后端 9202 目前是停的，重启后即可试用。
+
+---
+## 2026-11-23 · 新增：按页保存（每个页面独立落库，互不覆盖）
+
+- 新接口 `PUT /api/bi/dashboards/{id}/views/{view_key}`，body `{view: {...}}`：
+  后端先 `SELECT doc … FOR UPDATE` 锁行，再把这一页替换进最新 doc 写回，别的页保持数据库里的最新状态。
+- 前端「保存」改走这个接口（只写当前页）；「保存并发布」仍走整份文档（`published` 是文档级字段）。
+- 好处：A 页和 B 页分别编辑、分别保存不会互相覆盖（原来整份 doc 覆盖，后存的人赢）。
+- **文件**：`backend/app/dashboards/repository.py`（`save_view`）、`dashboards/router.py`（新路由）、
+  `frontend/src/pages/CanvasBoardPage.tsx`（`persist` 分流）。
+- **怎么验证**：在临时 9203 实例上实测 —— doc5 连续保存两页：
+  `保存页A: 200`、`保存页B: 200`，再读文档 `main:页A-独立保存 | p2:页B-独立保存`（两页都在，后存的没覆盖前一个）。
+  `tsc --noEmit` 0。
+- ⚠️ 当前 9202 上的后端进程已停（不是代码问题，`python -c "import app.dashboards.router"` 正常），需要重新启动。
+
+---
 ## 2026-11-23 · 优化：组合图「图例文字」挪到首选项
 
 - 「柱名称 / 线名称」（就是图例和提示框里显示的两个系列名）原来藏在「通用 · 文字」里，

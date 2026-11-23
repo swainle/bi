@@ -88,6 +88,10 @@ export default function CanvasBoardPage() {
   const [agentGenerated, setAgentGenerated] = useState(false);
   /** 发布二次确认（发布必须用户自己点） */
   const [publishConfirm, setPublishConfirm] = useState(false);
+  /** 切页时有未保存改动：待切换的页面 key */
+  const [pendingView, setPendingView] = useState<string | null>(null);
+  /** 文档结构（增删页 / 改名 / 复制页）改过：这类改动只能整份保存 */
+  const [docDirty, setDocDirty] = useState(false);
   /** 「AI 推荐组件」进行中：按当前数据集字段推荐并插入 */
   const [recommendBusy, setRecommendBusy] = useState(false);
   /** 正在进行的动作：save=只保存草稿，publish=保存并发布到「我的看板」 */
@@ -527,16 +531,13 @@ export default function CanvasBoardPage() {
     if (main) setItems(main);
   }, []);
 
-  const switchView = (key: string) => {
+  /** 真正切页（不做未保存提示） */
+  const doSwitchView = (key: string) => {
     if (!doc) return;
     platformRef.current = "";
     const stashed = stashView(doc);
     const target = stashed.views.find((v) => v.key === key);
     if (!target) return;
-    /* 只有当当前页确实改过才标脏，单纯切页不弹「未保存」 */
-    const previous = doc.views.find((v) => v.key === view);
-    const changed = JSON.stringify(previous?.items ?? []) !== JSON.stringify(target.items ?? [])
-      || JSON.stringify(previous?.guides ?? []) !== JSON.stringify(target.guides ?? []);
     setDoc(stashed);
     setView(key);
     setGuides(target.guides ?? []);
@@ -545,7 +546,15 @@ export default function CanvasBoardPage() {
     resetHistory(nextItems, target.guides ?? [], target.canvas ?? null);
     selectOnly((nextItems.find((i) => i.type === "chart") || nextItems[0])?.key ?? null);
     setEditingPage(null);
-    if (changed) setDirty(true);
+    /* 切页本身不算编辑：dirty 只由真实改动（改属性 / 拖拽 / 增删元素…）负责，
+       这里既不置 true 也不清 false —— 清了会把上一页没保存的改动标记抹掉。 */
+  };
+
+  /* 切页前有未保存改动 → 先弹「保存 / 不保存 / 取消」 */
+  const switchView = (key: string) => {
+    if (!doc || key === view) return;
+    if (dirty || docDirty) { setPendingView(key); return; }
+    doSwitchView(key);
   };
 
   /* 平台切换 = 换一套卡片：当前这套先落回 doc，再把目标平台那套装进画布 */
@@ -583,7 +592,8 @@ export default function CanvasBoardPage() {
     /* 切平台只换卡片，筛选栏（共用）在场就保留选中，省得再点一次 */
     const keep = selectedKeys.filter((k) => nextItems.some((i) => i.key === k));
     selectOnly(keep.length ? keep[keep.length - 1] : null);
-    if (seeded) setDirty(true);
+    /* 只有「用户换平台」才标脏；切页进来首次装载平台那套（previous 为空）不算改动 */
+    if (seeded && previous) setDirty(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activePlatform, view, doc]);
 
@@ -616,6 +626,7 @@ export default function CanvasBoardPage() {
     resetHistory([], [], null);
     setSelectedKeys([]);
     setDirty(true);
+    setDocDirty(true);
     setEditingPage({ key, draft: title });
   };
 
@@ -625,6 +636,7 @@ export default function CanvasBoardPage() {
     setDoc({ ...doc, views: doc.views.map((v) => (v.key === key ? { ...v, title: clean } : v)) });
     setEditingPage(null);
     setDirty(true);
+    setDocDirty(true);
   };
 
   const duplicatePage = (key: string) => {
@@ -642,6 +654,7 @@ export default function CanvasBoardPage() {
     };
     setDoc({ ...stashed, views: [...stashed.views, copy] });
     setDirty(true);
+    setDocDirty(true);
   };
 
   const deletePage = (key: string) => {
@@ -659,6 +672,7 @@ export default function CanvasBoardPage() {
       selectOnly((nextItems.find((i) => i.type === "chart") || nextItems[0])?.key ?? null);
     }
     setDirty(true);
+    setDocDirty(true);
   };
 
   const commitPageRename = () => {
@@ -1165,10 +1179,17 @@ export default function CanvasBoardPage() {
         ...stashed,
         published: publish ? true : stashed.published,
       };
-      const res = await client.put(`/bi/dashboards/${docId}`, { doc: nextDoc, publish });
+      /* 普通保存只写当前这一页（页面级保存）：别的页即使别人改过也不会被覆盖；
+         发布要走整份文档（published 是文档级字段）。 */
+      const currentView = stashed.views.find((v) => v.key === view);
+      /* 增删页 / 改名 / 复制页属于文档结构改动，必须整份保存；只有改页面内容才走按页保存 */
+      const res = !publish && currentView && !docDirty
+        ? await client.put(`/bi/dashboards/${docId}/views/${view}`, { view: currentView })
+        : await client.put(`/bi/dashboards/${docId}`, { doc: nextDoc, publish });
       // 以服务端回包为准，拿到 published_at 之类的服务端字段
       setDoc((res.data?.doc as DashboardDoc) || nextDoc);
       setDirty(false);
+      setDocDirty(false);
       setRevision((r) => r + 1);
       /* 顶栏「最近编辑」按 updated_at 排：刚存完把自己顶到最前 */
       client.get("/bi/dashboards")
@@ -1187,7 +1208,7 @@ export default function CanvasBoardPage() {
     } finally {
       setSaving(null);
     }
-  }, [doc, docId, items, view, guides, saving, stashView, detailEditKey, commitDetailEdit]);
+  }, [doc, docId, items, view, guides, saving, stashView, detailEditKey, commitDetailEdit, docDirty]);
 
   const handleSave = useCallback(() => persist(false), [persist]);
   /** 发布必须用户二次确认：点按钮 → 弹窗确认 → 才落库（Agent 侧工具也禁止直接发布） */
@@ -1657,6 +1678,35 @@ export default function CanvasBoardPage() {
           }}
         />
       </Box>
+
+      {/* 切页前有未保存改动 */}
+      <Dialog open={pendingView !== null} onClose={() => setPendingView(null)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontSize: 15, fontWeight: 700, pb: 1 }}>当前页有未保存的改动</DialogTitle>
+        <DialogContent>
+          <Typography sx={{ fontSize: 13, color: "text.secondary", lineHeight: 1.7 }}>
+            切到别的页面前要不要先保存这一页？不保存的话，刷新后会丢掉这些改动。
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5 }}>
+          <Button sx={{ textTransform: "none" }} onClick={() => setPendingView(null)}>取消</Button>
+          <Button sx={{ textTransform: "none" }} onClick={() => {
+            const key = pendingView;
+            setPendingView(null);
+            if (key) doSwitchView(key);
+          }}>不保存</Button>
+          <Button variant="contained" sx={{ textTransform: "none", borderRadius: 2 }}
+            onClick={async () => {
+              const key = pendingView;
+              setPendingView(null);
+              const ok = await persist(false);
+              if (ok && key) {
+                doSwitchView(key);
+                setDirty(false);   // 刚保存过，切页后不要留在「未保存」
+                setDocDirty(false);
+              }
+            }}>保存后切换</Button>
+        </DialogActions>
+      </Dialog>
 
       <CanvasDialogs
         topKey={topKey} setTopKey={setTopKey} topSort={topSort} setTopSort={setTopSort} docId={docId} view={view} params={params} items={items} toDocItem={toDocItem} cards={cards}
