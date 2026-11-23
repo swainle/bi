@@ -14,14 +14,14 @@ interface BuildArgs {
   donut?: boolean;
 }
 
-function labelText(mode: string, name: string, value: number, percent: number, decimals: number): string {
+function labelText(mode: string, name: string, value: number, percent: number, decimals: number, slot = "v"): string {
   const pct = `${percent.toFixed(decimals)}%`;
   switch (mode) {
-    case "pct": return pct;
+    case "pct": return `{${slot}|${pct}}`;
     case "name": return name;
     case "value": return value.toLocaleString("zh-CN");
     case "none": return "";
-    default: return `{n|${name}}\n{v|${pct}}`;
+    default: return `{n|${name}}\n{${slot}|${pct}}`;
   }
 }
 
@@ -73,20 +73,28 @@ export function buildPieOption({ series, chart, compute, accent, animate, donut 
           position: single ? "center" : outside ? "outside" : "inside",
           /* 图形旁贴边（2px）、图形外明显离边（26px，再叠加引导线） */
           distance: beside ? 10 : farOutside ? 30 : 6,
-          formatter: (p: { name: string; value: number; percent: number }) =>
-            single ? `{n|${p.name}}\n{v|100%}` : labelText(labelMode, p.name, p.value, p.percent, decimals),
+          formatter: (p: { name: string; value: number; percent: number; dataIndex: number }) => {
+            /* 百分比颜色跟随扇区：rich 里的 v0…vN 对应 DONUT 调色板，dataIndex 与配色同序 */
+            const slot = `v${(p.dataIndex ?? 0) % DONUT.length}`;
+            if (single) return `{n|${p.name}}\n{v|100%}`;
+            return labelText(labelMode, p.name, p.value, p.percent, decimals, slot);
+          },
           rich: {
             n: { fontSize: 11, color: "#64748B", lineHeight: 16 },
             v: { fontSize: 12, fontWeight: 700, color: accent, lineHeight: 16 },
+            ...Object.fromEntries(DONUT.map((color, index) => [
+              `v${index}`,
+              { fontSize: 12, fontWeight: 700, color, lineHeight: 16 },
+            ])),
           },
           fontSize: outside ? 10 : 11,
           color: "#475569",
         },
-        // 图形旁 = 贴在外缘（引导线短到看不见、透明）；图形外 = 离边较远并画引导线
+        // 图形旁 = 标签贴边，不画引导线；图形外 = 离边远、用折线引出来
         labelLine: {
-          show: (farOutside || beside) && !single && labelMode !== "none",
-          length: beside ? 18 : 34, length2: beside ? 6 : 22,
-          smooth: true, lineStyle: { color: beside ? "transparent" : "#CBD5E1" },
+          show: farOutside && !single && labelMode !== "none",
+          length: 34, length2: 22,
+          smooth: true, lineStyle: { color: "#CBD5E1" },
         },
         labelLayout: { hideOverlap: true, moveOverlap: "shiftY" },
         data: series.map((s) => ({ name: String(s.name), value: Number(s.value ?? 0) })),

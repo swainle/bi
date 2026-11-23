@@ -757,6 +757,7 @@ export default function QueryPanel({
 
   /** 组件特有分区：只有这些 kind 有「通用」以外的专有配置（热力要有维度才有矩阵列） */
   const hasSpecial = kind === "table" || kind === "scatter" || kind === "combo" || kind === "kpi" || kind === "bar"
+    || kind === "pie" || kind === "donut"
     || kind === "wordcloud" || (kind === "heatmap" && Boolean(b.dimension));
 
   // 滚动交给外层中栏统一处理：这里再来一层会出现两条滚动条
@@ -820,7 +821,7 @@ export default function QueryPanel({
             />
           </Row>
           {b.metric && (
-            <Row label="聚合">
+            <Row label={kind === "combo" ? "左轴聚合" : "聚合"}>
               <TextField select size="small" value={b.agg}
                 onChange={(e) => onChange({ ...spec, binding: {
                   ...b, agg: e.target.value,
@@ -836,27 +837,81 @@ export default function QueryPanel({
               <Box sx={{ width: 26, flexShrink: 0 }} />
             </Row>
           )}
+          {/* 左轴自定义 SQL 的输入框贴在「左轴聚合」下面，右轴那两行排在它后面 */}
+          {b.metric && b.agg === "CUSTOM" && (() => {
+            const used = [...String(b.agg_expression || "").matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+            const foreign = [...new Set(used.filter((name) => name !== b.metric))];
+            return (
+            <Box sx={{ mt: 1, mb: 1 }}>
+              <TextField size="small" multiline minRows={3} fullWidth
+                value={b.agg_expression ?? ""}
+                onChange={(e) => patch("agg_expression", e.target.value)}
+                error={Boolean(payload?.error) || foreign.length > 0}
+                helperText={payload?.error || (foreign.length
+                  ? `表达式引用的是 ${foreign.map((n) => `"${n}"`).join("、")}，和当前指标 "${b.metric}" 不一致 —— 这个聚合会按前者计算。`
+                  : '使用数据集字段名，例如 MEDIAN("销售额")；无需 SELECT / FROM，随当前筛选和分组计算。')}
+                inputProps={{ maxLength: 4000, spellCheck: false }}
+                sx={{ "& .MuiOutlinedInput-root": { borderRadius: "8px", fontSize: 12 }, "& textarea, & .MuiInputBase-input": { fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace", fontSize: 12 } }} />
+            </Box>
+            );
+          })()}
+          {kind === "combo" && (
+            <>
+              <Row label="右轴（线）">
+                <AxisInput
+                  value={(b.metrics?.[0] as { name?: string } | undefined)?.name ?? ""}
+                  options={metricOptions.filter((f) => f.name !== b.metric).map((f) => f.name)}
+                  placeholder="拖到这里"
+                  onPick={(next) => patch("metrics", next
+                    ? [{ name: next, agg: (b.metrics?.[0] as { agg?: string } | undefined)?.agg ?? "SUM" }]
+                    : [])}
+                />
+              </Row>
+              {(b.metrics?.[0] as { name?: string } | undefined)?.name && (
+                <>
+                  <Row label="右轴聚合">
+                    <TextField select size="small" value={(b.metrics?.[0] as { agg?: string } | undefined)?.agg ?? "SUM"}
+                      onChange={(e) => {
+                        const current = (b.metrics?.[0] as { name?: string } | undefined)?.name;
+                        if (!current) return;
+                        const agg = e.target.value;
+                        const expression = (b.metrics?.[0] as { expression?: string } | undefined)?.expression ?? "";
+                        patch("metrics", [{
+                          name: current, agg,
+                          ...(agg === "CUSTOM"
+                            ? { expression: expression || `SUM("${current.replace(/"/g, '""')}")` }
+                            : {}),
+                        }]);
+                      }}
+                      sx={fieldSx}>
+                      {AGG.map((a) => (
+                        <MenuItem key={a} value={a} sx={{ fontSize: 12.5 }}>{a}</MenuItem>
+                      ))}
+                      <MenuItem value="CUSTOM" sx={{ fontSize: 12.5 }}>自定义 SQL</MenuItem>
+                    </TextField>
+                    <Box sx={{ width: 26, flexShrink: 0 }} />
+                  </Row>
+                  {(b.metrics?.[0] as { agg?: string } | undefined)?.agg === "CUSTOM" && (
+                    <Box sx={{ mt: 1 }}>
+                      <TextField size="small" multiline minRows={3} fullWidth
+                        value={(b.metrics?.[0] as { expression?: string } | undefined)?.expression ?? ""}
+                        onChange={(e) => {
+                          const current = (b.metrics?.[0] as { name?: string } | undefined)?.name;
+                          if (!current) return;
+                          patch("metrics", [{ name: current, agg: "CUSTOM", expression: e.target.value }]);
+                        }}
+                        error={Boolean(payload?.error)}
+                        helperText={payload?.error || '使用数据集字段名，例如 MEDIAN("销售额")；无需 SELECT / FROM，随当前筛选和分组计算。'}
+                        inputProps={{ maxLength: 4000, spellCheck: false }}
+                        sx={{ "& .MuiOutlinedInput-root": { borderRadius: "8px", fontSize: 12 }, "& textarea, & .MuiInputBase-input": { fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace", fontSize: 12 } }} />
+                    </Box>
+                  )}
+                </>
+              )}
+            </>
+          )}
         </Box>
 
-        {b.metric && b.agg === "CUSTOM" && (() => {
-          /* 表达式里的列必须就是当前指标：引用到别的列（尤其公式字段）会让口径悄悄跑偏，
-             这里直接点出来，别让人对着不一致的两个输入猜。 */
-          const used = [...String(b.agg_expression || "").matchAll(/"([^"]+)"/g)].map((m) => m[1]);
-          const foreign = [...new Set(used.filter((name) => name !== b.metric))];
-          return (
-          <Box sx={{ mt: 1 }}>
-            <TextField size="small" multiline minRows={3} fullWidth
-              value={b.agg_expression ?? ""}
-              onChange={(e) => patch("agg_expression", e.target.value)}
-              error={Boolean(payload?.error) || foreign.length > 0}
-              helperText={payload?.error || (foreign.length
-                ? `表达式引用的是 ${foreign.map((n) => `"${n}"`).join("、")}，和当前指标 "${b.metric}" 不一致 —— 这个聚合会按前者计算。`
-                : '使用数据集字段名，例如 MEDIAN("销售额")；无需 SELECT / FROM，随当前筛选和分组计算。')}
-              inputProps={{ maxLength: 4000, spellCheck: false }}
-              sx={{ "& .MuiOutlinedInput-root": { borderRadius: "8px", fontSize: 12 }, "& textarea, & .MuiInputBase-input": { fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace", fontSize: 12 } }} />
-          </Box>
-          );
-        })()}
         </PanelSection>
         )}
 
@@ -978,7 +1033,7 @@ export default function QueryPanel({
         </PanelSection>
 
         {/* 文字：ChartOptionsPanel 自带「文字」分区（图表标题 / 轴标题等）；柱状图的坐标轴搬到了「附加」 */}
-        <ChartOptionsPanel kind={kind} spec={spec} onChange={onChange} mode={kind === "bar" ? "text" : "all"} />
+        <ChartOptionsPanel kind={kind} spec={spec} onChange={onChange} mode={kind === "bar" || kind === "pie" || kind === "donut" || kind === "combo" ? "text" : "all"} />
 
         {/* ── 组件特有：只放这个 kind 才有的配置 ── */}
         {hasSpecial && (
@@ -1017,11 +1072,40 @@ export default function QueryPanel({
               </>
             )}
 
+            {/* 环形图 / 饼图：形状参数 + 显示开关（组件特有） */}
+            {(kind === "pie" || kind === "donut") && (
+              <>
+                <PanelSection title="图形" first>
+                  <ChartOptionsPanel kind={kind} spec={spec} onChange={onChange} mode="pie" />
+                </PanelSection>
+                {/* 点击弹窗：点扇区弹出指定明细表（和指标卡徽标弹窗同一套配置） */}
+                <PanelSection title="点击弹窗">
+                  <KpiTopSettings spec={spec} onChange={onChange} tables={tables}
+                    hideBadge switchLabel="点击弹窗" />
+                </PanelSection>
+              </>
+            )}
+
+            {/* 柱线组合：首选项（右轴 / 曲线平滑 / 组件元素）+ 坐标轴 */}
+            {kind === "combo" && (
+              <>
+                {/* 首选项：右轴 / 曲线平滑 + 组件元素（内部自带分区标题） */}
+                <ChartOptionsPanel kind={kind} spec={spec} onChange={onChange} mode="prefs" />
+                <PanelSection title="坐标轴">
+                  <ChartOptionsPanel kind={kind} spec={spec} onChange={onChange} mode="axis" />
+                </PanelSection>
+              </>
+            )}
+
             {/* 柱状图：坐标轴 / 显示开关（属于这根柱子的特有配置） */}
             {kind === "bar" && (
-              <PanelSection title="坐标轴" first>
-                <ChartOptionsPanel kind={kind} spec={spec} onChange={onChange} mode="axis" />
-              </PanelSection>
+              <>
+                <PanelSection title="坐标轴" first>
+                  <ChartOptionsPanel kind={kind} spec={spec} onChange={onChange} mode="axis" />
+                </PanelSection>
+                {/* 组件元素：一行开关（行内自带 label） */}
+                <ChartOptionsPanel kind={kind} spec={spec} onChange={onChange} mode="prefs" />
+              </>
             )}
 
             {/* 指标卡：徽标弹窗（组件特有，放最后） */}
@@ -1113,34 +1197,7 @@ export default function QueryPanel({
               </Row>
             )}
 
-            {/* 组合图：右轴（线）与它的聚合方式 */}
-            {kind === "combo" && (
-              <>
-                <Row label="右轴（线）">
-                  <TextField select size="small" value={(b.metrics?.[0] as { name?: string } | undefined)?.name ?? ""}
-                    onChange={(e) => patch("metrics", e.target.value ? [{ name: e.target.value, agg: (b.metrics?.[0] as { agg?: string } | undefined)?.agg ?? "SUM" }] : [])}
-                    sx={fieldSx}>
-                    <MenuItem value="" sx={{ fontSize: 12.5 }}>不画线</MenuItem>
-                    {metricOptions.filter((f) => f.name !== b.metric).map((f) => (
-                      <MenuItem key={f.name} value={f.name} sx={{ fontSize: 12.5 }}>{f.name}</MenuItem>
-                    ))}
-                  </TextField>
-                </Row>
-                <Row label="聚合">
-                  <TextField select size="small" value={(b.metrics?.[0] as { agg?: string } | undefined)?.agg ?? "SUM"}
-                    onChange={(e) => {
-                      const current = (b.metrics?.[0] as { name?: string } | undefined)?.name;
-                      if (!current) return;
-                      patch("metrics", [{ name: current, agg: e.target.value }]);
-                    }}
-                    sx={{ ...fieldSx, maxWidth: 140 }}>
-                    {AGG.map((a) => (
-                      <MenuItem key={a} value={a} sx={{ fontSize: 12.5 }}>{a}</MenuItem>
-                    ))}
-                  </TextField>
-                </Row>
-              </>
-            )}
+            {/* 组合图：右轴（线）与它的聚合，归到「数据」里（和纵轴同一组） */}
 
             {/* 词云：颜色分类 / 拆词 */}
             {kind === "wordcloud" && (

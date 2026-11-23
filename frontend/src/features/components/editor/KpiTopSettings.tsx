@@ -1,16 +1,20 @@
 /** 指标卡「徽标弹窗」——点右上角徽标弹出指定明细表（组件特有） */
 
-import { Box, MenuItem, Switch, TextField } from "@mui/material";
+import { Autocomplete, Box, MenuItem, Switch, TextField } from "@mui/material";
 import { Row, fieldSx } from "./Row";
 import type { ComponentSpec, SortDir } from "../types";
 
 type TopSpec = NonNullable<ComponentSpec["top"]>;
 
-export function KpiTopSettings({ spec, onChange, tables = [] }: {
+export function KpiTopSettings({ spec, onChange, tables = [], hideBadge = false, switchLabel = "徽标弹窗" }: {
   spec: ComponentSpec;
   onChange: (next: ComponentSpec) => void;
   /** 页面上的明细表（弹窗目标，带列清单） */
   tables?: { key: string; label: string; columns?: { key: string; label: string }[] }[];
+  /** 环形图没有「右上胶囊」，只留弹窗开关 */
+  hideBadge?: boolean;
+  /** 开关文案：指标卡叫「徽标弹窗」，环形图叫「点击弹窗」 */
+  switchLabel?: string;
 }) {
   const top: TopSpec = spec.top ?? {
     enabled: false, title: "", dim: "", metric: "", agg: "SUM", top_n: 10, columns: [], page_size: 10,
@@ -23,14 +27,16 @@ export function KpiTopSettings({ spec, onChange, tables = [] }: {
 
   return (
     <Box>
-      <Row label="右上胶囊">
-        <TextField size="small" placeholder="如 TOP10（留空则不显示）"
-          value={spec.ui?.badge ?? ""}
-          onChange={(e) => onChange({ ...spec, ui: { ...spec.ui, badge: e.target.value } })}
-          inputProps={{ "aria-label": "右上胶囊文本", maxLength: 24 }}
-          sx={fieldSx} />
-      </Row>
-      <Row label="徽标弹窗">
+      {!hideBadge && (
+        <Row label="右上胶囊">
+          <TextField size="small" placeholder="如 TOP10（留空则不显示）"
+            value={spec.ui?.badge ?? ""}
+            onChange={(e) => onChange({ ...spec, ui: { ...spec.ui, badge: e.target.value } })}
+            inputProps={{ "aria-label": "右上胶囊文本", maxLength: 24 }}
+            sx={fieldSx} />
+        </Row>
+      )}
+      <Row label={switchLabel}>
         <Switch
           size="small"
           checked={!!top.enabled}
@@ -53,19 +59,21 @@ export function KpiTopSettings({ spec, onChange, tables = [] }: {
           {tableKey && (
             <>
               <Row label="排序列">
-                <TextField select size="small" value={top.sort_field ?? ""}
-                  onChange={(e) => {
-                    const field = e.target.value;
+                <Autocomplete
+                  size="small"
+                  options={tableColumns.map((column) => column.key)}
+                  value={top.sort_field || null}
+                  onChange={(_, field) => {
                     /* 选了列就默认降序，否则「排序列选了、排序还是不指定」看着像没生效 */
-                    setTop({ sort_field: field, sort: field ? (top.sort || "desc") : top.sort });
+                    setTop({ sort_field: field ?? "", sort: field ? (top.sort || "desc") : top.sort });
                   }}
-                  inputProps={{ "aria-label": "排序列" }}
-                  sx={fieldSx}>
-                  <MenuItem value="" sx={{ fontSize: 12.5 }}>不指定（用明细表自己的顺序）</MenuItem>
-                  {tableColumns.map((column) => (
-                    <MenuItem key={column.key} value={column.key} sx={{ fontSize: 12.5 }}>{column.label}</MenuItem>
-                  ))}
-                </TextField>
+                  getOptionLabel={(key) => tableColumns.find((c) => c.key === key)?.label ?? key}
+                  renderInput={(params) => (
+                    <TextField {...params} size="small" placeholder="输入或选择列"
+                      inputProps={{ ...params.inputProps, "aria-label": "排序列" }} sx={fieldSx} />
+                  )}
+                  sx={{ flex: 1, minWidth: 0 }}
+                />
               </Row>
               <Row label="排序">
                 <TextField select size="small" value={top.sort ?? ""}

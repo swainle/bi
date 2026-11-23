@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Alert, Box, MenuItem, Stack, Switch, TextField, Typography } from "@mui/material";
+import { Alert, Autocomplete, Box, MenuItem, Stack, Switch, TextField, Typography } from "@mui/material";
 import client from "../../../api/client";
 import type { ComponentSpec, FieldOption, RelatedThumbnailSpec } from "../types";
 
@@ -17,6 +17,27 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
       <Typography sx={{ fontSize: 11.5, color: "#64748B", width: 76, flexShrink: 0 }}>{label}</Typography>
       {children}
     </Box>
+  );
+}
+
+/** 字段选择：能输入过滤、也能下拉选（字段多的表靠打字更快） */
+function FieldAuto({ value, options, onChange, disabled, placeholder }: {
+  value: string; options: string[]; onChange: (next: string) => void;
+  disabled?: boolean; placeholder?: string;
+}) {
+  return (
+    <Autocomplete
+      size="small"
+      disabled={disabled}
+      options={options}
+      value={options.includes(value) ? value : null}
+      onChange={(_, next) => onChange(next ?? "")}
+      renderInput={(params) => (
+        <TextField {...params} size="small" placeholder={placeholder || "输入或选择字段"}
+          sx={{ flex: 1, minWidth: 0, ...fieldSx }} />
+      )}
+      sx={{ flex: 1, minWidth: 0 }}
+    />
   );
 }
 
@@ -54,11 +75,8 @@ export default function RelatedThumbnailSettings({ spec, onChange, fields }: {
         {!spec.binding.dataset_id && <Alert severity="info">请先绑定当前明细表的数据集</Alert>}
         {error && <Alert severity="error">{error}</Alert>}
         <Row label="当前数据集关联字段">
-          <TextField select size="small" value={names.includes(config.local_key) ? config.local_key : ""}
-            onChange={(event) => patch({ local_key: event.target.value })}
-            sx={{ flex: 1, minWidth: 0, ...fieldSx }}>
-            {names.map((name) => <MenuItem key={name} value={name}>{name}</MenuItem>)}
-          </TextField>
+          <FieldAuto value={config.local_key} options={names}
+            onChange={(next) => patch({ local_key: next })} />
         </Row>
         <Row label="图片资源表">
           <TextField select size="small" value={target?.id ?? ""} disabled={loading}
@@ -69,12 +87,8 @@ export default function RelatedThumbnailSettings({ spec, onChange, fields }: {
         </Row>
         {([["match_key", "资源表关联字段"], ["url_key", "图片地址字段"]] as const).map(([key, label]) => (
           <Row key={key} label={label}>
-            <TextField select size="small" disabled={!target}
-              value={target?.fields.includes(config[key]) ? config[key] : ""}
-              onChange={(event) => patch({ [key]: event.target.value })}
-              sx={{ flex: 1, minWidth: 0, ...fieldSx }}>
-              {target?.fields.map((name) => <MenuItem key={name} value={name}>{name}</MenuItem>)}
-            </TextField>
+            <FieldAuto value={config[key]} options={target?.fields ?? []} disabled={!target}
+              onChange={(next) => patch({ [key]: next })} />
           </Row>
         ))}
         <Row label="地址转换">

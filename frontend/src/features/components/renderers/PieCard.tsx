@@ -11,7 +11,7 @@ import { chartOf, computeOf } from "../skin/format";
 import { buildPieOption } from "../skin/pieOption";
 import type { RenderPayload, UiSpec } from "../types";
 
-export default function PieCard({ payload, ui, donut, compact, onSliceClick }: { payload: RenderPayload; ui: UiSpec; donut?: boolean; compact?: boolean; onSliceClick?: (name: string) => void }) {
+export default function PieCard({ payload, ui, donut, compact, onSliceClick, onTopList }: { payload: RenderPayload; ui: UiSpec; donut?: boolean; compact?: boolean; onSliceClick?: (name: string) => void; onTopList?: () => void }) {
   const token = accentOf(ui.accent);
   const opts = chartOf(payload.chart);
   const [boxRef, box] = useBoxSize<HTMLDivElement>();
@@ -46,7 +46,7 @@ export default function PieCard({ payload, ui, donut, compact, onSliceClick }: {
       <Box ref={boxRef} sx={{ width: "100%", height: "100%" }}>
         <ReactEChartsCore
           option={fitChart(option, box)}
-          onEvents={{ click: (params: { name?: string }) => onSliceClick?.(String(params?.name ?? "")) }}
+          onEvents={{ click: (params: { name?: string }) => { if (onTopList) onTopList(); else onSliceClick?.(String(params?.name ?? "")); } }}
           notMerge
           style={{ width: "100%", height: "100%" }}
           opts={{ renderer: "canvas" }}

@@ -155,10 +155,12 @@ export default function TableDetailSettings({ spec, onChange, columns }: Props) 
   const wcPain = useDatasetFields(detail.wordclouds?.pain?.dataset_id);
   const wcMain = useDatasetFields(detail.wordclouds?.main_sell?.dataset_id);
   const wcSub = useDatasetFields(detail.wordclouds?.sub_sell?.dataset_id);
-  /* 附加区块的关联表字段 */
+  /* 附加区块的关联表字段（每块一个 hook，不能放循环里） */
   const blkTrend = useDatasetFields(detail.blocks?.trend?.dataset_id);
   const blkReviews = useDatasetFields(detail.blocks?.reviews?.dataset_id);
   const blkSkus = useDatasetFields(detail.blocks?.skus?.dataset_id);
+  const blkSell = useDatasetFields(detail.blocks?.sell_tags?.dataset_id);
+  const blkPain = useDatasetFields(detail.blocks?.pain_tags?.dataset_id);
   /* 图片区块的关联表字段 */
   const imgMain = useDatasetFields(detail.images?.main?.dataset_id);
   const imgSku = useDatasetFields(detail.images?.sku?.dataset_id);
@@ -168,7 +170,11 @@ export default function TableDetailSettings({ spec, onChange, columns }: Props) 
   const relFieldsOf = (key: string): string[] =>
     namesOf(key === "pain" ? wcPain.groups : key === "main_sell" ? wcMain.groups : wcSub.groups);
   const blockFieldsOf = (key: string): string[] =>
-    namesOf(key === "trend" ? blkTrend.groups : key === "reviews" ? blkReviews.groups : blkSkus.groups);
+    namesOf(key === "trend" ? blkTrend.groups
+      : key === "reviews" ? blkReviews.groups
+      : key === "sell_tags" ? blkSell.groups
+      : key === "pain_tags" ? blkPain.groups
+      : blkSkus.groups);
   const imageFieldsOf = (key: string): string[] =>
     namesOf(key === "main" ? imgMain.groups : key === "sku" ? imgSku.groups : imgDetail.groups);
 

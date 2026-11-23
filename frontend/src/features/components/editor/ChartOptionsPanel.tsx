@@ -25,7 +25,7 @@ interface Props {
   spec: ComponentSpec;
   onChange: (next: ComponentSpec) => void;
   /** all = 全部（默认）；text = 只要文字部分；axis = 只要坐标轴 / 显示开关（柱状图把这块搬进「附加」用） */
-  mode?: "all" | "text" | "axis";
+  mode?: "all" | "text" | "axis" | "pie" | "prefs" | "elements";
 }
 
 export default function ChartOptionsPanel({ kind, spec, onChange, mode = "all" }: Props) {
@@ -43,18 +43,15 @@ export default function ChartOptionsPanel({ kind, spec, onChange, mode = "all" }
   if (kind === "section") return null;
 
   /** 坐标轴 / 显示开关这块要不要画（柱状图只在这里画，文字在另一处） */
-  const showAxisBlock = mode !== "text";
-  const showTextBlock = mode !== "axis";
+  const showAxisBlock = mode === "all" || mode === "axis";
+  const showPrefsBlock = mode === "all" || mode === "prefs";
+  const showTextBlock = mode === "all" || mode === "text";
 
   return (
     <Box>
-      {showTextBlock && (<>
-      {/* ── 饼图参数 ── */}
-      {isPie && (
+      {/* ── 饼图参数（环形图的「附加」用它） ── */}
+      {isPie && (mode === "all" || mode === "pie") && (
         <>
-          <Typography sx={{ fontSize: 11.5, fontWeight: 600, color: "#64748B", mb: 0.75, mt: 1.5 }}>
-            环形
-          </Typography>
           <Stack spacing={1} sx={{ mb: 1.5 }}>
             <Row label="内径 %">
               <TextField size="small" type="number" value={chart.pie_inner}
@@ -73,22 +70,22 @@ export default function ChartOptionsPanel({ kind, spec, onChange, mode = "all" }
                 {PIE_LABELS.map(([v, t]) => <MenuItem key={v} value={v} sx={{ fontSize: 12.5 }}>{t}</MenuItem>)}
               </TextField>
             </Row>
+            <Row label="文字位置">
+              <ToggleButtonGroup exclusive size="small" value={chart.label_layout || "inside"}
+                onChange={(_, v) => v !== null && setChart({ label_layout: v as "inside" | "beside" | "outside" })}
+                sx={{ ...groupSx, flex: 1, gap: 1 }}>
+                <ToggleButton value="inside" sx={{ flex: 1 }}>图形上</ToggleButton>
+                <ToggleButton value="beside" sx={{ flex: 1 }}>图形旁</ToggleButton>
+                <ToggleButton value="outside" sx={{ flex: 1 }}>图形外</ToggleButton>
+              </ToggleButtonGroup>
+            </Row>
           </Stack>
-          <Typography sx={{ fontSize: 11.5, fontWeight: 600, color: "#64748B", mb: 0.75 }}>
-            文字位置
-          </Typography>
-          <ToggleButtonGroup exclusive size="small" value={chart.label_layout || "inside"}
-            onChange={(_, v) => v !== null && setChart({ label_layout: v as "inside" | "beside" | "outside" })}
-            sx={{ ...groupSx, mb: 2 }}>
-            <ToggleButton value="inside">图形上</ToggleButton>
-            <ToggleButton value="beside">图形旁</ToggleButton>
-            <ToggleButton value="outside">图形外</ToggleButton>
-          </ToggleButtonGroup>
         </>
       )}
 
-      {/* ── 文字：卡片标题 / 右上说明 / 系列名 / 轴标题 —— 所有「可改名字」的地方收在同一组 ── */}
-      <PanelSection title="文字" collapsible defaultOpen={false}>
+      {showTextBlock && (<>
+        {/* ── 文字：卡片标题 / 右上说明 / 系列名 / 轴标题 —— 所有「可改名字」的地方收在同一组 ── */}
+        <PanelSection title="文字" collapsible defaultOpen={false}>
         <Stack spacing={1}>
           <Row label="卡片标题">
             <TextField size="small" value={spec.title}
@@ -171,22 +168,25 @@ export default function ChartOptionsPanel({ kind, spec, onChange, mode = "all" }
             </Row>
           </Stack>
         </PanelSection>
-      )}
+        )}
+      </>)}
 
-      {isCombo && (
-        <PanelSection title="柱 · 线">
-          <Stack direction="row" spacing={1}>
-            <ToggleButton value="axis" size="small" selected={combo.right_axis}
-              onChange={() => setCombo({ right_axis: !combo.right_axis })}
-              sx={groupSx["& .MuiToggleButton-root"]}>右轴</ToggleButton>
-            <ToggleButton value="smooth" size="small" selected={combo.smooth}
-              onChange={() => setCombo({ smooth: !combo.smooth })}
-              sx={groupSx["& .MuiToggleButton-root"]}>曲线平滑</ToggleButton>
-          </Stack>
+      {isCombo && showPrefsBlock && (
+        <PanelSection title="首选项">
+          <Row label="柱 / 线">
+            <Box sx={{ flex: 1, minWidth: 0, display: "flex", gap: 1 }}>
+              <ToggleButton value="axis" size="small" selected={combo.right_axis}
+                onChange={() => setCombo({ right_axis: !combo.right_axis })}
+                sx={groupSx["& .MuiToggleButton-root"]}>右轴</ToggleButton>
+              <ToggleButton value="smooth" size="small" selected={combo.smooth}
+                onChange={() => setCombo({ smooth: !combo.smooth })}
+                sx={groupSx["& .MuiToggleButton-root"]}>曲线平滑</ToggleButton>
+            </Box>
+          </Row>
+          {/* 组件元素并进「首选项」，不再单独占一行标题 */}
+          <ChartOptionsPanel kind={kind} spec={spec} onChange={onChange} mode="elements" />
         </PanelSection>
       )}
-
-      </>)}
 
       {/* ── 坐标轴（柱/线/散点/热力/组合） ── */}
       {showAxisBlock && isAxis && (
@@ -236,8 +236,9 @@ export default function ChartOptionsPanel({ kind, spec, onChange, mode = "all" }
       )}
 
       {/* ── 显示开关（只列该图适用的；明细表没有数值标签/图例） ── */}
-      {(showAxisBlock && (isAxis || isPie)) && (
-      <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap", gap: 1 }}>
+      {((mode === "elements") || (showPrefsBlock && isAxis && !(isCombo && mode === "prefs")) || ((mode === "all" || mode === "pie") && isPie)) && (
+      <Row label="组件元素" mb={0}>
+      <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexWrap: "wrap", gap: 1 }}>
         <ToggleButton
           value="title" size="small" selected={chart.show_title !== false}
           onChange={() => setChart({ show_title: chart.show_title === false })}
@@ -284,7 +285,7 @@ export default function ChartOptionsPanel({ kind, spec, onChange, mode = "all" }
             趋势线
           </ToggleButton>
         )}
-        {isPie && (
+        {(isPie && (mode === "all" || mode === "pie")) && (
           <ToggleButton
             value="gap" size="small" selected={chart.pie_gap}
             onChange={() => setChart({ pie_gap: !chart.pie_gap })}
@@ -293,7 +294,7 @@ export default function ChartOptionsPanel({ kind, spec, onChange, mode = "all" }
             分隔
           </ToggleButton>
         )}
-        {isPie && (
+        {(isPie && (mode === "all" || mode === "pie")) && (
           <ToggleButton
             value="rose" size="small" selected={chart.pie_rose}
             onChange={() => setChart({ pie_rose: !chart.pie_rose })}
@@ -302,7 +303,8 @@ export default function ChartOptionsPanel({ kind, spec, onChange, mode = "all" }
             玫瑰图
           </ToggleButton>
         )}
-      </Stack>
+      </Box>
+      </Row>
       )}
     </Box>
   );

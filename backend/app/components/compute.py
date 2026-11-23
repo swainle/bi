@@ -231,17 +231,21 @@ def build_payload(kind: str, rows: list[dict], spec: ComponentSpec) -> dict:
     if kind == "wordcloud" and spec.binding.split:
         exploded = explode_tokens(rows, spec.binding.split)
         # 选词：按出现次数取前 N（词集稳定）；展示：按权重从大到小
-        kept = sorted(exploded[: spec.binding.top_n], key=lambda it: it.get("value") or 0, reverse=True)
+        kept = sorted(exploded[: spec.binding.top_n], key=lambda it: _num(it.get("value")), reverse=True)
+        kept = [{**item, "value": _num(item.get("value"))} for item in kept]
         payload["series"] = kept
-        total = sum(item.get("value") or 0 for item in kept)
+        total = sum(item["value"] for item in kept)
         payload["total"] = total
-        payload["top_share"] = _pct(kept[0].get("value") or 0, total) if kept else 0
+        payload["top_share"] = _pct(kept[0]["value"], total) if kept else 0
         return payload
 
+    # 数值列经驱动可能以字符串返回（numeric / decimal 尤其常见）：统一转成数字，
+    # 否则 sum() 会撞上「int + str」，饼图 / 环形图整张卡直接报错。
+    series = [{**item, "value": _num(item.get("value"))} for item in series]
     payload["series"] = series[: spec.binding.top_n]
-    total = sum(item.get("value") or 0 for item in series)
+    total = sum(item["value"] for item in series)
     payload["total"] = total
-    payload["top_share"] = _pct(series[0].get("value") or 0, total) if series else 0
+    payload["top_share"] = _pct(series[0]["value"], total) if series else 0
     return payload
 
 
