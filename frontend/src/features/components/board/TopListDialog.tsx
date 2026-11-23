@@ -23,13 +23,13 @@ export default function TopListDialog({ open, onClose, payload, sortField = "", 
   sort?: SortDir;
 }) {
   const initialSort = sortField && sort ? { key: sortField, desc: sort === "desc" } : null;
-  /* 点哪个扇区 / 柱子，就只看那一行对应的明细 */
-  const shown = payload && filter?.column && filter.value
-    ? {
-      ...payload,
-      rows: (payload.rows ?? []).filter((row) => String((row as Record<string, unknown>)[filter.column] ?? "") === filter.value),
-    }
-    : payload;
+  /* 点哪个扇区 / 柱子，就只看那一行对应的明细。
+     明细表里没有这一列（或值对不上）时退回全量，别弹一个空表。 */
+  const allRows = payload?.rows ?? [];
+  const matched = payload && filter?.column && filter.value
+    ? allRows.filter((row) => String((row as Record<string, unknown>)[filter.column] ?? "") === filter.value)
+    : allRows;
+  const shown = payload && matched.length > 0 ? { ...payload, rows: matched } : payload;
   return (
     <Dialog
       open={open}
@@ -46,6 +46,14 @@ export default function TopListDialog({ open, onClose, payload, sortField = "", 
       }}
     >
       <Box sx={{ width: "92vw", maxWidth: 1400, height: "82vh", mx: "auto", pointerEvents: "auto" }}>
+        {shown && filter?.column && filter.value && matched.length > 0 && (
+          <Box data-top-filter={`${filter.column}=${filter.value}`}
+            sx={{ mb: 0.5, display: "inline-flex", alignItems: "center", gap: 0.75,
+              px: 1.25, py: 0.35, borderRadius: 999, bgcolor: "rgba(79,70,229,0.08)",
+              fontSize: 11.5, color: "#4F46E5", pointerEvents: "none" }}>
+            {filter.column} = {filter.value}
+          </Box>
+        )}
         {shown ? <TableCard payload={shown} ui={tableUi} initialSort={initialSort} /> : null}
       </Box>
     </Dialog>

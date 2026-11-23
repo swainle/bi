@@ -959,12 +959,11 @@ export default function DashboardPage() {
                                 window.scrollTo({ top: 0, behavior: "smooth" });
                               }
                             }}
-                            onTopList={payload.top?.enabled ? (name?: string) => {
+                            onTopList={payload.top?.enabled ? (name?: string, column?: string) => {
                               const top = payload.top as { table_key?: string; sort_field?: string; sort?: SortDir } | undefined;
                               setTopSort({ field: String(top?.sort_field || ""), sort: top?.sort ?? "" });
-                              setTopFilter(name
-                                ? { column: String(item.spec?.binding?.dimension || ""), value: name }
-                                : null);
+                              const key = String(column || item.spec?.binding?.dimension || (item.spec?.binding?.dimensions ?? [])[0] || "");
+                              setTopFilter(name && key ? { column: key, value: name } : null);
                               setTopKey(String(top?.table_key || ""));
                             } : undefined}
                             onExport={payload.kind === "table" && typeof item.spec?.binding?.dataset_id === "number"

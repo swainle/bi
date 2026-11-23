@@ -15,7 +15,7 @@ interface Props {
   ui: UiSpec;
   compact?: boolean;
   /** 点柱/线弹出指定明细表（和环形图、指标卡徽标弹窗同一套） */
-  onTopList?: (name?: string) => void;
+  onTopList?: (name?: string, column?: string) => void;
 }
 
 export default function ComboCard({ payload, ui, compact, onTopList }: Props) {
@@ -129,7 +129,7 @@ export default function ComboCard({ payload, ui, compact, onTopList }: Props) {
     >
       <Box ref={boxRef} sx={{ width: "100%", height: "100%" }}>
         <ReactEChartsCore option={fitChart(option, box)} notMerge
-          onEvents={onTopList ? { click: (params: { name?: string }) => onTopList(String(params?.name ?? "")) } : undefined}
+          onEvents={onTopList ? { click: (params: { name?: string }) => onTopList(String(params?.name ?? ""), String(payload.dimension_label ?? "")) } : undefined}
           style={{ width: "100%", height: "100%" }} opts={{ renderer: "canvas" }} />
       </Box>
     </CardShell>

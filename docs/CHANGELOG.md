@@ -7,6 +7,30 @@
 > 交付顺序：改代码 → `tsc --noEmit` → 真机截图自检（对齐 / 折行 / 溢出 / 空态）→ 写这里。
 
 ---
+## 2026-11-23 · 修复：点击弹窗的过滤真的生效了（并加可见标记）
+
+- 排查结论：过滤逻辑本身没问题，**问题是弹窗那张明细表里没有图表用的维度列**（doc5 的 `tt_table` 没有 `platform_code`），
+  过滤命中 0 行 → 上一版为了不弹空表退回全量 → 看起来「没筛选」。
+- 现在：过滤生效时弹窗顶部显示一枚小胶囊 `week_key = 2026-W47`，一眼能看出「这次是按什么筛的」；
+  命中 0 行仍退回全量（避免空表）。
+- **文件**：`frontend/src/features/components/board/TopListDialog.tsx`（另有 PieCard / ComboCard 上报列名、DashboardPage 兜底）。
+- **怎么验证**：doc5 临时环形图（维度 `week_key`，`top.table_key=tt_table`，验完已还原）—— 实际点击扇区后
+  胶囊显示 `week_key = 2026-W47`，弹窗表格只出现该周的行（每页 10 条）。`tsc --noEmit` 0。
+
+---
+## 2026-11-23 · 修复：点图表弹窗没有按点击值过滤明细表
+
+- **过滤列来源改稳**：原来取 `item.spec.binding.dimension`（可能为空），现在由卡片自己报渲染用的列
+  （`payload.dimension_label`），页面再用 `dimension / dimensions[0]` 兜底。
+- **明细表没有这一列时退回全量**：过滤后 0 行就显示全部，不再弹一个空表
+  （实测 doc5 的 `tt_table` 列是 `item_id / product_title / bad_cnt_30d / daily_deal / week_key / listed_date …`，
+  **没有 `platform_code`** —— 用环形图的 `platform_code` 去过滤必然 0 行）。
+- **文件**：`renderers/PieCard.tsx`、`renderers/ComboCard.tsx`、`viewer/DashboardPage.tsx`、`board/TopListDialog.tsx`。
+- **怎么验证**：`tsc --noEmit` 0；`/render` 实测 `pie.dimension_label = platform_code`、`tt_table.rows[0]` 的列名如上（无 platform_code）。
+  ⚠️ 画布点击我的自动化点不到（canvas 坐标不稳），需要你点一下确认；要真正看到过滤效果，
+  弹窗指向的明细表里必须**有和图表相同的维度列**（例如都按 `week_key`）。
+
+---
 ## 2026-11-23 · 修复：组合图折线 Y 轴刻度不显示 + 删除「不受筛选器影响」
 
 - **组合图右轴刻度**：`yAxis[1]` 少了 `position: "right"`，ECharts 会把它叠在左轴上，看起来「没有刻度」。
