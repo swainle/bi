@@ -624,6 +624,11 @@ class ChartSpec(BaseModel):
     tooltip_keys: list[str] = []      # （旧）提示框里额外显示的指标，等价于 extras 的简写
     # 附加字段：面板里「＋ 添加」出来的行，每行 = 说明 + 绑定字段；不限数量（上限 20 防手滑）
     extras: list[dict] = []
+    # 机会分口径：auto = 固定公式；field = 直接用数据集里的字段；custom = 三个分量自绑字段 + 权重
+    score_mode: Literal["auto", "field", "custom"] = "auto"
+    score_key: str = ""               # score_mode=field 时用的字段
+    score_fields: dict = {}           # {"v": 人气字段, "cvr": 转化字段, "ds": 需求字段}
+    score_weights: dict = {}          # {"v": 0.45, "cvr": 0.30, "ds": 0.25}
 
     # ── 饼图 / 环形图专属 ──
     # 饼/环文字位置：图形上 / 图形旁（无引导线）/ 图形外（带引导线）

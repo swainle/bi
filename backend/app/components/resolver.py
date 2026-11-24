@@ -153,6 +153,33 @@ def _prune_aux_refs(spec: ComponentSpec, allowed: set[str]) -> ComponentSpec:
     if chart_patch:
         chart = chart.model_copy(update=chart_patch)
         touched = True
+    # 附加字段（散点提示框里的「说明 + 字段」）与旧的 tooltip_keys 也按同一口径降级
+    extras = [row for row in (chart.extras or [])
+              if isinstance(row, dict) and not missing(str(row.get("key") or ""))]
+    if len(extras) != len(chart.extras or []):
+        chart = chart.model_copy(update={"extras": extras})
+        touched = True
+    tooltip_keys = [key for key in (chart.tooltip_keys or []) if not missing(key)]
+    if len(tooltip_keys) != len(chart.tooltip_keys or []):
+        chart = chart.model_copy(update={"tooltip_keys": tooltip_keys})
+        touched = True
+    # 机会分口径：绑的字段没了就退回「自动计算」，别让整张卡报未知字段
+    score_fields = {k: v for k, v in (chart.score_fields or {}).items() if not missing(str(v or ""))}
+    score_key = "" if missing(chart.score_key) else chart.score_key
+    score_mode = chart.score_mode
+    if score_mode == "field" and not score_key:
+        score_mode = "auto"
+    if score_fields != (chart.score_fields or {}) or score_key != chart.score_key or score_mode != chart.score_mode:
+        chart = chart.model_copy(update={"score_fields": score_fields, "score_key": score_key, "score_mode": score_mode})
+        touched = True
+    # 附加指标（binding.metrics）：换绑数据集后旧字段名残留最容易踩这里 ——
+    # 例如「榜单端」的 rank_position / final_price 留在「词级」数据集上，整张卡变成一条红字报错
+    binding = spec.binding
+    kept_metrics = [m for m in (binding.metrics or [])
+                    if not missing(str((m.get("name") if isinstance(m, dict) else m) or ""))]
+    if len(kept_metrics) != len(binding.metrics or []):
+        binding = binding.model_copy(update={"metrics": kept_metrics})
+        touched = True
     rank_patch = {key: "" for key in ("value_key", "x_key", "y_key", "cvr_key", "tags_key")
                   if missing(getattr(rank, key, ""))}
     if rank_patch:
@@ -160,7 +187,7 @@ def _prune_aux_refs(spec: ComponentSpec, allowed: set[str]) -> ComponentSpec:
         touched = True
     if not touched:
         return spec
-    return spec.model_copy(update={"table_view": view, "chart": chart, "rank": rank})
+    return spec.model_copy(update={"table_view": view, "chart": chart, "rank": rank, "binding": binding})
 
 
 def _extra_metric_names(spec: ComponentSpec) -> list[str]:
@@ -173,7 +200,8 @@ def _extra_metric_names(spec: ComponentSpec) -> list[str]:
         if key:
             names.append(key)
     extra_keys = [str(row.get("key") or "") for row in (chart.extras or []) if isinstance(row, dict)]
-    for key in (chart.x_key, chart.y_key, chart.size_key, *(chart.tooltip_keys or []), *extra_keys):
+    score_keys = [str(chart.score_key or ""), *[str(v or "") for v in (chart.score_fields or {}).values()]]
+    for key in (chart.x_key, chart.y_key, chart.size_key, *(chart.tooltip_keys or []), *extra_keys, *score_keys):
         if key:
             names.append(key)
     return [n for n in dict.fromkeys(names) if n]
@@ -224,11 +252,13 @@ def _request_for(spec: ComponentSpec, kind: str) -> dict:
         for name in _extra_metric_names(spec):
             if all(m["name"] != name for m in metrics) and name != b.dimension:
                 metrics.append({"name": name, "agg": aggs.get(name, "MAX")})
-    # 散点的 Y 轴就是主指标时，面板里选的 Y 聚合要能覆盖指标本身的聚合
-    if kind == "scatter" and spec.chart.y_key and spec.chart.y_agg in AGGREGATES:
-        for item in metrics:
-            if item["name"] == spec.chart.y_key:
-                item["agg"] = spec.chart.y_agg
+    # 散点的 X / Y 轴字段如果就是主指标，面板里选的聚合要能覆盖指标本身的聚合
+    if kind == "scatter":
+        for axis_key, axis_agg in ((spec.chart.x_key, spec.chart.x_agg), (spec.chart.y_key, spec.chart.y_agg)):
+            if axis_key and axis_agg in AGGREGATES:
+                for item in metrics:
+                    if item["name"] == axis_key:
+                        item["agg"] = axis_agg
 
     order_by: list[dict] = []
     if kind == "table" and b.sort_field:

@@ -104,3 +104,48 @@ def test_scatter_axis_aggregations():
         "chart": {"x_key": "均价", "x_agg": "不存在的聚合"},
     })
     assert scatter_aggs(broken)["均价"] == "MAX"      # 非法值回落，不让 500 冒出来
+
+
+def test_score_field_mode_uses_dataset_column():
+    """「用数据字段」：机会分直接取该列的值（夹到 0~100），象限照旧按两条轴."""
+    rows = [
+        {"关键词": "A", "人气": 9000, "供需比": 9000, "分值": 88},
+        {"关键词": "B", "人气": 200, "供需比": 100, "分值": 12},
+        {"关键词": "C", "人气": 8000, "供需比": 3000, "分值": 260},
+    ]
+    spec = validate_spec("scatter", {
+        "title": "T", "binding": {"dimension": "关键词", "metric": "人气"},
+        "chart": {"scatter_mode": "quadrant", "x_key": "人气", "y_key": "供需比",
+                  "score_mode": "field", "score_key": "分值"},
+    })
+    out = build_scatter(rows, spec)
+    assert [p["score"] for p in out["series"]] == [88, 12, 100]      # 260 被夹到 100
+
+
+def test_score_custom_mode_uses_own_fields_and_keeps_quadrants():
+    """「自定义三项」：分量字段和权重由面板决定，但象限仍然按画出来的 X/Y 轴判定."""
+    rows = [
+        {"关键词": "A", "人气": 5000, "供需比": 9000, "转化": 1.5, "热度": 30},
+        {"关键词": "B", "人气": 200, "供需比": 100, "转化": 0.2, "热度": 90},
+        {"关键词": "C", "人气": 8000, "供需比": 3000, "转化": 6.0, "热度": 60},
+    ]
+    base = {"title": "T", "binding": {"dimension": "关键词", "metric": "人气"},
+            "chart": {"scatter_mode": "quadrant", "x_key": "供需比", "y_key": "人气"}}
+    auto = build_scatter(rows, validate_spec("scatter", base))
+    custom = build_scatter(rows, validate_spec("scatter", {
+        **base, "chart": {**base["chart"], "score_mode": "custom",
+                          "score_fields": {"v": "热度", "cvr": "转化", "ds": "供需比"},
+                          "score_weights": {"v": 0.6, "cvr": 0.3, "ds": 0.1}},
+    }))
+    assert [p["quad"] for p in custom["series"]] == [p["quad"] for p in auto["series"]]
+    assert [p["score"] for p in custom["series"]] != [p["score"] for p in auto["series"]]
+
+
+def test_score_auto_mode_is_default():
+    rows = [{"关键词": "A", "人气": 10, "供需比": 10}]
+    spec = validate_spec("scatter", {
+        "title": "T", "binding": {"dimension": "关键词", "metric": "人气"},
+        "chart": {"scatter_mode": "quadrant", "x_key": "人气", "y_key": "供需比"},
+    })
+    assert spec.chart.score_mode == "auto"
+    assert build_scatter(rows, spec)["series"][0]["score"] >= 0

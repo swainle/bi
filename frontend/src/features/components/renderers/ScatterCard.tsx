@@ -8,6 +8,7 @@ import { AXIS, TOOLTIP } from "../skin/tokens";
 import { fitChart } from "../skin/CardFit";
 import { useBoxSize } from "../skin/useBoxSize";
 import { chartOf, formatAxis } from "../skin/format";
+import { scatterTipLines } from "../skin/scatterTip";
 import type { RenderPayload, ScatterPoint, UiSpec } from "../types";
 
 const QUAD_COLOR: Record<string, string> = {
@@ -123,19 +124,15 @@ export default function ScatterCard({ payload, ui, compact }: { payload: RenderP
       trigger: "item",
       ...TOOLTIP,
       className: "mcbi-scatter-tip",
-      formatter: (p: { data: { name?: string; value: [number, number]; quad?: string; score?: number; sizeValue?: number; extras?: { label: string; key: string; value: number }[] } }) => {
-        const [x, y] = p.data.value;
-        const lines = [`<b>${p.data.name ?? ""}</b>`,
-          `${xLabel || "x"}：${formatAxis(x, opts)}`,
-          `${yLabel || "y"}：${formatAxis(y, opts)}`];
-        if (p.data.sizeValue !== undefined) lines.push(`${opts.size_key || "气泡"}：${formatAxis(p.data.sizeValue, opts)}`);
-        /* 面板里「＋ 添加」的附加字段：一行一个，说明在前、数值在后 */
-        for (const row of p.data.extras ?? []) {
-          lines.push(`${row.label || row.key}：${formatAxis(Number(row.value), opts)}`);
-        }
-        if (p.data.quad) lines.push(`${QUAD_LABEL[p.data.quad] ?? p.data.quad} · 机会分 ${p.data.score ?? "-"}`);
-        return lines.join("<br/>");
-      },
+      formatter: (p: { data: { name?: string; value: [number, number]; quad?: string; score?: number; sizeValue?: number; extras?: { label: string; key: string; value: number }[] } }) => scatterTipLines(
+        { name: p.data.name, x: p.data.value[0], y: p.data.value[1], quad: p.data.quad, score: p.data.score,
+          sizeValue: p.data.sizeValue, extras: p.data.extras },
+        {
+          xLabel: xLabel || "", yLabel: yLabel || "", sizeKey: opts.size_key, xKey: opts.x_key, yKey: opts.y_key,
+          format: (value) => formatAxis(value, opts),
+          quadLabel: (quad) => (quad ? QUAD_LABEL[quad] ?? quad : ""),
+        },
+      ).join("<br/>"),
     },
     xAxis: {
       type: logX ? "log" : "value",

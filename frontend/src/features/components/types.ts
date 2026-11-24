@@ -373,6 +373,11 @@ export interface ChartSpec {
   tooltip_keys: string[];
   /** 附加字段：面板「＋ 添加」出来的行，每行 = 说明 + 绑定字段，不限数量 */
   extras: { label: string; key: string }[];
+  /** 机会分口径：auto = 固定公式；field = 直接用数据字段；custom = 三项自绑字段 + 权重 */
+  score_mode: "auto" | "field" | "custom";
+  score_key: string;
+  score_fields: Record<string, string>;
+  score_weights: Record<string, number>;
   /** 饼图 */
   /** 饼/环文字位置：图形上（inside）/ 图形旁（beside，无引导线）/ 图形外（outside，带引导线） */
   label_layout: "inside" | "beside" | "outside";

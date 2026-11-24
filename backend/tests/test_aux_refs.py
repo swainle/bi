@@ -71,3 +71,39 @@ def test_stale_table_columns_are_dropped() -> None:
 def test_no_field_list_returns_spec_untouched() -> None:
     spec = _table()
     assert _prune_aux_refs(spec, set()) is spec
+
+
+def test_stale_extra_metrics_extras_and_tooltip_keys_are_dropped() -> None:
+    """换绑数据集后「附加指标 / 附加字段 / 提示框字段」残留：降级成少几列，而不是整卡报错.
+
+    2026-11-24 实测：散点从「榜单端」复制到「词级」数据集，`rank_position / final_price`
+    还留在 binding.metrics 里 → 整张卡只显示「未知字段：rank_position（数据集 …）」。
+    """
+    spec = validate_spec("scatter", {
+        "title": "需求 × 供给",
+        "binding": {
+            "dataset_id": 17, "dimension": "关键词", "metric": "人气",
+            "metrics": [{"name": "排名", "agg": "MAX"}, {"name": "人气", "agg": "SUM"}],
+        },
+        "chart": {
+            "x_key": "人气", "size_key": "转化",
+            "extras": [{"label": "转化率", "key": "转化"}, {"label": "旧", "key": "排名"}],
+            "tooltip_keys": ["排名", "转化"],
+        },
+    })
+    pruned = _prune_aux_refs(spec, {"关键词", "人气", "转化"})
+    assert [m["name"] for m in pruned.binding.metrics] == ["人气"]
+    assert [row["key"] for row in pruned.chart.extras] == ["转化"]
+    assert pruned.chart.tooltip_keys == ["转化"]
+    assert pruned.chart.x_key == "人气" and pruned.chart.size_key == "转化"
+
+
+def test_primary_bindings_are_left_to_the_compiler() -> None:
+    """维度 / 指标是用户显式绑定的口径：不静默改掉，仍然交给 compiler 报「未知字段」."""
+    spec = validate_spec("bar", {
+        "title": "柱",
+        "binding": {"dataset_id": 17, "dimension": "不存在的维度", "metric": "不存在的指标"},
+    })
+    pruned = _prune_aux_refs(spec, {"关键词", "人气"})
+    assert pruned.binding.dimension == "不存在的维度"
+    assert pruned.binding.metric == "不存在的指标"

@@ -348,26 +348,46 @@ def opportunity_scores(
         if not cvr_key:
             # 气泡选的是「人气」这类量级指标时，机会分里的转化率应该另取一列
             cvr_key = next((key for key in (chart.tooltip_keys or []) if "转化" in key), "")
+    mode = chart.score_mode or "auto"
+    custom = chart.score_fields or {}
     weights = {**DEFAULT_WEIGHTS, **{k: float(v) for k, v in (rank.weights or {}).items()}}
-    xs = [_num(r.get(x_key)) for r in rows]
-    ys = [_num(r.get(y_key)) for r in rows] if y_key else [0.0] * len(rows)
-    med_x, med_y = _median(xs), _median(ys)
+    weights = {key: float(value) for key, value in {**weights, **{
+        k: v for k, v in (chart.score_weights or {}).items() if k in weights
+    }}.items()}
+    # 自定义口径：三个分量各自绑字段（没绑的沿用自动口径的字段）；象限仍按**画出来的两条轴**判定
+    score_x, score_y, score_cvr = x_key, y_key, cvr_key
+    if mode == "custom":
+        score_x = str(custom.get("v") or x_key or "")
+        score_y = str(custom.get("ds") or y_key or "")
+        score_cvr = str(custom.get("cvr") or cvr_key or "")
+    axis_x = [_num(r.get(x_key)) for r in rows]
+    axis_y = [_num(r.get(y_key)) for r in rows] if y_key else [0.0] * len(rows)
+    med_x, med_y = _median(axis_x), _median(axis_y)
     # 面板里手填的阈值优先；没填就按本页中位数
     th_x = chart.quad_x if chart.quad_x is not None else med_x
     th_y = chart.quad_y if chart.quad_y is not None else med_y
-    max_x = max(xs) if xs else 1
-    max_y = max(ys) if ys else 1
+    vals = [_num(r.get(score_x)) for r in rows] if score_x else [0.0] * len(rows)
+    demands = [_num(r.get(score_y)) for r in rows] if score_y else [0.0] * len(rows)
+    max_v = max(vals) if vals else 1
+    max_ds = max(demands) if demands else 1
+    fixed_key = chart.score_key if mode == "field" else ""
     out = []
-    for row, v, ds in zip(rows, xs, ys):
-        cvr = _num(row.get(cvr_key)) if cvr_key else 0.0
-        score = 100 * (
-            weights["v"] * ((v / max_x) ** 0.5 if max_x else 0)
-            + weights["cvr"] * min(1.0, cvr / 40)
-            + weights["ds"] * (math.log10(1 + ds) / math.log10(1 + max_y) if max_y else 0)
-        )
-        out.append({"score": round(score), "quad": quadrant_of(v, ds, th_x, th_y)})
+    for index, row in enumerate(rows):
+        if fixed_key:
+            # 「用字段」：数据集里已经算好的机会分，直接用（夹到 0~100，别让脏数据破坏排序）
+            score = max(0.0, min(100.0, _num(row.get(fixed_key))))
+        else:
+            cvr = _num(row.get(score_cvr)) if score_cvr else 0.0
+            v, ds = vals[index], demands[index]
+            score = 100 * (
+                weights["v"] * ((v / max_v) ** 0.5 if max_v else 0)
+                + weights["cvr"] * min(1.0, cvr / 40)
+                + weights["ds"] * (math.log10(1 + ds) / math.log10(1 + max_ds) if max_ds else 0)
+            )
+        out.append({"score": round(score),
+                    "quad": quadrant_of(axis_x[index], axis_y[index], th_x, th_y)})
     return {"scores": out, "med_x": med_x, "med_y": med_y,
-            "th_x": th_x, "th_y": th_y,
+            "th_x": th_x, "th_y": th_y, "score_mode": mode,
             "counts": {q: sum(1 for x in out if x["quad"] == q) for q in QUAD_RANK}}
 
 
