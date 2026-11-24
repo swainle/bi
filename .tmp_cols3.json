@@ -1,0 +1,20 @@
+[
+ {
+  "key": "category_theme",
+  "type": "text",
+  "tag_split": " ",
+  "value_colors": {
+   "猫零食猫零食": "#0F172A"
+  },
+  "color": ""
+ },
+ {
+  "key": "item_id",
+  "type": "tag",
+  "tag_split": "00",
+  "value_colors": {
+   "1": "#10B981"
+  },
+  "color": ""
+ }
+]

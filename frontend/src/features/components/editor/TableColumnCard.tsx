@@ -6,14 +6,17 @@
  */
 
 import { useState, type ReactNode } from "react";
-import { Box, IconButton, MenuItem, Select, TextField, ToggleButton, ToggleButtonGroup, Typography } from "@mui/material";
+import { Box, IconButton, MenuItem, Popover, Select, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography } from "@mui/material";
 import { Close, ExpandMore } from "@mui/icons-material";
 import type { TableColumn } from "../types";
 import { AxisInput } from "./AxisInput";
-import { ColorSwatches } from "./ColorSwatches";
+import { ColorSwatches, COLUMN_COLORS } from "./ColorSwatches";
 import { GROUP_CARD_SX } from "./PanelSection";
 import { Row, fieldSx } from "./Row";
 import { COLUMN_FORMATS, parseFormat, sampleOf } from "../skin/patternFormat";
+
+/** 标签按值配色可选的内置颜色（复用列颜色的 7 个实色，去掉「默认」） */
+const TAG_COLORS = COLUMN_COLORS.filter((item) => item.value).map((item) => item.value);
 
 const TYPES: { value: TableColumn["type"]; label: string }[] = [
   { value: "text", label: "文本" },
@@ -79,7 +82,22 @@ export function TableColumnCard({
   const rows = Math.max(1, Number(column.rows) || 1);
   const title = column.label || name;
   const summary = `${TYPE_LABEL[column.type] ?? "文本"} · ${column.width ? `${column.width}px` : "宽度自动"}`;
-  /* 旧文档里的枚举格式（int / w / pct…）不在新下拉里，补一项显示出来 */
+  /** 标签列「按值配色」：每行 = 标签文本 + 内置色板选的颜色 */
+  const valueColorRows = Object.entries(column.value_colors ?? {}) as [string, string][];
+  const writeValueColors = (rows: [string, string][]) =>
+    onPatch({ value_colors: Object.fromEntries(rows.filter(([text]) => text)) });
+  const setValueText = (index: number, next: string) => {
+    const rows: [string, string][] = [...valueColorRows];
+    rows[index] = [next.trim().slice(0, 20), rows[index]?.[1] ?? TAG_COLORS[0]];
+    writeValueColors(rows);
+  };
+  const setValueColorAt = (index: number, color: string) => {
+    const rows: [string, string][] = [...valueColorRows];
+    if (!rows[index]) return;
+    rows[index] = [rows[index][0], color];
+    writeValueColors(rows);
+  };
+  const [picker, setPicker] = useState<{ anchor: HTMLElement; index: number } | null>(null);
   const legacyFormat: { value: string; label: string; sample?: string }[] = column.format
     && parseFormat(column.format) === null
     && !FORMATS.some((item) => item.value === column.format)
@@ -239,6 +257,71 @@ export function TableColumnCard({
             />
             <Box sx={{ fontSize: 10.5, color: "#94A3B8", ml: 0.5 }}>0 = 自动</Box>
           </Row>
+
+          {/* 标签列：按值配色（标签文本 → 内置色板里的颜色） */}
+          {column.type === "tag" ? (
+            <>
+              <Box sx={{ mt: 1, mb: 0.75, fontSize: 11.5, fontWeight: 600, color: "#64748B" }}>按值配色</Box>
+              {valueColorRows.map(([text, color], index) => (
+                <Stack key={index} direction="row" spacing={0.75} alignItems="center"
+                  sx={{ mb: 0.75 }} data-slot="tag-color-row">
+                  <TextField
+                    size="small" placeholder="标签文本" value={text}
+                    onChange={(event) => setValueText(index, event.target.value)}
+                    inputProps={{ maxLength: 20 }}
+                    sx={fieldSx}
+                  />
+                  <Box
+                    data-slot="tag-color-pick"
+                    title="选颜色"
+                    onClick={(event) => setPicker({ anchor: event.currentTarget, index })}
+                    sx={{
+                      width: 28, height: 28, flexShrink: 0, cursor: "pointer",
+                      bgcolor: color || TAG_COLORS[0], borderRadius: "6px",
+                      border: "1px solid rgba(15,23,42,0.08)",
+                      "&:hover": { boxShadow: "0 0 0 2px #E2E8F0" },
+                    }}
+                  />
+                  <IconButton size="small" title="删除这行"
+                    onClick={() => writeValueColors(valueColorRows.filter((_, i) => i !== index))}>
+                    <Close sx={{ fontSize: 15 }} />
+                  </IconButton>
+                </Stack>
+              ))}
+              <Box
+                onClick={() => onPatch({ value_colors: { ...(column.value_colors ?? {}), "": TAG_COLORS[0] } })}
+                data-slot="tag-color-add"
+                sx={{
+                  mt: 0.5, px: 1.25, py: 0.75, fontSize: 11.5, color: "#6366F1", textAlign: "center",
+                  border: "1px dashed #C7D2FE", borderRadius: "8px", cursor: "pointer",
+                  "&:hover": { borderColor: "#A5B4FC", bgcolor: "rgba(99,102,241,0.04)" },
+                }}
+              >
+                ＋ 添加一行
+              </Box>
+              <Popover
+                open={Boolean(picker)}
+                anchorEl={picker?.anchor ?? null}
+                onClose={() => setPicker(null)}
+                anchorOrigin={{ vertical: "bottom", horizontal: "left" }}
+              >
+                <Box sx={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 0.75, p: 1 }}>
+                  {TAG_COLORS.map((color) => (
+                    <Box
+                      key={color}
+                      data-color={color}
+                      onClick={() => { if (picker) setValueColorAt(picker.index, color); setPicker(null); }}
+                      sx={{
+                        width: 22, height: 22, borderRadius: "999px", bgcolor: color, cursor: "pointer",
+                        border: "1px solid rgba(15,23,42,0.08)",
+                        "&:hover": { boxShadow: "0 0 0 2px #fff, 0 0 0 3px #6366F1" },
+                      }}
+                    />
+                  ))}
+                </Box>
+              </Popover>
+            </>
+          ) : null}
         </>
       ) : null}
     </Box>

@@ -184,6 +184,8 @@ export interface TableColumn {
   format?: string;
   /** 列级文字颜色（#RRGGBB）；空 = 表格默认灰 */
   color?: string;
+  /** 标签列「按值配色」：{标签文本: #RRGGBB}；没命中的回落 color */
+  value_colors?: Record<string, string>;
   /** 文本最多显示几行（1~4，超出省略）；空/1 = 单行省略 */
   rows?: number;
   tag_split?: string;

@@ -67,3 +67,16 @@ def test_link_type_is_kept():
     assert out[0]["type"] == "link"
     assert "link" in COLUMN_TYPES
     assert normalize_columns([{"key": "x", "type": "link"}])[0]["type"] == "link"
+
+
+
+
+def test_tag_value_colors_are_normalized():
+    """标签列「按值配色」：合法 hex 保留，非法颜色 / 空键丢掉，最多 20 条."""
+    out = normalize_columns([{
+        "key": "标签", "type": "tag",
+        "value_colors": {"人气": "#E11D48", "相关": "red", "": "#0EA5E9", " 热销 ": "#10B981"},
+    }])
+    assert out[0]["value_colors"] == {"人气": "#E11D48", "热销": "#10B981"}
+    too_many = {f"v{i}": "#E11D48" for i in range(30)}
+    assert len(normalize_columns([{"key": "t", "type": "tag", "value_colors": too_many}])[0]["value_colors"]) == 20

@@ -37,6 +37,21 @@ def _rows(raw: Any) -> int:
         return 0
 
 
+
+
+def _value_colors(raw: Any) -> dict[str, str]:
+    """标签列「按值配色」：{标签文本: #RRGGBB}；最多 20 条，非法颜色 / 空键直接丢."""
+    if not isinstance(raw, dict):
+        return {}
+    out: dict[str, str] = {}
+    for key, value in list(raw.items())[:20]:
+        text = str(key or "").strip()[:20]
+        color = _color(value)
+        if text and color:
+            out[text] = color
+    return out
+
+
 def normalize_columns(raw: Any) -> list[dict]:
     out: list[dict] = []
     for col in (raw or [])[:20]:
@@ -58,6 +73,10 @@ def normalize_columns(raw: Any) -> list[dict]:
         rows = _rows(col.get("rows"))
         if rows:
             item["rows"] = rows
+        value_colors = _value_colors(col.get("value_colors"))
+        if value_colors:
+            item["value_colors"] = value_colors
+
         out.append(item)
     return out
 

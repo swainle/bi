@@ -386,7 +386,7 @@ export default function TableCard({ payload, ui, compact, initialSort, onRowClic
       case "tag": {
         const text = String(raw ?? "");
         if (!text) return "—";
-        return <TagCell text={text} separator={column.tag_split} color={column.color} />;
+        return <TagCell text={text} separator={column.tag_split} color={column.color} valueColors={column.value_colors} />;
       }
       case "link":
         return <QrButton text={String(raw ?? "")} />;

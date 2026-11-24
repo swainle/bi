@@ -22,19 +22,32 @@ export function tint(color: string): string {
   return `${full}1A`;   // 26/255 ≈ 10%
 }
 
+/** 没命中「按值配色」也没设列颜色时的默认标签色 */
+export const DEFAULT_TAG_INK = "#2563EB";
+
+/** 单个标签的文字色：按值配色 → 列统一色 → 默认色（不做自动取色，避免同一个格子五颜六色） */
+export function tagInk(part: string, color?: string, valueColors?: Record<string, string>): string {
+  const mapped = valueColors?.[part];
+  if (mapped && /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(mapped)) return mapped;
+  return color || DEFAULT_TAG_INK;
+}
+
 export default function TagCell({
-  text, separator, color,
+  text, separator, color, valueColors,
 }: {
   text: string;
   separator?: string;
   color?: string;
+  /** 按值配色：{标签文本: #RRGGBB}（面板里从内置色板选） */
+  valueColors?: Record<string, string>;
 }) {
   const parts = splitTags(text, separator);
   if (!parts.length) return <>—</>;
-  const ink = color || "#2563EB";
   return (
     <Box sx={{ display: "inline-flex", gap: 0.5, flexWrap: "wrap", alignItems: "center" }}>
-      {parts.map((part, index) => (
+      {parts.map((part, index) => {
+        const ink = tagInk(part, color, valueColors);
+        return (
         <Box
           key={`${part}-${index}`}
           component="span"
@@ -52,7 +65,8 @@ export default function TagCell({
         >
           {part}
         </Box>
-      ))}
+        );
+      })}
     </Box>
   );
 }

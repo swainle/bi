@@ -1,7 +1,7 @@
 /** 明细表「标签」单元格的分隔与着色 */
 
 import { describe, expect, it } from "vitest";
-import { splitTags, tint } from "../TagCell";
+import { DEFAULT_TAG_INK, splitTags, tagInk, tint } from "../TagCell";
 
 describe("splitTags：切分标签", () => {
   it("没设分隔符时按常见分隔符切", () => {
@@ -33,5 +33,21 @@ describe("tint：胶囊底色", () => {
   it("非法颜色回落到默认蓝", () => {
     expect(tint("red")).toBe("#2563EB1A");
     expect(tint("")).toBe("#2563EB1A");
+  });
+});
+
+describe("tagInk：按值配色 → 列统一色 → 默认色", () => {
+  it("命中「按值配色」就用它", () => {
+    expect(tagInk("人气", "#10B981", { "人气": "#E11D48" })).toBe("#E11D48");
+  });
+
+  it("没命中的用默认色（列上设了统一色就用统一色）", () => {
+    expect(tagInk("相关", "#10B981", { "人气": "#E11D48" })).toBe("#10B981");
+    expect(tagInk("相关")).toBe(DEFAULT_TAG_INK);
+    expect(tagInk("相关", "", { "1": "#E11D48" })).toBe(DEFAULT_TAG_INK);
+  });
+
+  it("映射里是非法颜色时忽略它", () => {
+    expect(tagInk("人气", "#10B981", { "人气": "red" })).toBe("#10B981");
   });
 });

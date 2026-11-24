@@ -1,0 +1,61 @@
+[
+ {
+  "key": "bad_cnt_30d",
+  "type": "number",
+  "value_colors": null,
+  "tag_split": null,
+  "color": ""
+ },
+ {
+  "key": "daily_deal",
+  "type": "number",
+  "value_colors": null,
+  "tag_split": null,
+  "color": "#10B981"
+ },
+ {
+  "key": "week_key",
+  "type": "text",
+  "value_colors": null,
+  "tag_split": null,
+  "color": null
+ },
+ {
+  "key": "listed_date",
+  "type": "date",
+  "value_colors": null,
+  "tag_split": null,
+  "color": "#10B981"
+ },
+ {
+  "key": "item_url",
+  "type": "link",
+  "value_colors": null,
+  "tag_split": null,
+  "color": "#0EA5E9"
+ },
+ {
+  "key": "product_title",
+  "type": "text",
+  "value_colors": null,
+  "tag_split": "(",
+  "color": null
+ },
+ {
+  "key": "category_theme",
+  "type": "text",
+  "value_colors": null,
+  "tag_split": " ",
+  "color": ""
+ },
+ {
+  "key": "item_id",
+  "type": "tag",
+  "value_colors": {
+   "4": "#0F172A",
+   "6": "#0EA5E9"
+  },
+  "tag_split": "9",
+  "color": ""
+ }
+]
