@@ -12,6 +12,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.components.reco_spec import RecoSpec
+from app.components.table_columns import normalize_columns
 from app.security.errors import SecurityError
 
 KINDS = (
@@ -20,6 +22,7 @@ KINDS = (
     # v2：业务页需要的形态
     "combo",      # 柱 + 线双轴
     "rank_list",  # 榜卡 / 机会词列表（带分数与标签）
+    "reco_list",  # 推荐列表（机会分 + 行内指标 + 点击详情）
     "insight",    # 结论 / 洞察列表
     "section",    # 分节标题（页面结构）
     "banner",     # 头标卡（页头大图：kicker + 大标题 + 统计）
@@ -31,7 +34,7 @@ KINDS = (
 ROLES = {
     "kpi": "data", "table": "data", "bar": "data", "hbar": "data", "line": "data",
     "area": "data", "pie": "data", "donut": "data", "scatter": "data", "heatmap": "data",
-    "wordcloud": "data", "combo": "data", "rank_list": "data",
+    "wordcloud": "data", "combo": "data", "rank_list": "data", "reco_list": "data",
     "funnel": "data", "gauge": "data", "radar": "data", "waterfall": "data", "map": "data",
     "insight": "content", "section": "structure", "filter": "param", "banner": "content",
     "nav": "content",
@@ -571,24 +574,7 @@ class TableViewSpec(BaseModel):
     @field_validator("columns")
     @classmethod
     def _columns(cls, v: list) -> list:
-        out = []
-        for col in (v or [])[:20]:
-            if not isinstance(col, dict) or not col.get("key"):
-                continue
-            item = {
-                "key": str(col["key"])[:40],
-                "label": str(col.get("label") or col["key"])[:20],
-                "type": col.get("type") if col.get("type") in
-                        ("text", "number", "percent", "money", "image", "badge", "rank", "dual", "tag", "date")
-                        else "text",
-                "align": col.get("align") if col.get("align") in ("left", "center", "right") else "left",
-                "width": max(0, min(int(col.get("width") or 0), 420)),
-            }
-            for extra in ("format", "tag_split", "image", "sub_key", "badge_tone"):
-                if col.get(extra):
-                    item[extra] = str(col[extra])[:60]
-            out.append(item)
-        return out
+        return normalize_columns(v)
 
     @field_validator("page_size")
     @classmethod
@@ -771,6 +757,7 @@ class ComponentSpec(BaseModel):
     content: ContentSpec = Field(default_factory=ContentSpec)
     rank: RankSpec = Field(default_factory=RankSpec)
     combo: ComboSpec = Field(default_factory=ComboSpec)
+    reco: RecoSpec = Field(default_factory=RecoSpec)
     table_view: TableViewSpec = Field(default_factory=TableViewSpec)
     banner: BannerSpec = Field(default_factory=BannerSpec)
     nav: NavSpec = Field(default_factory=NavSpec)
@@ -798,7 +785,7 @@ def validate_kind(kind: str) -> str:
 _KIND_CN = {
     "bar": "柱状图", "hbar": "条形图", "line": "折线图", "area": "面积图",
     "pie": "饼图", "donut": "环形图", "wordcloud": "词云", "table": "明细表",
-    "scatter": "散点图", "rank_list": "排行列表", "combo": "组合图",
+    "scatter": "散点图", "rank_list": "排行列表", "combo": "组合图", "reco_list": "推荐列表",
     "heatmap": "热力图", "kpi": "指标卡", "insight": "结论卡", "section": "分节标题",
     "banner": "头标卡",
     "nav": "导航菜单卡",
@@ -839,6 +826,16 @@ def validate_spec(kind: str, raw: dict) -> ComponentSpec:
         # 明细表就是「列清单」：字段都放在 binding.dimensions 里，原样出表，不聚合
         if not spec.binding.dimension and not spec.binding.dimensions:
             raise ComponentSpecError("明细表至少需要一个字段（点「+ 添加字段」）")
+    if kind == "reco_list":
+        # 推荐列表 = 一行一个词：必须有「词」维度和「人气」指标，评分与详情都按这两个算
+        if not spec.binding.dimension:
+            raise ComponentSpecError("推荐列表需要先绑定「词」维度（从左侧拖一列进来）")
+        if not spec.binding.metric:
+            raise ComponentSpecError("推荐列表需要绑定「人气」指标")
+        if not spec.reco.value_key:
+            # 没单独配就沿用人气指标，避免「配了指标却不参与评分」这种哑配置
+            spec = spec.model_copy(update={"reco": spec.reco.model_copy(
+                update={"value_key": spec.binding.metric})})
     if kind in ("bar", "hbar", "line", "area", "pie", "donut", "scatter", "rank_list", "funnel", "radar", "waterfall", "map") and not spec.binding.dimension:
         raise ComponentSpecError(f"{_KIND_CN.get(kind, kind)}需要先绑定维度字段（从左侧「列」拖一列进来）")
     if kind == "gauge" and not spec.binding.metric:

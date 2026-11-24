@@ -165,6 +165,10 @@ app.include_router(semantic_items.router, prefix="/api")
 app.include_router(components_router.router, prefix="/api")
 app.include_router(canvas_router.router, prefix="/api")
 app.include_router(dashboards_router.router, prefix="/api")
+# 结构操作（加页 / 删页 / 改名 / 发布）：只改结构，不写别的页的内容
+from app.dashboards import structure as dashboard_structure  # noqa: E402
+
+app.include_router(dashboard_structure.router, prefix="/api")
 app.include_router(dashboard_favorites.router, prefix="/api")
 app.include_router(images_router.router, prefix="/api")
 
@@ -214,6 +218,11 @@ app.include_router(mcp_gateway.router, prefix="/api")
 from app.ai import router as ai_layout_router  # noqa: E402
 
 app.include_router(ai_layout_router.router, prefix="/api")
+
+# ── 实时同步（版本轮询 + 按页取内容；1 秒一次，见 app/live/router.py）──
+from app.live import router as live_router  # noqa: E402
+
+app.include_router(live_router.router, prefix="/api/live")
 
 
 # ── 健康检查 ───────────────────────────────────────────────────

@@ -1,0 +1,314 @@
+{
+  "reco_items": [
+    {
+      "name": "冻干猫粮",
+      "value": 60000.0,
+      "score": 94,
+      "tags": [
+        "人气高",
+        "转化好",
+        "缺口大"
+      ],
+      "stats": [
+        {
+          "k": "搜索人气",
+          "v": 60000.0,
+          "f": "int",
+          "dir": ""
+        },
+        {
+          "k": "支付转化率",
+          "v": 32.5,
+          "f": "pct",
+          "dir": "up"
+        },
+        {
+          "k": "机会分",
+          "v": 94,
+          "f": "score",
+          "dir": ""
+        }
+      ],
+      "ctr": 79.0,
+      "cvr": 32.5,
+      "ds": 12.0,
+      "g": 220.0,
+      "rank": 1
+    },
+    {
+      "name": "猫条零食",
+      "value": 45000.0,
+      "score": 79,
+      "tags": [
+        "人气高",
+        "缺口大",
+        "在起量"
+      ],
+      "stats": [
+        {
+          "k": "搜索人气",
+          "v": 45000.0,
+          "f": "int",
+          "dir": ""
+        },
+        {
+          "k": "支付转化率",
+          "v": 28.0,
+          "f": "pct",
+          "dir": "up"
+        },
+        {
+          "k": "机会分",
+          "v": 79,
+          "f": "score",
+          "dir": ""
+        }
+      ],
+      "ctr": 71.0,
+      "cvr": 28.0,
+      "ds": 6.4,
+      "g": 130.0,
+      "rank": 2
+    },
+    {
+      "name": "幼猫粮",
+      "value": 32000.0,
+      "score": 65,
+      "tags": [
+        "人气高",
+        "缺口大"
+      ],
+      "stats": [
+        {
+          "k": "搜索人气",
+          "v": 32000.0,
+          "f": "int",
+          "dir": ""
+        },
+        {
+          "k": "支付转化率",
+          "v": 24.0,
+          "f": "pct",
+          "dir": "up"
+        },
+        {
+          "k": "机会分",
+          "v": 65,
+          "f": "score",
+          "dir": ""
+        }
+      ],
+      "ctr": 66.0,
+      "cvr": 24.0,
+      "ds": 3.2,
+      "g": 96.0,
+      "rank": 3
+    },
+    {
+      "name": "化毛膏",
+      "value": 21000.0,
+      "score": 52,
+      "tags": [
+        "人气高"
+      ],
+      "stats": [
+        {
+          "k": "搜索人气",
+          "v": 21000.0,
+          "f": "int",
+          "dir": ""
+        },
+        {
+          "k": "支付转化率",
+          "v": 19.5,
+          "f": "pct",
+          "dir": "down"
+        },
+        {
+          "k": "机会分",
+          "v": 52,
+          "f": "score",
+          "dir": ""
+        }
+      ],
+      "ctr": 58.0,
+      "cvr": 19.5,
+      "ds": 2.1,
+      "g": 55.0,
+      "rank": 4
+    },
+    {
+      "name": "猫抓板",
+      "value": 15000.0,
+      "score": 42,
+      "tags": [
+        "人气高"
+      ],
+      "stats": [
+        {
+          "k": "搜索人气",
+          "v": 15000.0,
+          "f": "int",
+          "dir": ""
+        },
+        {
+          "k": "支付转化率",
+          "v": 15.0,
+          "f": "pct",
+          "dir": "down"
+        },
+        {
+          "k": "机会分",
+          "v": 42,
+          "f": "score",
+          "dir": ""
+        }
+      ],
+      "ctr": 52.0,
+      "cvr": 15.0,
+      "ds": 1.4,
+      "g": 32.0,
+      "rank": 5
+    },
+    {
+      "name": "猫砂盆",
+      "value": 9000.0,
+      "score": 32,
+      "tags": [
+        "人气高"
+      ],
+      "stats": [
+        {
+          "k": "搜索人气",
+          "v": 9000.0,
+          "f": "int",
+          "dir": ""
+        },
+        {
+          "k": "支付转化率",
+          "v": 11.0,
+          "f": "pct",
+          "dir": "down"
+        },
+        {
+          "k": "机会分",
+          "v": 32,
+          "f": "score",
+          "dir": ""
+        }
+      ],
+      "ctr": 44.0,
+      "cvr": 11.0,
+      "ds": 0.9,
+      "g": 12.0,
+      "rank": 6
+    }
+  ],
+  "count": 6,
+  "reco_meta": {
+    "avg_ctr": 61.67,
+    "avg_cvr": 21.67,
+    "total": 6,
+    "max_v": 60000.0,
+    "max_ds": 12.0
+  },
+  "reco_stats": [
+    {
+      "key": "搜索人气",
+      "label": "搜索人气",
+      "format": "int",
+      "avg": 30333.33
+    },
+    {
+      "key": "支付转化率",
+      "label": "支付转化率",
+      "format": "pct",
+      "avg": 21.67
+    },
+    {
+      "key": "score",
+      "label": "机会分",
+      "format": "score",
+      "avg": 60.67
+    }
+  ],
+  "score_label": "机会分",
+  "bar_key": "搜索人气",
+  "reco_detail": true,
+  "reco_trend_days": 7,
+  "kind": "reco_list",
+  "component_kind": "reco_list",
+  "title": "推荐",
+  "subtitle": "三表汇总 · 按机会分排序 · 前 10 个词",
+  "unit": "",
+  "ui": {
+    "accent": "indigo",
+    "radius": 14,
+    "min_height": 460,
+    "show_unit": true,
+    "animate": true,
+    "align": "left",
+    "columns": 1,
+    "badge": "",
+    "edge": true,
+    "edge_px": 1.0,
+    "edge_alpha": 22,
+    "shadow_px": 16
+  },
+  "compute": {
+    "headline": "first",
+    "hint": "none",
+    "format": "int",
+    "bucket_size": null,
+    "bucket_start": null,
+    "bucket_count": 0,
+    "transform": "raw",
+    "scale": 1.0,
+    "offset": 0.0,
+    "decimals": 0,
+    "prefix": "",
+    "suffix": ""
+  },
+  "chart": {
+    "show_labels": true,
+    "show_legend": true,
+    "show_grid": true,
+    "show_title": true,
+    "show_meta": true,
+    "x_title": "",
+    "y_title": "",
+    "label_rotate": 0,
+    "y_min": null,
+    "y_max": null,
+    "y2_min": null,
+    "y2_max": null,
+    "y2_format": "",
+    "bar_width": 26,
+    "hbar_threshold_key": "",
+    "hbar_threshold_gte": null,
+    "hbar_highlight": "violet",
+    "smooth": true,
+    "label_format": "auto",
+    "cloud_palette": "潮彩",
+    "scatter_mode": "point",
+    "trend_line": false,
+    "dot_size": 8,
+    "x_key": "",
+    "y_key": "",
+    "size_key": "",
+    "log_x": false,
+    "log_y": false,
+    "label_layout": "inside",
+    "single_slice": true,
+    "pie_inner": 46,
+    "pie_start": 90,
+    "pie_label": "name_pct",
+    "pie_gap": true,
+    "pie_rose": false
+  },
+  "dimension_label": "搜索词",
+  "metric_label": "搜索人气",
+  "params_used": {},
+  "sql": "SELECT ... (fixture)",
+  "elapsed_ms": 12
+}

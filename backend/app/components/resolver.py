@@ -31,6 +31,7 @@ from app.components.compute import (
     build_scatter,
     build_table,
 )
+from app.components.reco import build_reco
 from app.components.spec import ComponentSpec, ComponentSpecError
 from app.query.executor import run as execute_query
 from app.query.live import LiveQueryError, run_live
@@ -205,7 +206,7 @@ def _request_for(spec: ComponentSpec, kind: str) -> dict:
         dims.append({"name": tags_key})
 
     metrics = _metric_items(spec)
-    if kind in ("rank_list", "scatter"):
+    if kind in ("rank_list", "scatter", "reco_list"):
         for name in _extra_metric_names(spec):
             if all(m["name"] != name for m in metrics) and name != b.dimension:
                 metrics.append({"name": name, "agg": "MAX"})
@@ -702,6 +703,8 @@ def _resolve_bound(
         payload = build_combo(raw_rows, spec)
     elif kind == "rank_list":
         payload = build_rank(raw_rows, spec)
+    elif kind == "reco_list":
+        payload = build_reco(raw_rows, spec)
     elif kind == "scatter" and spec.chart.scatter_mode in ("bubble", "quadrant"):
         payload = build_scatter(raw_rows, spec)
     elif kind == "table":
@@ -727,6 +730,7 @@ def _resolve_bound(
         "compute": spec.compute.model_dump(),
         "chart": spec.chart.model_dump(),
         "combo": spec.combo.model_dump(),
+        "reco": spec.reco.model_dump(),
         "sql": result.sql,
         "elapsed_ms": result.elapsed_ms,
         "rls": result.rls,

@@ -1,6 +1,8 @@
 """基础组件（类型级）—— 一类一个，差异进实例配置.
 
-组件库只放这些：15 个「类型」。
+FILE-LIMIT-EXEMPT: 组件库种子常量表（一类一条，纯数据）；开发规范 §4.3「种子/常量表」例外
+
+组件库只放这些：23 个「类型」。
 页面上的每张卡都是它们的实例，自带 spec，不往库里复制同类组件。
 """
 
@@ -102,6 +104,20 @@ BASE = [
     ("base.rank_list", "排行列表", "rank_list", "排名", "TOP N + 分值 + 标签；可按原值/评分/机会象限排序",
      {**_spec("排行", dim="产品标题", metric="日销量"),
       "rank": {"order": "value", "max_items": 10}}),
+    ("base.reco_list", "推荐列表", "reco_list", "排名",
+     "按机会分排序的推荐词：行内三项指标，点一行看详情（统计 / 走势 / 大盘对比 / 解读 / 建议）",
+     # 需求端「汇总」数据集（bi_demand_merged）才有 搜索词/人气/转化/供需缺口 这些列，
+     # ensure_base 会按物理表把它绑上；数据没导进来时就是空态，不写死任何数字
+     {**_spec("推荐", dim="搜索词", metric="搜索人气", agg="AVG"),
+      "binding": {"dataset_id": None, "dimension": "搜索词", "metric": "搜索人气", "agg": "AVG",
+                  "top_n": 10, "sort": "desc", "limit": 500,
+                  "metrics": [{"name": "点击率", "agg": "AVG"},
+                              {"name": "支付转化率", "agg": "AVG"},
+                              {"name": "需求供给比", "agg": "AVG"},
+                              {"name": "搜索增速", "agg": "AVG"}]},
+      "reco": {"value_key": "搜索人气", "ctr_key": "点击率", "cvr_key": "支付转化率",
+               "ds_key": "需求供给比", "g_key": "搜索增速"},
+      "ui": {"accent": "indigo", "min_height": 320}}),
     ("base.insight", "结论卡", "insight", "内容", "键值结论，支持 {指标} 占位符",
      # 模板也要「真算数」：绑两个真指标，句子里的 {指标名} 由后端按当前筛选实时替换
      {**_spec("结论", dim=None, metric="日销量"),
@@ -269,6 +285,22 @@ def _prune_missing(spec: dict, allowed: set[str]) -> None:
         table["thumb_key"] = ""
 
 
+def _demand_dataset(db: Session):
+    """推荐列表要的是「词 + 人气 + 转化 + 供需缺口」，演示数据集里没有这些列.
+
+    按**物理表**认（AGENTS：这行数据集只按 physical_table 认，不要按 name 认）；
+    库里没有这张表 / 还没导数据时返回 None，卡片保持空态由用户自己选数据集。
+    """
+    from app.semantic import repository as semantic_repo
+
+    row = db.execute(text(
+        "SELECT id FROM bi_dataset WHERE physical_table = 'bi_demand_merged' ORDER BY id LIMIT 1"
+    )).first()
+    if row is None:
+        return None
+    return semantic_repo.get_dataset(db, int(row[0]))
+
+
 def ensure_base(db: Session, dataset_id: int | None = None,
                 demo_dataset_id: int | None = None) -> int:
     """写入基础组件。
@@ -285,12 +317,19 @@ def ensure_base(db: Session, dataset_id: int | None = None,
     for code, name, kind, category, description, spec in BASE:
         spec = {k: (dict(v) if isinstance(v, dict) else v) for k, v in spec.items()}
         default_dataset = demo_dataset_id or dataset_id
+        allowed_for = allowed
+        if kind == "reco_list":
+            # 演示数据集里没有「搜索词」这些列：单独绑需求端汇总表，别被 _prune_missing 清空
+            reco_dataset = _demand_dataset(db)
+            if reco_dataset is not None:
+                default_dataset = reco_dataset.id
+                allowed_for = {f.name for f in reco_dataset.fields}
         if default_dataset and kind not in ("insight", "filter", "banner", "section", "nav") and not spec["binding"].get("dataset_id"):
             spec["binding"] = {**spec["binding"], "dataset_id": default_dataset}
         if kind == "filter" and demo_dataset is not None:
             spec["filter"] = build_filter_spec(db, demo_dataset)
-        if allowed:
-            _prune_missing(spec, allowed)
+        if allowed_for:
+            _prune_missing(spec, allowed_for)
         spec.setdefault("layout", {"x": 40, "y": 40, "w": 420, "h": 260})
         upsert_builtin(db, code=code, name=name, kind=kind, spec=spec,
                        category=category, description=description)

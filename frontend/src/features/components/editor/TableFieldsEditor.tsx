@@ -1,160 +1,212 @@
-/** 查询面板（编辑页中栏）—— 维度 / 指标 / 过滤 / 行限制，对应 spec.binding */
+/** 明细表的「字段」区：一列一张配置卡（列头 / 类型 / 格式 / 颜色 / 行数 / 宽度）.
+ *
+ * 字段顺序 = 表格列顺序，卡片可上下拖动排序；底部保留一个拖入框用于新增列。
+ */
 
-import { useEffect, useRef, useState } from "react";
-import {
-  Box, Button, Chip, Divider, IconButton, Stack, Switch, TextField, Typography,
-} from "@mui/material";
-import { Add, Close, ExpandMore } from "@mui/icons-material";
-import ChartOptionsPanel from "./ChartOptionsPanel";
-import TableDetailSettings from "./TableDetailSettings";
-import { BANNER_TONES } from "../renderers/BannerCard";
-import StylePanel from "./StylePanel";
-import DataCheckPanel from "./DataCheckPanel";
-import { GROUP_CARD_SX, PanelSection, PanelTitle } from "./PanelSection";
-import { KIND_LABEL } from "../registry";
-import { axisLabels } from "./axisLabels";
-import ComputeFields from "./ComputeFields";
-import type { BannerStat, ComponentItem, ComponentKind, ComponentSpec, FieldOption, RenderPayload } from "../types";
-
-import { AGG, GRAINS, IMAGE_KEY, NEEDS_DIMENSION, OPS, STRONG_IMAGE_KEY, dash } from "./queryConstants";
-import type { Props } from "./queryTypes";
+import { useRef, useState } from "react";
+import { Box, Stack } from "@mui/material";
+import { DragIndicator } from "@mui/icons-material";
+import type { FieldOption, RenderPayload, TableColumn } from "../types";
+import type { ComponentSpec } from "../types";
 import { Slot } from "./Slot";
 import { AxisInput } from "./AxisInput";
+import { TableColumnCard } from "./TableColumnCard";
 
-export function TableFieldsEditor({
-  spec, onChange, metricOptions, dimensionOptions, identifierOptions, payload,
-}: {
+interface Props {
   spec: ComponentSpec;
   onChange: (next: ComponentSpec) => void;
   metricOptions: FieldOption[];
   dimensionOptions: FieldOption[];
   identifierOptions: FieldOption[];
   payload?: RenderPayload | null;
-}) {
+}
+
+const NUMBER_TYPES = new Set<TableColumn["type"]>(["number", "percent", "money"]);
+
+/** 新建列时的默认对齐（数值右、排名中、其余左）；之后由面板「对齐」控件决定，换类型不再改 */
+function alignOf(type: TableColumn["type"]): TableColumn["align"] {
+  if (NUMBER_TYPES.has(type)) return "right";
+  if (type === "rank") return "center";
+  return "left";
+}
+
+export function TableFieldsEditor({
+  spec, onChange, metricOptions, dimensionOptions, identifierOptions, payload,
+}: Props) {
   const b = spec.binding;
   const fields = b.dimensions ?? [];
+  const columns = spec.table_view.columns;
 
-  const setFields = (next: string[]) => {
-    onChange({
-      ...spec,
-      binding: { ...b, dimension: null, metric: null, metrics: [], dimensions: next,
-        sort_field: next.includes(b.sort_field ?? "") ? b.sort_field : "" },
-      table_view: { ...spec.table_view, columns: spec.table_view.columns.filter((column) => next.includes(column.key)) },
-    });
-  };
-  const add = (name: string) => {
-    if (fields.includes(name)) return;
-    setFields([...fields, name]);
-  };
-  const remove = (name: string) => setFields(fields.filter((n) => n !== name));
-
-  /** 拖动重排：字段顺序 = 表格列顺序 */
   const [dragFrom, setDragFrom] = useState<number | null>(null);
   const [dragTo, setDragTo] = useState<number | null>(null);
+  /** 刚拖进来的那一列默认展开（其余折叠，面板才不会一屏铺满） */
+  const [justAdded, setJustAdded] = useState<string | null>(null);
   /** 放 ref 里：drop 紧跟 dragstart 时 state 还没刷新 */
   const dragFromRef = useRef<number | null>(null);
+
+  /** 换列清单：列配置、排序字段、缩略图字段都跟着走，不会留下孤儿配置 */
+  const writeFields = (next: string[], extra: Partial<ComponentSpec["binding"]> = {}) => {
+    onChange({
+      ...spec,
+      binding: {
+        ...b, dimension: null, metric: null, metrics: [], dimensions: next,
+        sort_field: next.includes(b.sort_field ?? "") ? b.sort_field : "",
+        ...extra,
+      },
+      table_view: {
+        ...spec.table_view,
+        columns: spec.table_view.columns.filter((column) => next.includes(column.key)),
+      },
+    });
+  };
+
+  const remove = (name: string) => writeFields(fields.filter((n) => n !== name));
+
+  const add = (name: string) => {
+    if (!name || fields.includes(name)) return;
+    setJustAdded(name);
+    writeFields([...fields, name]);
+  };
+
   const moveField = (from: number, to: number) => {
     if (from === to) return;
     const next = [...fields];
     const [picked] = next.splice(from, 1);
     next.splice(to, 0, picked);
-    setFields(next);
+    writeFields(next);
   };
 
-  const groups: [string, FieldOption[]][] = [
-    ["指标", metricOptions],
-    ["列", dimensionOptions],
-    ["标识", identifierOptions],
-  ];
+  /** 换绑：字段名改掉，列配置整块搬过去（用户配好的列头/颜色/宽度不能丢） */
+  const rebind = (from: string, next: string | null) => {
+    if (!next) {
+      remove(from);
+      return;
+    }
+    if (next === from || fields.includes(next)) return;
+    const moved = columns.find((column) => column.key === from);
+    const rest = columns.filter((column) => column.key !== from && column.key !== next);
+    const nextColumns = moved ? [...rest, { ...moved, key: next }] : rest;
+    const renamed = fields.map((name) => (name === from ? next : name));
+    onChange({
+      ...spec,
+      binding: {
+        ...b, dimension: null, metric: null, metrics: [], dimensions: renamed,
+        sort_field: b.sort_field === from ? next : (renamed.includes(b.sort_field ?? "") ? b.sort_field : ""),
+      },
+      table_view: {
+        ...spec.table_view,
+        columns: nextColumns,
+        thumb_key: spec.table_view.thumb_key === from ? next : spec.table_view.thumb_key,
+      },
+    });
+  };
+
+  /** 该列的当前配置：没有就用后端推断的结果补一份默认值 */
+  const columnOf = (name: string): TableColumn => {
+    const configured = columns.find((column) => column.key === name);
+    if (configured) return configured;
+    const inferred = payload?.columns?.find((column) => column.key === name);
+    if (inferred) return inferred;
+    const numeric = metricOptions.some((field) => field.name === name);
+    const type: TableColumn["type"] = numeric ? "number" : "text";
+    return { key: name, label: name, type, align: alignOf(type), width: 0 };
+  };
+
+  const patchColumn = (name: string, patch: Partial<TableColumn>) => {
+    const base = columnOf(name);
+    /* 对齐由面板里的「对齐」控件显式决定，换类型不再偷偷改它（会对不上用户手动选的值） */
+    const next: TableColumn = { ...base, ...patch };
+    const rest = columns.filter((column) => column.key !== name);
+    onChange({ ...spec, table_view: { ...spec.table_view, columns: [...rest, next] } });
+  };
+
+  const allNames = Array.from(new Set([
+    ...metricOptions.map((field) => field.name),
+    ...dimensionOptions.map((field) => field.name),
+    ...identifierOptions.map((field) => field.name),
+    ...fields,
+  ]));
+  const freeNames = allNames.filter((name) => !fields.includes(name));
 
   return (
-    <>
-      <Slot label="字段" collapsible>
-        <Stack spacing={1}>
-          {fields.map((name, index) => {
-            if (name === spec.table_view.thumb_key) return null;
-            const configured = spec.table_view.columns.find((column) => column.key === name);
-            return (
-              <Box
-                key={name}
-                data-field-chip={name}
-                draggable
-                onDragStart={(e) => {
-                  dragFromRef.current = index;
-                  setDragFrom(index);
-                  e.dataTransfer.effectAllowed = "move";
-                  e.dataTransfer.setData("text/plain", name);
-                }}
-                onDragEnd={() => { dragFromRef.current = null; setDragFrom(null); setDragTo(null); }}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  e.dataTransfer.dropEffect = "move";
-                  if (dragTo !== index) setDragTo(index);
-                }}
-                onDragLeave={() => setDragTo((cur) => (cur === index ? null : cur))}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  if (dragFromRef.current !== null) moveField(dragFromRef.current, index);
-                  dragFromRef.current = null;
-                  setDragFrom(null);
-                  setDragTo(null);
-                }}
-                sx={{
-                  position: "relative", display: "flex", alignItems: "center", gap: 1,
-                  opacity: dragFrom === index ? 0.45 : 1,
-                  cursor: "grab",
-                  "&:active": { cursor: "grabbing" },
-                  "&::before": dragTo === index && dragFrom !== null && dragFrom !== index
-                    ? {
-                        content: '""', position: "absolute", left: -5, top: 3, bottom: 3, width: 2,
-                        borderRadius: 1, bgcolor: "#4F46E5",
-                      }
-                    : undefined,
-                }}
-              >
-                <Box
-                  sx={{
-                    display: "flex", alignItems: "center", gap: 0.5, pl: 1.1, pr: 0.7, height: 28,
-                    borderRadius: 1.5, border: "1px solid #E8EEF8", bgcolor: "#F8FAFD",
-                    fontSize: 12.5, color: "#334155", flex: 1, minWidth: 0,
-                  }}
-                >
-                  <Typography noWrap sx={{ fontSize: 12.5, minWidth: 0, flex: 1 }}>{name}</Typography>
-                  <Close
-                    onClick={(e) => { e.stopPropagation(); remove(name); }}
-                    sx={{ fontSize: 14, color: "#94A3B8", cursor: "pointer", flexShrink: 0, "&:hover": { color: "#EF4444" } }}
-                  />
-                </Box>
-                <TextField
-                  size="small" fullWidth placeholder="显示名称" value={configured?.label ?? ""}
-                  inputProps={{ maxLength: 20 }}
-                  onChange={(event) => {
-                    const numeric = metricOptions.some((field) => field.name === name);
-                    const base = configured ?? payload?.columns?.find((column) => column.key === name)
-                      ?? { key: name, label: name, type: numeric ? "number" as const : "text" as const,
-                        align: numeric ? "right" as const : "left" as const, width: 0 };
-                    const columns = spec.table_view.columns.filter((column) => column.key !== name);
-                    columns.push({ ...base, label: event.target.value });
-                    onChange({ ...spec, table_view: { ...spec.table_view, columns } });
-                  }}
-                  sx={{ flex: 1, minWidth: 0, "& .MuiInputBase-input": { fontSize: 12 }, "& .MuiOutlinedInput-root": { borderRadius: "8px" } }}
-                />
-              </Box>
-            );
-          })}
-          <AxisInput
-            value=""
-            options={Array.from(new Set(groups.flatMap(([, options]) => options.map((f) => f.name))))
-              .filter((name) => !fields.includes(name))}
-            placeholder="拖到这里"
-            onPick={(name) => { if (name) add(name); }}
-          />
-        </Stack>
+    <Slot label="字段" collapsible>
+      <Stack spacing={1.25}>
+        {fields.map((name, index) => {
+          if (name === spec.table_view.thumb_key) return null;
+          const handle = (
+            <Box
+              draggable
+              title="拖动调整列顺序"
+              onDragStart={(event) => {
+                dragFromRef.current = index;
+                setDragFrom(index);
+                event.dataTransfer.effectAllowed = "move";
+                event.dataTransfer.setData("text/plain", name);
+              }}
+              onDragEnd={() => { dragFromRef.current = null; setDragFrom(null); setDragTo(null); }}
+              sx={{
+                width: 14, flexShrink: 0, display: "grid", placeItems: "center",
+                color: "#B6C1F0", cursor: "grab", "&:active": { cursor: "grabbing" },
+                "&:hover": { color: "#6366F1" },
+              }}
+            >
+              <DragIndicator sx={{ fontSize: 15 }} />
+            </Box>
+          );
 
-      </Slot>
+          return (
+            <Box
+              key={name}
+              data-field-chip={name}
+              onDragOver={(event) => {
+                event.preventDefault();
+                event.dataTransfer.dropEffect = "move";
+                if (dragTo !== index) setDragTo(index);
+              }}
+              onDragLeave={() => setDragTo((current) => (current === index ? null : current))}
+              onDrop={(event) => {
+                event.preventDefault();
+                if (dragFromRef.current !== null) moveField(dragFromRef.current, index);
+                dragFromRef.current = null;
+                setDragFrom(null);
+                setDragTo(null);
+              }}
+              sx={{
+                position: "relative",
+                opacity: dragFrom === index ? 0.45 : 1,
+                "&::before": dragTo === index && dragFrom !== null && dragFrom !== index
+                  ? {
+                      content: '""', position: "absolute", left: 0, right: 0, top: -5, height: 2,
+                      borderRadius: 1, bgcolor: "#4F46E5",
+                    }
+                  : undefined,
+              }}
+            >
+              <TableColumnCard
+                name={name}
+                column={columnOf(name)}
+                options={[
+                  // 当前字段也放进 options：否则 MUI 认为「值不在选项里」会告警，显示也可能异常
+                  name,
+                  ...allNames.filter((option) => option !== name && !fields.includes(option)),
+                ]}
+                onRebind={(next) => rebind(name, next)}
+                onPatch={(patch) => patchColumn(name, patch)}
+                onRemove={() => remove(name)}
+                handle={handle}
+                defaultOpen={name === justAdded}
+              />
+            </Box>
+          );
+        })}
 
-    </>
+        <AxisInput
+          value=""
+          options={freeNames}
+          placeholder="＋ 添加字段"
+          onPick={(name) => { if (name) add(name); }}
+        />
+      </Stack>
+    </Slot>
   );
 }
-
-/** 名字像图片的字段排在前面（主图 / image / pic 优先，其次 url / 链接） */

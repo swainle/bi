@@ -12,6 +12,10 @@ import QrCodeDialog from "../board/QrCodeDialog";
 import BoardViewer from "../board/BoardViewer";
 import DrawerShell from "../../../components/common/DrawerShell";
 import PageBar from "./PageBar";
+import QrButton from "./QrButton";
+import TagCell from "./TagCell";
+import { cellStyle } from "./tableCellSx";
+import { formatByPattern } from "../skin/patternFormat";
 import ProductDetail, { ProductImages } from "./ProductDetail";
 import { CanvasDetailContext, autoKeyFieldOf, boardOf, boardViewItems, type BoardArea } from "../board/canvasDetail";
 import type { DetailConfig } from "../types";
@@ -289,10 +293,8 @@ export default function TableCard({ payload, ui, compact, initialSort, onRowClic
     column.width || cardWidths?.[index]
   );
 
-  /** 排名 / 序号这类小整数居中，别右对齐贴着下一列 */
-  const alignFor = (column: TableColumn) => (
-    /排名|序号|No\.?/i.test(column.label || column.key) ? "center" : column.align
-  );
+  /** 正文对齐：面板里每列可选（左 / 中 / 右），没配按左 */
+  const alignFor = (column: TableColumn) => column.align || "left";
 
   /** 卡内分页：数据是一次取回的行，这里只切显示（搜索 / 排序 / 运算之后的口径） */
   const total = transformed.length;
@@ -337,7 +339,10 @@ export default function TableCard({ payload, ui, compact, initialSort, onRowClic
     // 日期 / 文本落到数值列时原样显示，别变成「—」
     if (!Number.isFinite(num)) return String(raw ?? "—");
     const value = num * scale + offset;
-    const format = transform === "share" ? "pct" : (compute.format ?? "int");
+    // 列级格式优先：先是 d3 风格格式串（`,.1%` 这类），再回落旧枚举，最后才是整表格式
+    const patterned = column.format ? formatByPattern(value, column.format) : null;
+    if (patterned !== null) return `${compute.prefix ?? ""}${patterned}${compute.suffix ?? ""}`;
+    const format = column.format || (transform === "share" ? "pct" : (compute.format ?? "int"));
     let text: string;
     switch (format) {
       case "w":
@@ -381,18 +386,10 @@ export default function TableCard({ payload, ui, compact, initialSort, onRowClic
       case "tag": {
         const text = String(raw ?? "");
         if (!text) return "—";
-        const parts = text.split(column.tag_split || "·").filter(Boolean);
-        return (
-          <Box sx={{ display: "inline-flex", gap: 0.4 }}>
-            {parts.map((part) => (
-              <Box key={part} component="span" sx={{
-                px: 0.55, height: 18, lineHeight: "18px", borderRadius: 1,
-                bgcolor: "#F1F5F9", color: "#64748B", fontSize: 10,
-              }}>{part}</Box>
-            ))}
-          </Box>
-        );
+        return <TagCell text={text} separator={column.tag_split} color={column.color} />;
       }
+      case "link":
+        return <QrButton text={String(raw ?? "")} />;
       case "dual":
         return (
           <Box>
@@ -514,7 +511,7 @@ export default function TableCard({ payload, ui, compact, initialSort, onRowClic
                       title={`按「${column.label}」排序`}
                       style={{
                         // 列宽按内容比例分，长文本列宽、短列窄，间距才均匀
-                        ...headStyle(alignFor(column)),
+                        ...headStyle("center"),
 
                         width: widthOf(column, bodyColumns.indexOf(column)),
                         minWidth: undefined,
@@ -557,7 +554,7 @@ export default function TableCard({ payload, ui, compact, initialSort, onRowClic
                     </td>
                   )}
                   {bodyColumns.map((column) => (
-                    <td key={column.key} style={cellStyle(alignFor(column), NUMBER_TYPES.has(column.type))}>
+                    <td key={column.key} style={cellStyle(alignFor(column), NUMBER_TYPES.has(column.type), column)}>
                       {cell(column, row)}
                     </td>
                   ))}
@@ -689,7 +686,7 @@ export function Thumb({ sources, onOpen }: { sources: string[]; onOpen?: (src: s
     <Box
       component="img" src={src} alt="" loading="lazy"
       onError={() => setIndex((i) => i + 1)}
-      onClick={() => onOpen?.(src)}
+      onClick={(event) => { event.stopPropagation(); onOpen?.(src); }}
       sx={{
         width: 40, height: 40, borderRadius: 1.25, objectFit: "cover",
         border: "1px solid #EEF3FB", display: "block", mx: "auto",
@@ -718,22 +715,6 @@ function headStyle(align: string, width = 0): React.CSSProperties {
   };
 }
 
-function cellStyle(align: string, numeric = false): React.CSSProperties {
-  return {
-    padding: "8px 20px",
-    fontSize: 12,
-    color: "#475569",
-    textAlign: align as React.CSSProperties["textAlign"],
-    borderBottom: "1px solid #F4F7FC",
-    fontVariantNumeric: numeric ? "tabular-nums" : undefined,
-    whiteSpace: "nowrap",
-    maxWidth: 320,
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-  };
-}
-
-/** 右上说明：手填了就用它，且受「说明」开关控制 */
 function chartShowMeta(payload: RenderPayload): boolean {
   return payload.chart?.show_meta !== false;
 }

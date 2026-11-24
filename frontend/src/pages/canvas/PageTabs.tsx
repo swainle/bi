@@ -35,6 +35,7 @@ export default function PageTabs({
               autoFocus
               value={editingPage.draft}
               onChange={(e) => setEditingPage({ key: v.key, draft: e.target.value })}
+              onFocus={(e) => e.currentTarget.select()}
               onBlur={commitPageRename}
               onKeyDown={(e) => {
                 if (e.key === "Enter") commitPageRename();

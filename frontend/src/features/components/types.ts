@@ -1,5 +1,7 @@
 /** 组件库类型 —— 与后端 app/components/spec.py 保持一致 */
 
+import type { RecoSpec, RecoItem, RecoMeta } from "./reco/types";
+
 export type ComponentKind =
   | "kpi" | "table"
   | "bar" | "hbar"
@@ -11,7 +13,7 @@ export type ComponentKind =
   | "radar" | "waterfall"
   | "map"
   // v2：业务页形态
-  | "combo" | "rank_list" | "insight" | "section" | "filter"
+  | "combo" | "rank_list" | "reco_list" | "insight" | "section" | "filter"
   // 页面头标卡（渐变头图 + 大标题 + 右侧统计）
   | "banner"
   // 导航菜单卡（品牌 + 菜单 + 右侧状态/按钮）
@@ -171,13 +173,19 @@ export interface ComboSpec {
   smooth: boolean;
 }
 
+export type { RecoSpec, RecoItem, RecoMeta };
+
 export interface TableColumn {
   key: string;
   label: string;
-  type: "text" | "number" | "percent" | "money" | "image" | "badge" | "rank" | "dual" | "tag" | "date";
+  type: "text" | "number" | "percent" | "money" | "image" | "badge" | "rank" | "dual" | "tag" | "date" | "link";
   align: "left" | "center" | "right";
   width: number;
   format?: string;
+  /** 列级文字颜色（#RRGGBB）；空 = 表格默认灰 */
+  color?: string;
+  /** 文本最多显示几行（1~4，超出省略）；空/1 = 单行省略 */
+  rows?: number;
   tag_split?: string;
   image?: string;
   sub_key?: string;
@@ -390,6 +398,7 @@ export interface ComponentSpec {
   content: ContentSpec;
   rank: RankSpec;
   combo: ComboSpec;
+  reco: RecoSpec;
   table_view: TableViewSpec;
   banner: BannerSpec;
   nav: NavSpec;
@@ -504,6 +513,14 @@ export interface RenderPayload {
   bar_label?: string;
   line_label?: string;
   items?: RankItem[];
+  /** 推荐列表（reco_list）：后端算好的行 + 大盘基准 */
+  reco_items?: RecoItem[];
+  reco_meta?: RecoMeta;
+  reco_stats?: { key: string; label: string; format: string; avg: number }[];
+  score_label?: string;
+  bar_key?: string;
+  reco_detail?: boolean;
+  reco_trend_days?: number;
   entries?: { k: string; v: string }[];
   index_column?: boolean;
   thumb?: boolean;

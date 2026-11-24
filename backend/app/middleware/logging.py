@@ -100,6 +100,13 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         # 供导出水印 / 审计等端点读取（与响应头同值）
         request.state.request_id = request_id
 
+        # 实时同步的轮询接口：1 秒一次 × 人数，记日志会把真正的请求淹掉。
+        # 只跳过结构化访问日志，request_id 仍然写进 state（报错时还能对上）。
+        if request.url.path.startswith("/api/live/"):
+            response: Response = await call_next(request)
+            response.headers["x-request-id"] = request_id
+            return response
+
         # 注入 structlog 上下文变量
         structlog.contextvars.clear_contextvars()
         structlog.contextvars.bind_contextvars(

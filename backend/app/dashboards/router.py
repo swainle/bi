@@ -103,6 +103,10 @@ def _require_edit(row: repo.DashboardRow | None, user: User, db: Session) -> rep
     return row
 
 
+# 供 `dashboards/structure.py`（结构操作专用接口）复用，别在那边重写一套权限判断
+require_dashboard_edit = _require_edit
+
+
 @router.get("")
 def list_dashboards(
     published_only: bool = False,

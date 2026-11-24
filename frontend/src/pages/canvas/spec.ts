@@ -61,6 +61,11 @@ export function emptySpec(title = "组件"): ComponentSpec {
       max_items: 10, weights: {}, value_key: "", tags_key: "", x_key: "", y_key: "", cvr_key: "",
     },
     combo: { bar_name: "", line_name: "", right_axis: true, smooth: true },
+    reco: {
+      value_key: "", ctr_key: "", cvr_key: "", ds_key: "", g_key: "",
+      stats: [], weights: {}, score_label: "机会分", bar_key: "",
+      detail: true, trend_days: 7,
+    },
     table_view: {
       columns: [], page_size: 10, more: false,
       more_label: "", index_column: true,
@@ -174,11 +179,22 @@ export function pruneSpecFields(spec: ComponentSpec, allowed: Set<string>, roleO
       return f;
     });
   }
+  const reco = spec.reco ? { ...spec.reco } : null;
+  if (reco) {
+    // 换绑定数据集后，推荐列表引用的列可能已经不存在：清掉，别让卡片带着死字段渲染
+    for (const key of ["value_key", "ctr_key", "cvr_key", "ds_key", "g_key", "bar_key"] as const) {
+      if (reco[key] && !allowed.has(reco[key])) reco[key] = "";
+    }
+    if (Array.isArray(reco.stats)) {
+      reco.stats = reco.stats.filter((cell) => !!cell?.key && allowed.has(cell.key));
+    }
+  }
   return {
     ...spec,
     binding: binding as unknown as ComponentSpec["binding"],
     chart: chart as unknown as ComponentSpec["chart"],
     rank: rank as unknown as ComponentSpec["rank"],
+    ...(reco ? { reco: reco as ComponentSpec["reco"] } : {}),
     ...(table ? { table_view: table as ComponentSpec["table_view"] } : {}),
     ...(filter ? { filter: filter as ComponentSpec["filter"] } : {}),
   };
@@ -199,6 +215,7 @@ export function normalizeSpec(raw: Partial<ComponentSpec> | undefined, title: st
     content: { ...base.content, ...(src.content || {}) },
     rank: { ...base.rank, ...(src.rank || {}) },
     combo: { ...base.combo, ...(src.combo || {}) },
+    reco: { ...base.reco, ...(src.reco || {}) },
     table_view: { ...base.table_view, ...(src.table_view || {}) },
     banner: { ...base.banner, ...(src.banner || {}) },
     nav: { ...base.nav, ...(src.nav || {}) },

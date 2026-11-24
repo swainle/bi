@@ -45,6 +45,8 @@ interface Props {
   /** 点画布空白处 → 取消选择 */
   onBlankSelect?: () => void;
   onLayoutChange: (key: string, next: { x: number; y: number; w: number; h: number }) => void;
+  /** 卡片刻拖拽开始/结束（画布据此暂停实时合并） */
+  onDragStateChange?: (dragging: boolean, key?: string) => void;
   onDelete: (key: string) => void;
   onDrop: (e: React.DragEvent) => void;
   scale?: number;
@@ -81,7 +83,7 @@ interface Props {
 
 const BoardSurface = forwardRef<BoardSurfaceHandle, Props>(function BoardSurface({
   canvasRef, items, cards, errors, selectedKeys, rendering,
-  onSelect, onBlankSelect, onLayoutChange, onDelete, onDrop,
+  onSelect, onBlankSelect, onLayoutChange, onDelete, onDrop, onDragStateChange,
   scale = 1, offsetX = 0, offsetY = 0, bleedMask = true, ghostNav = null, designWidth, designHeight = 620,
   filterFields, filterValues, filterDatasets, onTopList, onFilterChange,
   guides = [], guidesVisible = true, onGuideMove, onGuideRemove, onGuideMenu, onBlankMenu,
@@ -413,6 +415,7 @@ const BoardSurface = forwardRef<BoardSurfaceHandle, Props>(function BoardSurface
               selected={selectedKeys.includes(item.key)}
               onSelect={(additive: boolean) => onSelect(item.key, additive)}
               onLayoutChange={(next) => onLayoutChange(item.key, next)}
+              onDragStateChange={onDragStateChange}
               onDelete={() => onDelete(item.key)}
               scale={scale}
               zIndex={index}

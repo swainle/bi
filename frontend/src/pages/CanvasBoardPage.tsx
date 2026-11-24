@@ -36,8 +36,11 @@ import { KIND_LABEL } from "../features/components/registry";
 import type { CanvasItem } from "../features/components/boardTypes";
 import type {
   CanvasSize, ComponentItem, ComponentKind, ComponentSpec, DashboardDoc, DashboardRender,
-  DatasetBrief, DocItem, FilterFieldSpec, Guide, RenderPayload, ShapeKind, ShapeSpec, SortDir,
+  DatasetBrief, DocItem, DocView, FilterFieldSpec, Guide, RenderPayload, ShapeKind, ShapeSpec, SortDir,
 } from "../features/components/types";
+import { itemFingerprint, mergeItems, remoteItemsFor } from "../features/collab/mergeView";
+import { useBoardSync } from "../features/collab/useBoardSync";
+import { useAutoSave } from "../features/collab/useAutoSave";
 
 import {
   ACCENTS, ALIGN_ACTIONS, type DashboardBrief, baseKind, boundPlatforms, dedupeByKey,
@@ -84,6 +87,10 @@ export default function CanvasBoardPage() {
   /** 删除筛选栏前的确认：keys = 待删元素，platforms = 它绑定的平台 */
   const [deleteConfirm, setDeleteConfirm] = useState<{ keys: string[]; platforms: string[] } | null>(null);
   const [dirty, setDirty] = useState(false);
+  /** 实时同步的基线版本（文档 updated_at）：自己保存后 / 每次同步成功后更新 */
+  const [liveVersion, setLiveVersion] = useState<string | null>(null);
+  /** 自动保存正在请求中（静默通道，不进 saving 状态，避免按钮闪烁） */
+  const autoSavingRef = useRef(false);
   /** 这份看板是不是 Agent 建的（发布二次确认里说明来源，来自后端归属登记） */
   const [agentGenerated, setAgentGenerated] = useState(false);
   /** 发布二次确认（发布必须用户自己点） */
@@ -91,11 +98,12 @@ export default function CanvasBoardPage() {
   /** 切页时有未保存改动：待切换的页面 key */
   const [pendingView, setPendingView] = useState<string | null>(null);
   /** 文档结构（增删页 / 改名 / 复制页）改过：这类改动只能整份保存 */
-  const [docDirty, setDocDirty] = useState(false);
   /** 「AI 推荐组件」进行中：按当前数据集字段推荐并插入 */
   const [recommendBusy, setRecommendBusy] = useState(false);
   /** 正在进行的动作：save=只保存草稿，publish=保存并发布到「我的看板」 */
   const [saving, setSaving] = useState<"save" | "publish" | null>(null);
+  /** 正在拖的那个元素：合并远端时钉住它，避免快速拖动松手被别人的旧版面盖回去 */
+  const [dragKey, setDragKey] = useState<string | null>(null);
   const [rendering, setRendering] = useState(false);
   const [revision, setRevision] = useState(0);
   const [toast, setToast] = useState<{ open: boolean; msg: string; severity: "success" | "error" }>({
@@ -152,7 +160,7 @@ export default function CanvasBoardPage() {
   /* ── 撤销 / 重做：版面快照栈（拖拽按一次交互记一步，面板输入按 500ms 静默合并） ── */
   /* ── 撤销 / 重做（快照栈 + 拖拽一步 + 快捷键，见 canvas/useCanvasHistory） ── */
   const {
-    canUndo, canRedo, undo, redo, pushHistory, resetHistory, snapOf,
+    canUndo, canRedo, undo, redo, pushHistory, resetHistory, snapOf, applyExternal,
     prevSnap, itemsRef, guidesRef,
   } = useCanvasHistory({ items, guides, setItems, setGuides, setDirty, canvasRef, canvasSize, setCanvasSize });
   /** 右侧类型栏 = 组件库（与 /bi/components 同一份数据） */
@@ -323,6 +331,8 @@ export default function CanvasBoardPage() {
       const next = migratePlatformSplit(loaded).doc;
       setDoc(next);
       setAgentGenerated(Boolean(res.data?.agent_generated));
+      /* 实时同步的基线：这份文档加载时的版本（别人再保存就会变） */
+      setLiveVersion(res.data?.updated_at ? String(res.data.updated_at) : null);
       /* 导航菜单卡勾了「首视页」就落到那一页，否则退回第一页 */
       const firstView = navHomePage(next) || next.views?.[0]?.key || "";
       const firstViewDef = next.views?.find((v) => v.key === firstView) ?? next.views?.[0];
@@ -553,7 +563,7 @@ export default function CanvasBoardPage() {
   /* 切页前有未保存改动 → 先弹「保存 / 不保存 / 取消」 */
   const switchView = (key: string) => {
     if (!doc || key === view) return;
-    if (dirty || docDirty) { setPendingView(key); return; }
+    if (dirty) { setPendingView(key); return; }
     doSwitchView(key);
   };
 
@@ -613,66 +623,115 @@ export default function CanvasBoardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doc, view, activePlatform]);
 
+  /** 结构接口回包：服务端最新文档 + updated_at（同步基线） */
+  const applyStructure = (data?: { doc?: DashboardDoc; updated_at?: string }) => {
+    if (data?.doc) setDoc(data.doc);
+    if (data?.updated_at) setLiveVersion(String(data.updated_at));
+  };
+
+  /**
+   * 结构操作统一入口：先把当前页落库，再调结构接口。
+   * 结构接口只改结构字段（加 / 删 / 改名 / 发布），**不发整份文档** —— 否则会覆盖别人刚改过的页。
+   */
+  const runStructure = async (
+    call: () => Promise<{ data?: { doc?: DashboardDoc; updated_at?: string } }>,
+    failMsg: string,
+  ) => {
+    if (!doc) return null;
+    try {
+      const saved = await persist({ quiet: true, toastOnSuccess: false });
+      if (!saved) {
+        setToast({ open: true, msg: "当前页没保存成功，先别改页面结构", severity: "error" });
+        return null;
+      }
+      const res = await call();
+      applyStructure(res.data);
+      return res.data || null;
+    } catch (err) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setToast({ open: true, msg: detail || failMsg, severity: "error" });
+      return null;
+    }
+  };
+
   /** 新建页面：同一看板下的一页，默认名「页面N」，建完直接进重命名 */
-  const addPage = () => {
+  const addPage = async () => {
     if (!doc) return;
-    const stashed = stashView(doc);
-    const title = `页面${stashed.views.length + 1}`;
+    const title = `页面${(doc.views?.length ?? 0) + 1}`;
     const key = `page_${Date.now().toString(36)}`;
-    setDoc({ ...stashed, views: [...stashed.views, { key, title, items: [], guides: [] }] });
+    const data = await runStructure(
+      () => client.post(`/bi/dashboards/${docId}/views`, { view: { key, title, items: [], guides: [] } }),
+      "新建页面失败",
+    );
+    if (!data) return;
     setView(key);
     setItems([]);
     setGuides([]);
     resetHistory([], [], null);
     setSelectedKeys([]);
-    setDirty(true);
-    setDocDirty(true);
     setEditingPage({ key, draft: title });
   };
 
-  const renamePage = (key: string, title: string) => {
+  const renamePage = async (key: string, title: string) => {
     if (!doc) return;
     const clean = (title || "").trim().slice(0, 16) || "页面";
-    setDoc({ ...doc, views: doc.views.map((v) => (v.key === key ? { ...v, title: clean } : v)) });
     setEditingPage(null);
-    setDirty(true);
-    setDocDirty(true);
+    if ((doc.views.find((v) => v.key === key)?.title ?? "") === clean) return;
+    const previous = doc;
+    /* 标题是纯展示字段：先在本地生效，失败再回滚，输入体验不卡 */
+    setDoc({ ...doc, views: doc.views.map((v) => (v.key === key ? { ...v, title: clean } : v)) });
+    try {
+      const res = await client.patch(`/bi/dashboards/${docId}/views/${encodeURIComponent(key)}`, { title: clean });
+      applyStructure(res.data);
+    } catch (err) {
+      setDoc(previous);
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setToast({ open: true, msg: detail || "页面改名失败", severity: "error" });
+    }
   };
 
-  const duplicatePage = (key: string) => {
+  const duplicatePage = async (key: string) => {
     if (!doc) return;
-    const stashed = stashView(doc);
-    const source = stashed.views.find((v) => v.key === key);
+    const source = stashView(doc).views.find((v) => v.key === key);
     if (!source) return;
     const stamp = Date.now().toString(36);
     const copy = {
       key: `page_${stamp}`,
       title: `${source.title || "页面"} 副本`.slice(0, 16),
       canvas: source.canvas,
-      items: source.items.map((item, index) => ({ ...item, key: `${item.key}_${stamp}${index}` })),
+      items: (source.items ?? []).map((item, index) => ({ ...item, key: `${item.key}_${stamp}${index}` })),
       guides: (source.guides ?? []).map((guide, index) => ({ ...guide, id: `g_${stamp}${index}` })),
     };
-    setDoc({ ...stashed, views: [...stashed.views, copy] });
-    setDirty(true);
-    setDocDirty(true);
+    const data = await runStructure(
+      () => client.post(`/bi/dashboards/${docId}/views`, { view: copy, after: key }),
+      "复制页面失败",
+    );
+    const created = data?.doc?.views.find((v) => v.key === copy.key);
+    if (!created) return;
+    const nextItems = (created.items ?? []).map(toCanvasItem);
+    setView(created.key);
+    setItems(nextItems);
+    setGuides(created.guides ?? []);
+    resetHistory(nextItems, created.guides ?? [], created.canvas ?? null);
+    selectOnly((nextItems.find((i) => i.type === "chart") || nextItems[0])?.key ?? null);
   };
 
-  const deletePage = (key: string) => {
+  const deletePage = async (key: string) => {
     if (!doc || doc.views.length <= 1) return;
-    const stashed = stashView(doc);
-    const views = stashed.views.filter((v) => v.key !== key);
-    setDoc({ ...stashed, views });
-    if (key === view) {
-      const target = views[0];
-      setView(target.key);
-      setGuides(target.guides ?? []);
-      const nextItems = target.items.map(toCanvasItem);
-      setItems(nextItems);
-      resetHistory(nextItems, target.guides ?? [], target.canvas ?? null);
-      selectOnly((nextItems.find((i) => i.type === "chart") || nextItems[0])?.key ?? null);
-    }
-    setDirty(true);
-    setDocDirty(true);
+    const wasCurrent = key === view;
+    const data = await runStructure(
+      () => client.delete(`/bi/dashboards/${docId}/views/${encodeURIComponent(key)}`),
+      "删除页面失败",
+    );
+    if (!data?.doc || !wasCurrent) return;
+    const target = data.doc.views[0];
+    if (!target) return;
+    const nextItems = (target.items ?? []).map(toCanvasItem);
+    setView(target.key);
+    setItems(nextItems);
+    setGuides(target.guides ?? []);
+    resetHistory(nextItems, target.guides ?? [], target.canvas ?? null);
+    selectOnly((nextItems.find((i) => i.type === "chart") || nextItems[0])?.key ?? null);
   };
 
   const commitPageRename = () => {
@@ -1168,51 +1227,132 @@ export default function CanvasBoardPage() {
     setDirty(true);
   };
 
-  /** 落库：publish=false 只存草稿（不动发布状态），publish=true 保存并发布 */
-  const persist = useCallback(async (publish: boolean) => {
-    if (!doc || saving) return false;
-    setSaving(publish ? "publish" : "save");
+  /** 保存当前页（只写这一页；结构改动走 /views 与 /publish 专用接口，永远不发整份文档）.
+   *  quiet=true 时失败不弹提示（自动保存的重试由调用方统一提示一次） */
+  const persist = useCallback(async (options?: { quiet?: boolean; toastOnSuccess?: boolean }) => {
+    const quiet = !!options?.quiet;
+    if (!doc || saving || !view) return false;
+    /* 自动保存走静默通道：不占用 saving（否则预览/发布按钮会跟着闪）、不弹「已保存」 */
+    if (quiet) {
+      if (autoSavingRef.current) return false;
+      autoSavingRef.current = true;
+    } else {
+      setSaving("save");
+    }
     try {
       const list = detailEditKey ? commitDetailEdit() : items;
       const stashed = stashView(doc, list, false);
-      const nextDoc: DashboardDoc = {
-        ...stashed,
-        published: publish ? true : stashed.published,
-      };
-      /* 普通保存只写当前这一页（页面级保存）：别的页即使别人改过也不会被覆盖；
-         发布要走整份文档（published 是文档级字段）。 */
       const currentView = stashed.views.find((v) => v.key === view);
-      /* 增删页 / 改名 / 复制页属于文档结构改动，必须整份保存；只有改页面内容才走按页保存 */
-      const res = !publish && currentView && !docDirty
-        ? await client.put(`/bi/dashboards/${docId}/views/${view}`, { view: currentView })
-        : await client.put(`/bi/dashboards/${docId}`, { doc: nextDoc, publish });
-      // 以服务端回包为准，拿到 published_at 之类的服务端字段
-      setDoc((res.data?.doc as DashboardDoc) || nextDoc);
+      if (!currentView) return false;
+      const res = await client.put(`/bi/dashboards/${docId}/views/${view}`, { view: currentView });
+      // 以服务端回包为准，拿到 updated_at 之类的服务端字段
+      setDoc((res.data?.doc as DashboardDoc) || stashed);
+      /* 自己保存完：基线跟着走，下一轮轮询不会把自己存的内容当成「别人的更新」 */
+      setLiveVersion(res.data?.updated_at ? String(res.data.updated_at) : null);
       setDirty(false);
-      setDocDirty(false);
       setRevision((r) => r + 1);
       /* 顶栏「最近编辑」按 updated_at 排：刚存完把自己顶到最前 */
       client.get("/bi/dashboards")
         .then((r) => setDocs(r.data?.dashboards || []))
         .catch(() => {});
-      setToast({
-        open: true,
-        msg: publish ? "已发布到「我的看板」" : "已保存",
-        severity: "success",
-      });
+      /* 自动保存不提示（每 500ms 弹一次「已保存」就是闪烁）；
+         预览前的保存也不提示（反正马上跳走） */
+      if (!quiet && options?.toastOnSuccess !== false) {
+        setToast({ open: true, msg: "已保存", severity: "success" });
+      }
       return true;
     } catch (err) {
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      setToast({ open: true, msg: detail || (publish ? "发布失败" : "保存失败"), severity: "error" });
+      if (!options?.quiet) {
+        setToast({ open: true, msg: detail || "保存失败", severity: "error" });
+      }
       return false;
     } finally {
-      setSaving(null);
+      if (quiet) autoSavingRef.current = false;
+      else setSaving(null);
     }
-  }, [doc, docId, items, view, guides, saving, stashView, detailEditKey, commitDetailEdit, docDirty]);
+  }, [doc, docId, items, view, saving, stashView, detailEditKey, commitDetailEdit]);
 
-  const handleSave = useCallback(() => persist(false), [persist]);
-  /** 发布必须用户二次确认：点按钮 → 弹窗确认 → 才落库（Agent 侧工具也禁止直接发布） */
+  const handleSave = useCallback(() => persist({ toastOnSuccess: false }), [persist]);
+  /** 发布必须用户二次确认：点按钮 → 弹窗确认 → 才落库（发布只置 published，不发整份文档） */
   const handlePublish = useCallback(() => setPublishConfirm(true), []);
+  const publishBoard = useCallback(async () => {
+    try {
+      const res = await client.post(`/bi/dashboards/${docId}/publish`, {});
+      applyStructure(res.data);
+      setToast({ open: true, msg: "已发布到「我的看板」", severity: "success" });
+    } catch (err) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setToast({ open: true, msg: detail || "发布失败", severity: "error" });
+    }
+  }, [docId]);
+
+  /* ── 实时同步：300ms 轮询版本 → 变了拉当前页 → 按元素 key 合并 ──
+     合并走 applyExternal：不进撤销栈、不置 dirty，所以不会再触发自动保存（不会来回打）。 */
+  /** 本地改了但还没保存的元素（对照 doc 里那份服务端快照） */
+  const localChangedKeys = useCallback(() => {
+    const pinned = new Set<string>();
+    const docView = doc?.views.find((v) => v.key === view);
+    if (!docView) return pinned;
+    const serverByKey = new Map(
+      remoteItemsFor(docView, activePlatform).map(toCanvasItem)
+        .map((item) => [item.key, itemFingerprint(item)]),
+    );
+    for (const item of itemsRef.current) {
+      if (serverByKey.get(item.key) !== itemFingerprint(item)) pinned.add(item.key);
+    }
+    return pinned;
+  }, [doc, view, activePlatform]);
+
+  const applyRemoteView = useCallback((remoteView: DocView, _version: string) => {
+    const remote = remoteItemsFor(remoteView, activePlatform).map(toCanvasItem);
+    /* 钉住「正在拖的」和「本地改了还没保存的」元素：它们用本地版本，
+       其余元素照常跟随远端 —— 既不会被别人的旧版面盖回去，保存时也不会覆盖别人的改动 */
+    const pinned = localChangedKeys();
+    if (dragKey) pinned.add(dragKey);
+    const merged = mergeItems(itemsRef.current, remote, pinned);
+    if (merged.changed) {
+      applyExternal(merged.items, remoteView.guides ?? [], remoteView.canvas ?? null);
+    }
+    /* 文档里这一页也换成服务端最新的：分套版面里「别的平台那一套」不会因为本地保存被写回旧数据 */
+    setDoc((prev) => (prev ? {
+      ...prev,
+      views: prev.views.map((item) => (item.key === view ? { ...item, ...remoteView } : item)),
+    } : prev));
+  }, [activePlatform, applyExternal, view, localChangedKeys, dragKey]);
+
+  const { refresh: refreshLive } = useBoardSync({
+    docId,
+    viewKey: view || null,
+    baseline: liveVersion,
+    /* 只有保存中 / 改名中不合并：编辑中的元素靠「按元素钉住」保护，不需要整页停更 */
+    blocked: !!saving || renaming || editingPage !== null,
+    onRemote: applyRemoteView,
+    onSynced: setLiveVersion,
+  });
+
+  /* 切页 / 切平台时强制拉一次该页：版本号是文档级的，别人改的是别的页时轮询不会触发同步 */
+  const liveSyncKeyRef = useRef("");
+  useEffect(() => {
+    if (!doc || !view) return;
+    const key = `${view}::${activePlatform || ""}`;
+    if (!liveSyncKeyRef.current) {
+      liveSyncKeyRef.current = key;   // 首次装载：进来时的 GET 已经是最新的，不重复拉
+      return;
+    }
+    if (liveSyncKeyRef.current === key) return;
+    liveSyncKeyRef.current = key;
+    void refreshLive();
+  }, [doc, view, activePlatform, refreshLive]);
+
+  /* ── 自动保存：改动 500ms 后静默落库（保存中 / 改名 / 改页名时不触发）；
+        失败静默重试 2s/5s/15s，仍失败才提示一次 ── */
+  const { stale: unsavedLong } = useAutoSave({
+    pending: dirty,
+    blocked: !!saving || renaming || editingPage !== null,
+    save: () => persist({ quiet: true }),
+    onFailure: () => setToast({ open: true, msg: "自动保存失败，改动还没存上，请手动点预览触发保存", severity: "error" }),
+  });
 
   /** 点击添加：落在当前视口中间且整块留在版面内（宽元素不会被顶到右边溢出区） */
   const centerPosition = (width = 320) => {
@@ -1616,7 +1756,7 @@ export default function CanvasBoardPage() {
         bleedMask={bleedMask} setBleedMask={setBleedMask}
         doc={doc} view={view} editingPage={editingPage} setEditingPage={setEditingPage}
         commitPageRename={commitPageRename} switchView={switchView} setPageMenu={setPageMenu} addPage={addPage}
-        dirty={dirty} params={params} handleSave={handleSave} handlePublish={handlePublish} saving={saving}
+        unsaved={unsavedLong} params={params} handleSave={handleSave} handlePublish={handlePublish} saving={saving}
       />
 
       <Box sx={{ flex: 1, display: "flex", minHeight: 0 }}>
@@ -1647,6 +1787,7 @@ export default function CanvasBoardPage() {
           stageViewportH={stageViewportH} boardWidth={boardWidth}
           zoomTo={zoomTo}
           onResizeCanvas={resizeCanvas}
+          onCardDragState={(active, key) => setDragKey(active ? key ?? null : null)}
           stageScale={stageScale} stageOffsetX={stageOffsetX} stageOffsetY={stageOffsetY} stageHeight={stageHeight}
           selectedKeys={selectedKeys} selectedBounds={selectedBounds} bleedMask={bleedMask}
           rendering={rendering} inlineDetail={inlineDetail} detailEditKey={detailEditKey}
@@ -1698,11 +1839,10 @@ export default function CanvasBoardPage() {
             onClick={async () => {
               const key = pendingView;
               setPendingView(null);
-              const ok = await persist(false);
+              const ok = await persist();
               if (ok && key) {
                 doSwitchView(key);
                 setDirty(false);   // 刚保存过，切页后不要留在「未保存」
-                setDocDirty(false);
               }
             }}>保存后切换</Button>
         </DialogActions>
@@ -1719,7 +1859,7 @@ export default function CanvasBoardPage() {
         onResizeCanvas={resizeCanvas}
         guideMenu={guideMenu} setGuideMenu={setGuideMenu} removeGuide={removeGuide}
         guidesVisible={guidesVisible} setGuidesVisible={setGuidesVisible} guides={guides} setGuides={setGuides} setDirty={setDirty}
-        publishConfirm={publishConfirm} setPublishConfirm={setPublishConfirm} persist={persist}
+        publishConfirm={publishConfirm} setPublishConfirm={setPublishConfirm} onPublish={publishBoard}
         saving={saving} agentGenerated={agentGenerated} toast={toast}
       />
     </Box>

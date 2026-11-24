@@ -18,6 +18,7 @@ import TableCard from "./renderers/TableCard";
 import ScatterCard from "./renderers/ScatterCard";
 import ComboCard from "./renderers/ComboCard";
 import RankListCard from "./renderers/RankListCard";
+import RecoListCard from "./renderers/RecoListCard";
 import InsightCard from "./renderers/InsightCard";
 import SectionCard from "./renderers/SectionCard";
 import FilterCard from "./renderers/FilterCard";
@@ -66,6 +67,7 @@ export const RENDERERS: Record<ComponentKind, Renderer> = {
   scatter: ScatterCard,
   combo: ComboCard,
   rank_list: RankListCard,
+  reco_list: RecoListCard,
   insight: InsightCard,
   section: (props: RendererProps) => <SectionCard payload={props.payload} ui={props.ui} compact={props.compact} />,
   filter: FilterCard,
@@ -100,6 +102,7 @@ export const KIND_LABEL: Record<ComponentKind, string> = {
   scatter: "散点图",
   combo: "柱线组合",
   rank_list: "排行列表",
+  reco_list: "推荐列表",
   insight: "结论卡",
   section: "分节标题",
   filter: "筛选栏",
@@ -111,7 +114,7 @@ export const KIND_LABEL: Record<ComponentKind, string> = {
 export const KIND_ROLE: Record<ComponentKind, ComponentRole> = {
   kpi: "data", bar: "data", hbar: "data", line: "data", area: "data",
   pie: "data", donut: "data", heatmap: "data", wordcloud: "data", table: "data",
-  scatter: "data", combo: "data", rank_list: "data",
+  scatter: "data", combo: "data", rank_list: "data", reco_list: "data",
   funnel: "data", gauge: "data", radar: "data", waterfall: "data", map: "data",
   insight: "content", section: "structure", filter: "param", banner: "content", nav: "content",
 };

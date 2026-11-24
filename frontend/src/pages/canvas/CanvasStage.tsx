@@ -25,7 +25,7 @@ export default function CanvasStage({
   stageRef, rulerRef, canvasRef, surfaceRef,
   setInlineDetail, setItems, setParams, setSelectedKeys, setTopKey, setTopSort, setDetailCardKey, setDirty, setGuideMenu,
   selectOnly, toggleSelect, duplicateForDrag, requestDelete, findBoard, commitDetailEdit, cancelDetailEdit,
-  patchItem, moveGuide, removeGuide, startPullGuide, handleDrop, onResizeCanvas,
+  patchItem, moveGuide, removeGuide, startPullGuide, handleDrop, onResizeCanvas, onCardDragState,
 }: {
   view: string;
   docId: number;
@@ -45,6 +45,8 @@ export default function CanvasStage({
   stageOffsetY: number;
   stageHeight: number;
   onResizeCanvas: (size: CanvasSize) => void;
+  /** 卡片开始/结束拖拽：画布据此暂停实时合并，避免松手瞬间被别人的旧版面覆盖 */
+  onCardDragState?: (dragging: boolean, key?: string) => void;
   selectedKeys: string[];
   selectedBounds: { x0: number; y0: number; x1: number; y1: number } | null;
   bleedMask: boolean;
@@ -166,6 +168,7 @@ export default function CanvasStage({
               designWidth={designWidth}
               designHeight={stageHeight}
               onResizeCanvas={onResizeCanvas}
+              onDragStateChange={onCardDragState}
               canvasRef={canvasRef}
               items={items}
               cards={cards}

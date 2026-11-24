@@ -124,6 +124,21 @@ export function useCanvasHistory({
     };
   }, [pushHistory, snapOf]);
 
+  /* 外部变更（别人保存 / 实时同步）静默落地：
+     不进撤销栈（否则 ⌘Z 会把别人的改动撤掉）、不置 dirty（否则会被自动保存又写回去）。 */
+  const applyExternal = useCallback((
+    nextItems: CanvasItem[], nextGuides: Guide[], size: CanvasSize | null = canvasSizeRef.current,
+  ) => {
+    itemsRef.current = nextItems;
+    guidesRef.current = nextGuides;
+    canvasSizeRef.current = size;
+    interactionSnap.current = null;          // 别把外部变更当成一次拖拽
+    prevSnap.current = snapOf(nextItems, nextGuides, size);  // 先对齐快照，watcher 就不会再记一步
+    setItems(nextItems);
+    setGuides(nextGuides);
+    setCanvasSize(size);
+  }, [snapOf]);
+
   /* ⌘Z / ⇧⌘Z（输入框里不拦） */
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -138,7 +153,7 @@ export function useCanvasHistory({
   }, [undo, redo]);
 
   return {
-    canUndo, canRedo, undo, redo, pushHistory, resetHistory, snapOf,
+    canUndo, canRedo, undo, redo, pushHistory, resetHistory, snapOf, applyExternal,
     prevSnap, itemsRef, guidesRef,
   };
 }

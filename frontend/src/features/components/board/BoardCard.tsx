@@ -21,6 +21,8 @@ interface Props {
   selected: boolean;
   onSelect: (additive: boolean) => void;
   onLayoutChange: (next: { x: number; y: number; w: number; h: number }) => void;
+  /** 拖拽开始/结束：画布据此暂停实时合并，避免松手瞬间被别人的旧版面覆盖 */
+  onDragStateChange?: (dragging: boolean, key?: string) => void;
   onDelete: () => void;
   scale?: number;
   zIndex?: number;
@@ -129,7 +131,7 @@ export default function BoardCard({
   others = [], guideLines, designWidth = 1440, designHeight = 620, onGuides,
   filterFields, filterValues, onFilterChange, filterDatasets, onTopList, currentPage,
   registerNode, onDuplicateForDrag, onGhostStart, onGhost, onGhostEnd,
-  followers, getCardNode,
+  followers, getCardNode, onDragStateChange,
 }: Props) {
   /** 卡片级报错（数据源连不上等）：卡片高度有限，最多显示两行，完整原因放 title */
   const cardError = error || (payload as { error?: string } | null)?.error || "";
@@ -152,11 +154,11 @@ export default function BoardCard({
 
   /** 拖动中组件不重渲染，回调与几何参数一律走 ref，避免闭包拿到过期值 */
   const ctx = useRef({
-    onLayoutChange, onGuides, onGhostStart, onGhost, onGhostEnd, onDuplicateForDrag,
+    onLayoutChange, onGuides, onGhostStart, onGhost, onGhostEnd, onDuplicateForDrag, onDragStateChange,
     others, guideLines, scale, designWidth, designHeight, MIN_SIZE,
   });
   ctx.current = {
-    onLayoutChange, onGuides, onGhostStart, onGhost, onGhostEnd, onDuplicateForDrag,
+    onLayoutChange, onGuides, onGhostStart, onGhost, onGhostEnd, onDuplicateForDrag, onDragStateChange,
     others, guideLines, scale, designWidth, designHeight, MIN_SIZE,
   };
   /** 画板拖动时，区域内组件的 DOM（跟着一起位移，拖动过程就同步，不等松手） */
@@ -226,6 +228,7 @@ export default function BoardCard({
       liveRect.current = null;
       c.onGuides?.([]);
       c.onGhostEnd?.();
+      c.onDragStateChange?.(false);
       setDrag(null);
       document.body.style.userSelect = "";
       if (!commit || !rect) return;
@@ -287,6 +290,7 @@ export default function BoardCard({
     onGhostStart?.();
     /* 拖动期间禁止选中文字：整张卡都能抓，别一边拖一边把内容选蓝 */
     document.body.style.userSelect = "none";
+    onDragStateChange?.(true, item.key);
     setDrag({ mode, edge, startX: clientX, startY: clientY, base: { ...item }, altStart });
   };
 

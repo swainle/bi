@@ -197,6 +197,20 @@ export default function ChartThumb({ kind, size = 44 }: Props) {
             ))}
           </>
         );
+      case "reco_list":
+        return (
+          <>
+            {[0, 1, 2, 3].map((i) => (
+              <g key={i}>
+                <rect x="7" y={9.4 + i * 7} width="2.4" height="2.4" rx="1.2" fill={fill} opacity={0.8 - i * 0.15} />
+                <rect x="12" y={9.4 + i * 7} width={10 - i * 1.4} height="3" rx="1.5" fill={stroke} />
+                <rect x="24" y={9.4 + i * 7} width="3.2" height="3" rx="1.5" fill="#E8EFFB" />
+                <rect x="29" y={9.4 + i * 7} width="3.2" height="3" rx="1.5" fill="#E8EFFB" />
+                <path d="M37 9.6 L39 10.9 L37 12.2" fill="none" stroke={fill} strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+              </g>
+            ))}
+          </>
+        );
       case "insight":
         return (
           <>

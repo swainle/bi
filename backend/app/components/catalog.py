@@ -134,11 +134,16 @@ CHART_CATALOG: list[dict] = [
                           metrics=[{"name": "热销指数", "agg": "AVG"}], height=300, accent="sky"),
                   "combo": {"bar_name": "平均日销量", "line_name": "平均热销指数"}}},
 
-    # ── 排名：榜卡 ──
+    # ── 排名：榜卡 / 推荐列表 ──
     {"id": "rank.list", "kind": "rank_list", "label": "排行列表", "category": "排名",
      "desc": "TOP N + 分值 + 标签",
      "defaults": {**_spec("排行", dim="商品标题", metric="日销量", top_n=10, height=340, accent="indigo"),
                   "rank": {"order": "value", "max_items": 10}}},
+    {"id": "reco.list", "kind": "reco_list", "label": "推荐列表", "category": "排名",
+     "desc": "机会分排序 + 点开看详情",
+     "defaults": {**_spec("推荐", dim="产品标题", metric="日销量", agg="AVG", top_n=10,
+                          height=360, accent="indigo"),
+                  "reco": {}}},
 
     # ── 页面模块：分节 / 筛选 ──
     {"id": "filter.bar", "kind": "filter", "label": "筛选栏", "category": "页面模块",

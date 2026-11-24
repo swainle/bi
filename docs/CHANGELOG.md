@@ -7,6 +7,237 @@
 > 交付顺序：改代码 → `tsc --noEmit` → 真机截图自检（对齐 / 折行 / 溢出 / 空态）→ 写这里。
 
 ---
+## 2026-11-24 · 修复：点缩略图会连带打开行详情抽屉
+
+- **现象**：明细表里点商品缩略图，除了大图预览，还会把右侧「商品详情」抽屉一起弹出来。
+- **原因**：缩略图的 `onClick` 没有阻止冒泡，点完继续冒到 `<tr onClick>` → 行详情抽屉。
+  行点击本身是对的（点表格正文应该出抽屉），只是缩略图有自己的行为（看大图），不该再触发行的行为。
+- **修法**：`Thumb` 的点击 `event.stopPropagation()` 后再开预览。
+- **实测**（预览页 `/bi/dashboards/5?view=main`）：点正文单元格 → 抽屉 1 个（「商品详情…」）；
+  点缩略图 → **抽屉 0 个、预览弹窗 1 个**。改动前同一操作是「抽屉 1 + 弹窗 1」，已复现对比。
+- **涉及文件**：`renderers/TableCard.tsx`（1 行）。
+  前端 195 条单测、`tsc`、构建、体积、Storybook 全过。
+
+---
+## 2026-11-24 · 新增：明细表「链接」列（单元格是二维码按钮）
+
+- **改了什么**：`TableColumn.type` 新增 `link`。这类单元格显示一个「二维码」小按钮（紫色胶囊 + 二维码图标），
+  点开弹窗显示**该行这一格内容的二维码**（SVG，188px），下面带截断的原文本，点遮罩关闭。
+- **为什么**：榜单/商品表里的 `item_url` 原来只能看一长串链接，手机端要扫码看详情，直接给二维码最省事。
+- **实现**：`qrcode.react` 本来就在依赖里但没用过，这里用它的 `QRCodeSVG`（纯前端生成，不请求外部服务、无需后端）；
+  弹窗走 MUI Dialog（portal 到 body），画布缩放不影响；按钮 `stopPropagation`，不会误触「点击行弹明细」。
+- **涉及文件**：**`renderers/QrButton.tsx`（新）**、`renderers/TableCard.tsx`（新增 `link` 分支，1 行）、
+  `editor/TableColumnCard.tsx`（类型下拉加「链接」）、`components/types.ts`、`backend/app/components/table_columns.py`、
+  `renderers/__tests__/qrButton.test.ts`（3 条）、`backend/tests/test_table_columns.py`（+1 条，类型集合同步）。
+- **怎么验证**：真机（doc5 的 `tt_table`，把 `item_url` 临时改成「链接」）→ 该列出现 10 个「二维码」按钮，
+  点第一个弹窗出现 SVG 二维码（`width=188`，编码 `https://item.jd.com/100331771516.html`），弹窗可见。
+  验完已把该列类型还原成 `tag`。前端 195 条单测、后端全量、`tsc`、构建、**体积预算（qrcode.react 未超）**、Storybook 全过。
+  截图 `docs/_selfcheck/2026-11-24-link-column.png` 与 `2026-11-24-link-qr-dialog.png`。
+
+---
+## 2026-11-24 · 新增：明细表每列的水平对齐（左 / 中 / 右）
+
+- **改了什么**：明细表 → 字段 → 每张列配置卡新增一行「对齐」，三段式控件（左 / 中 / 右），写回 `TableColumn.align`；
+  正文单元格按它渲染，列头仍默认居中（上一条的规则不变）。
+- **顺带修两处会打架的旧逻辑**：
+  ① 换「类型」时原来会**偷偷把对齐改掉**（数值→右、排名→中），把用户手动选的值冲掉；现在换类型只改类型本身；
+    新加的列仍按类型给默认对齐（数值右 / 排名中 / 其余左）。
+  ② 表头原来还会按「列名含排名/序号」自动居中 —— 这条隐式规则已删除，一切以「对齐」为准。
+- **另修**：格式下拉收起来时会把「格式串 + 样例」拼在一起显示（如 `+,.1%+12.3%`），加了 `renderValue` 只显示格式串。
+- **涉及文件**：`editor/TableColumnCard.tsx`（对齐控件 + 格式显示）、`editor/TableFieldsEditor.tsx`（换类型不再改对齐）、
+  `renderers/TableCard.tsx`（对齐只认列配置）、`__tests__/tableColumnConfig.test.ts`（+1 条，改 1 条）。
+- **怎么验证**：真机（doc5 的 `tt_table` 的 `daily_deal` 列）点「中 / 右 / 左」，DB 与渲染同步变化
+  （`align=center/right/left`，表格单元格 `text-align` 一致）；改成「文本」后对齐保持不动。
+  验完已把该列还原成 `number / right / 无格式`。前端 192 条单测、`tsc`、构建、体积、Storybook 全过。
+  截图 `docs/_selfcheck/2026-11-24-column-align-card.png`。
+
+---
+## 2026-11-24 · 优化：明细表列头默认居中 + 「标签」列支持分隔符与彩色胶囊
+
+- **列头默认居中**：表头原来跟列的对齐走（数值列右对齐、文本列左对齐），现在**一律居中**；正文单元格的不变。
+- **标签列**（类型 = 标签）：
+  - 列配置卡新增**分隔符**输入（如 `,` / `、` / `|`，最长 4 字符）；不填时按 `, ， 、 |` 自动切分；
+  - 渲染成**圆角胶囊**（`borderRadius: 999px`），文字颜色跟随该列「颜色」设置，底色是对应颜色 10% 透明度的浅底；
+    没设颜色时用默认蓝 `#2563EB`（与设计稿一致）。
+- **为什么**：明细表里「人气 / 相关」这类枚举值原来是一串文本或灰色小方块，看不出边界也带不上颜色。
+- **涉及文件**：**`renderers/TagCell.tsx`（新，切分 + 着色 + 胶囊）**、`renderers/TableCard.tsx`（表头居中、标签单元格改用 TagCell，
+  文件因此变短）、`editor/TableColumnCard.tsx`（分隔符输入）、`renderers/__tests__/tagCell.test.ts`（6 条）。
+- **怎么验证**：真机（doc5 的 `tt_table`）实测 —— 首列表头 `text-align: center`；把 `product_title` 改成「标签」后
+  分隔符输入框出现、设为 `（` 可切分；胶囊样式读回来是 `border-radius: 999px`、
+  `color: rgb(225,29,72)`、`background: rgba(225,29,72,0.1)`（设了红色）；原有蓝色标签列自动变成同款蓝胶囊。
+  验完已把该列还原成文本（`tag_split` / `color` 已删除）。前端 191 条单测、`tsc`、构建、体积、Storybook 全过。
+  截图 `docs/_selfcheck/2026-11-24-tag-column.png`。
+
+---
+## 2026-11-24 · 修复：快速拖动后组件「弹回原位」
+
+- **现象**：拖得越快越容易复现 —— 松手后卡片跳回拖动前的位置，有时改动直接丢失。
+- **根因**（两个叠加的竞态）：
+  ① 拖拽期间 `dirty` 还没置位（只有松手那一刻才置），300ms 的实时轮询可以在这时发起一次拉取；
+  ② 这次拉取带着**拖动前**的版面，在松手之后才落地，把刚提交的位置覆盖回去；
+  ③ 之前「整段丢弃过时的合并」又会反过来把别人在同一页上的改动（比如另一个元素被拖到新位置）在保存时覆盖掉。
+- **修法**：
+  - 合并改成**按元素钉住**（`mergeItems(local, remote, pinned)`）：正在拖的那个元素、以及本地改了还没保存的元素
+    一律用本地版本，其余元素照常跟随远端 —— 既不会被别人的旧版面盖回去，也不会覆盖别人的改动；
+  - 拖拽状态从 `BoardCard` 显式上报（`onDragStateChange(dragging, key)`），画布据此知道「钉哪个」；
+  - 拉取回来时如果再判定为 blocked，直接丢弃这份过时结果；`blocked` 只保留「保存中 / 改名中」，
+    不再因为「有未保存改动」整页停更（那会把别人的改动饿死）。
+- **涉及文件**：`features/collab/mergeView.ts`（pinned 参数）、`features/collab/useBoardSync.ts`（拉取后二次判定）、
+  `features/components/board/BoardCard.tsx` / `BoardSurface.tsx`、`pages/canvas/CanvasStage.tsx`（拖拽状态上报）、
+  `pages/CanvasBoardPage.tsx`（`dragKey` + `localChangedKeys` 钉住逻辑）、`features/collab/__tests__/mergeView.test.ts`（+3 条）。
+- **怎么验证**（临时看板，验完已删除）：A 设备拖 b1，拖拽途中 B 设备把同页的 b2 挪到别处并保存 →
+  松手后 b1 **停在拖到的位置**（屏幕位移 +90 保持、DB `y=256`），b2 的 `y=450` **也在**（改造前这步会回退到 400）。
+  另跑两次「松手前 30ms 对方保存」的快速拖动（454ms / 418ms）结果一致；空闲端仍能正常跟上远端（247ms）。
+  前端 185 条单测、`tsc`、构建、体积、Storybook 全过。
+
+---
+## 2026-11-24 · 修复：改页面结构不再覆盖别人刚改过的页（结构操作改走专用接口）
+
+- **问题**：「新建页 / 删除页 / 改名 / 复制页 / 发布」原来走**整份文档保存**，会把编辑器内存里那份旧副本整份写回。
+  实测：设备B 先改页2（y=200）→ 设备A 点「新建页面」→ 页2 被写回旧值（y=40），B 的改动丢失。
+- **修复**：新增 4 个结构接口，全部在 `SELECT doc … FOR UPDATE` 下**只改结构字段**，其它页原样保留：
+  - `POST /api/bi/dashboards/{id}/views`（body `{view, after?}`）加页 / 复制页（`after` 决定插在哪页之后）
+  - `PATCH /api/bi/dashboards/{id}/views/{key}`（body `{title}`）改名
+  - `DELETE /api/bi/dashboards/{id}/views/{key}` 删页（至少保留一页）
+  - `POST /api/bi/dashboards/{id}/publish` 发布（只置 `published` / `published_at`，不发文档）
+  编辑器不再发送整份文档：`docDirty` 整套状态删掉，保存只剩「按页保存」一条路径；
+  每个结构操作前先把当前页落库（避免把没保存的内容丢掉）。
+  `PUT /bi/dashboards/{id}` 保留（脚本 / MCP / 导入仍可用），只是编辑器不再调它。
+- **顺带**：页面改名进入编辑态时自动全选，直接打字就是覆盖（之前会变成「页面3新页面」）。
+- **涉及文件**：**`backend/app/dashboards/structure.py`（新）**、`dashboards/router.py`（导出 `require_dashboard_edit`）、
+  `main.py`（挂载）、`frontend/src/pages/CanvasBoardPage.tsx`（结构操作接线 + 删 docDirty）、
+  `pages/canvas/CanvasDialogs.tsx`（发布改回调）、`pages/canvas/PageTabs.tsx`（改名全选）、
+  `backend/tests/test_dashboard_structure.py`（8 条纯函数用例）。
+- **怎么验证**（临时看板，验完已删除）：设备B 先把页2 改成 y=200，设备A 在界面上依次
+  ① 新建页面并改名 ② 复制页面 ③ 删除页面 ④ 发布 —— 四步之后 **页2 的 y 始终是 200**，
+  `views` 顺序为 `p1, p2, 副本…`，`published=true`。另有 8 条后端用例覆盖加/删/改名/发布的边界
+  （重复 key、缺少 key、最后一页不可删、标题截断 16 字）。前端 182 条单测、`tsc`、构建、体积、Storybook 全过。
+
+---
+## 2026-11-24 · 修复：明细表字段卡的三个 UI 问题（格式空白 / 宽度不一致 / 展开抖动）
+
+- **格式下拉空白**：MUI 把 `value=""` 当成「未选择」，只渲染一个零宽空格 —— 「跟随整表」原本就是空串，所以永远显示空白。
+  改成哨兵值 `auto`（写回 spec 时仍转成空串，数据格式不变）；顺带把旧枚举值（int / w / pct…）作为兜底项显示出来。
+- **列头 / 类型 / 格式与「字段」框不等宽**：`AxisInput` 在不可清除时仍保留了一个 26px 的占位块，导致字段框窄 26px。
+  改成「只有可清除时才占位」；实测四个控件现在都是 `x=348 / 宽=198`。
+- **展开卡片时标题抖动**：卡片内边距在展开时从 `1` 变 `1.25`（+2px），标题跟着位移。
+  改成内边距恒定（间距只由 `gap` 控制）；实测标题位置 收起/展开/再收起 都是 `(282, 873)`，不再跳动。
+- **附带**：字段换绑下拉把「当前字段」也放进 options（MUI 之前因为「值不在选项里」在控制台刷警告）。
+- **涉及文件**：`editor/TableColumnCard.tsx`、`editor/AxisInput.tsx`、`editor/TableFieldsEditor.tsx`。
+- **怎么验证**：真机（doc5 的 `tt_table` → 字段 → 展开 `daily_deal`）实测三项均符合预期，截图
+  `docs/_selfcheck/2026-11-24-column-card-fixed.png`；`tsc` 0；182 条单测 + 基准 5 条通过；构建 / 体积 / Storybook 通过。
+
+---
+## 2026-11-24 · 优化：明细表列格式改成内置格式串（,.1% / ,d / $,.1f …）
+
+- **改了什么**：`明细表 → 附加 → 字段 → 格式` 从原来的中文枚举（整数 / 万 / 百分比 / 金额 / 日期 / 原样文本）
+  换成 **9 个内置格式串**，下拉里每项右侧带实时样例，选之前就知道长什么样：
+  `,.1%` `,.2%` `,.1f` `,.2f` `,.3f` `,d` `+,.1%` `+,.2%` `$,.1f`（另有「跟随整表」作默认，不设就走整表格式）。
+- **语法**（d3/Plotly 风格，够用且不引依赖）：`+` 正号、`$` 美元前缀、`,` 千分位、`.N` 小数位、
+  `%` 百分比（值 ≤1 视为比例 ×100，与整表「百分比」一致）、`f` 定点、`d` 整数。
+  例：`,.1%` → `12.3%`；`,d` → `1,235`；`$,.1f` → `$1,234.6`；`+,.1%` 负值仍是 `-12.3%`。
+- **为什么**：中文枚举表达能力不够（想要「千分位 1 位百分比」「带正号的环比」只能整表统一设）；
+  格式串是业界通用写法，用户直接写出来就能用。
+- **兼容**：旧文档里存的 `int / w / pct / money / date / text` 仍然生效（渲染走旧分支），
+  面板里不会变成空白 —— 会显示成「万（旧）」这样的兜底项，切一次新格式即升级。
+- **涉及文件**：**`features/components/skin/patternFormat.ts`（新，解析 + 排版 + 样例）**、
+  `renderers/TableCard.tsx`（列级格式先走格式串，再回落旧枚举 / 整表）、
+  `editor/TableColumnCard.tsx`（下拉换成 9 个格式串 + 样例 + 旧值兜底）、
+  `__tests__/patternFormat.test.ts`（11 条）。
+- **怎么验证**：单测 11 条（9 个内置串全覆盖 / 比例与百分数两种输入 / 正负号 / 千分位 / 非法串回落）；
+  `tsc` 0；构建 / 体积 / Storybook 通过。真机（temp 看板 doc5 的 `tt_table`）：下拉实测
+  `跟随整表 | ,.1% 12.3% | ,.2% 12.34% | ,.1f 1,234.6 | ,.2f 1,234.56 | ,.3f 1,234.560 | ,d 1,235 | +,.1% +12.3% | +,.2% +12.34% | $,.1f $1,234.6`；
+  给 `daily_deal` 选 `$,.1f` → 表格该列显示 `$33.0` 这类值；接口回读 `format="$,.1f"` 确实落库；验完已还原（删掉该键）。
+  截图 `docs/_selfcheck/2026-11-24-format-options.png`。
+
+---
+## 2026-11-24 · 新增：编辑画布实时同步（1 秒）+ 自动保存
+
+- **改了什么**：
+  - **自动保存**：画布上有改动后 **500ms 防抖**自动落库（`persist(false)`，按页保存），顶栏「未保存」会自己消失；
+    保存中 / 改名 / 改页名时不触发；关页面前尽量再冲一版。
+  - **实时同步**：每 **1 秒**轮询版本号，变了就拉当前页，**按元素 key 合并**到画布（不刷新页面、不打断选中）：
+    别人新增的卡加上、改过的替换、删掉的移除、层级顺序跟着远端。
+  - 合并走新增的 `applyExternal`：**不进撤销栈、不置 dirty**，所以 ⌘Z 只撤自己的操作，也不会引发"保存→同步→再保存"的回环。
+- **为什么**：多人同看板时，原来必须手动保存 + 刷新才能看到别人的改动；1 秒轮询是零部署改动的最小实现（不用 WebSocket）。
+- **涉及文件**：
+  - 后端：**`app/live/router.py`（新）** 两个轻接口 `GET /api/live/version/{id}`（单行查询）、
+    `GET /api/live/views/{id}/{key}`（只在版本变化时调用）；权限结果缓存 60s；
+    `main.py` 挂载；`middleware/logging.py` 对 `/api/live/` 不记访问日志。
+  - 前端：**`features/collab/liveApi.ts` / `mergeView.ts` / `useBoardSync.ts` / `useAutoSave.ts`（新）**；
+    `pages/canvas/useCanvasHistory.ts` 加 `applyExternal`；`CanvasBoardPage.tsx` 接线（约 30 行）。
+  - 测试：`tests/test_live_version.py`（4 条）、`features/collab/__tests__/mergeView.test.ts`（12 条）。
+- **怎么验证**（两台设备实测，temp 看板 doc5）：
+  - **实时同步**：B 停在画布不动 → A 在另一个会话改 `tt_kpi` 并保存 → **B 在 796ms 后自动更新**，
+    全程无刷新、B 顶栏没有出现「未保存」、页面零报错；A 改回去 → B 在 1172ms 后跟着回。
+  - **自动保存**：在画布上真拖一张卡（不点保存）→ **1394ms 后 DB 里的 y 已从 16 变成 106**，「未保存」自动消失；验完已还原为 y=16。
+  - 门禁：后端 pytest 全绿；前端 `tsc` 0；12 条新用例过；`npm run build` / `budget` / `build-storybook` 通过。
+- **已知边界**：① 页面结构（新建/删除/改名/复制页）不参与同步，仍要刷新；② 同一张卡两端同时改，后写覆盖；
+  ③ 后台标签页暂停轮询，切回前台立即补一次；④ 1 秒 × 在线人数 ≈ 每人每分钟 60 次请求（日志已静音）。
+- **迭代（同日）**：按用户要求去掉保存时的闪烁 ——
+  ① **顶栏「保存」按钮已移除**（自动保存已覆盖），只剩「预览 / 发布我的看板」；
+  ② 自动保存改走**静默通道**：不占用 `saving` 状态（原来每次保存都会把预览/发布按钮闪一下变灰）、不弹「已保存」；
+  ③ 「未保存」黄字改成「脏了 1.5 秒还没存上」才出现，正常 500ms 自动保存不会再闪一下；
+  ④ 点「预览」前的那次保存也不再弹提示（本来马上跳走）；
+  ⑤ **发布按钮保留**，发布仍是显式动作、二次确认，只有它会弹一次成功提示。
+  实测：拖动一张卡后 2.5 秒内，「未保存」出现 0/25 次、「已保存」提示 0/25 次、发布按钮变灰 0/25 次，而 DB 已自动落库。
+- **迭代（同日）**：同步间隔 **1 秒 → 300 毫秒**；并修「切页后还是旧设计」——
+  根因是版本号只到**文档级**：别人改 B 页、我停在 A 页时，轮询已经把新版本记成基线，切到 B 页就不再触发同步。
+  现在 `useBoardSync` 暴露 `refresh()`，**切页 / 切平台时强制拉一次该页**再合并（不进撤销栈、不置 dirty）。
+  实测（临时看板，验完已删除）：切到页2 后 **281ms** 看到对方的最新改动；停在同页时对方再改，**415ms** 自动跟上。
+
+---
+## 2026-11-24 · 优化：明细表「字段」改成一列一张配置卡（列头 / 类型 / 格式 / 颜色 / 行数 / 宽度）
+
+- **改了什么**：`明细表 → 附加 → 字段` 从「字段名 + 显示名称」两栏，改成**一列一张卡**：
+  `字段`（拖入框，可换绑 / 清除）· `列头` · `类型`（10 种）· `格式` · `颜色`（8 色，文字色）·
+  `行数`（1–4 行，超出省略）· `宽度`（0 = 自动）。卡片可上下拖动排序列；底部保留「＋ 添加字段」拖入框。
+- **为什么**：类型/格式/宽度在后端早就有字段，但面板没有入口（等于没做）；颜色与行数原来根本不存在。
+  这次把 7 项做成真生效：列级格式覆盖整表格式、颜色作用在单元格文字、行数>1 时长文本换行截断。
+- **涉及文件**：
+  - 前端：`editor/TableFieldsEditor.tsx`（改为卡片列表 + 换绑/删除/排序）、
+    **`editor/TableColumnCard.tsx`（新，单卡 7 项）**、**`editor/ColorSwatches.tsx`（新，色板）**、
+    **`renderers/tableCellSx.ts`（新，颜色/行数 → 单元格样式）**、`renderers/TableCard.tsx`（套用样式 + 列级格式优先，净减 14 行）、
+    `types.ts`（`TableColumn.color/rows`）。
+  - 后端：**`components/table_columns.py`（新，列配置规范化）**、`components/spec.py`（改为调用它，净减 16 行）。
+  - 测试：`__tests__/tableColumnConfig.test.ts`（9 条，替代原 `tableHeaderInput.test.ts`）、`tests/test_table_columns.py`（9 条）。
+- **怎么验证**：`tsc` 0；前端单测 9 条过；后端 9 条过 + 全量绿；`npm run build` / `build-storybook` 通过。
+  **真机**（temp 看板 doc5 的 `tt_table`）：把 `product_title` 设成红字 + 2 行 → 表格该列变红且两行截断（其他列不变）→
+  点保存 → **重新加载后仍在**（接口回读 `color=#E11D48, rows=2`）→ 再改回默认 + 1 行并保存还原。
+  截图 `docs/_selfcheck/2026-11-24-column-cards.png`（卡片）与 `-column-applied.png`（红字两行效果）。
+- **已知**：`格式` 只对数值 / 百分比 / 金额列生效，其它类型置灰（避免死控件）；`行数` 上限 4 行。
+- **迭代（同日）**：按「选项卡」形态重做 —— 每列标题 = **列头**（空则回退字段名）+ 右侧「类型 · 宽度」摘要，
+  **默认全部折叠**，点标题展开；`字段` 拖入框移进内容区第一项；删除 ✕ 收到标题右侧（hover 出现），
+  新拖入的列默认展开。顺手去掉 `字段` 框里与删除重复的那个 ✕（同一语义只留一个入口）。
+  截图换成 `2026-11-24-column-collapsed.png`（8 列收起）与 `-column-expanded.png`（展开一张）。
+
+---
+## 2026-11-23 · 新增：推荐列表组件（`reco_list`）+ 点击详情弹窗
+
+- **改了什么**：新增第 24 个组件类型「推荐列表」。一行一个词：`序号 · 词 · 标签 · 人气条 · 人气/转化率/机会分 · ›`；
+  点一行弹出详情五段 —— **统计（与大盘差 Δpt）/ 近 7 天走势 / 与大盘对比 / 数据解读 / 建议动作**。
+  机会分与参考页同一口径：`100 × (0.45·√(人气/最大值) + 0.30·min(1, 转化率/40) + 0.25·log(1+供需比)/log(1+最大供需比))`；
+  推荐理由标签 5 条（人气高 / 转化好 / 缺口大 / 在起量 / 多表命中）。
+- **为什么**：把需求端「推荐」部分沉成可复用组件（参考 `#demand/sycm` 汇总推荐），
+  顺带把弹窗数据随卡片 payload 一起下发 —— 不新增接口、不二次查库，弹窗口径与列表必然一致。
+- **涉及文件**：
+  - 后端：`components/reco_spec.py`（新，RecoSpec 规格段）、`components/reco.py`（新，评分/标签/payload）、
+    `components/spec.py`（注册 kind + 校验）、`components/resolver.py`（分派）、
+    `components/seed_base.py`（种子行，按物理表 `bi_demand_merged` 绑定）、`components/catalog.py`（新建目录）。
+  - 前端：`components/reco/types.ts`（新）、`reco/insight.ts`（新，走势/解读/建议纯函数）、
+    `reco/RecoDetailDialog.tsx`（新，五段弹窗）、`renderers/RecoListCard.tsx`（新，行渲染）、
+    `types.ts` / `registry.tsx` / `ChartThumb.tsx` / `sizes.ts` / `pages/canvas/spec.ts`（注册、缩略图、落版 712×460、换数据集时清理失效列）。
+- **怎么验证**：`uv run pytest tests/test_reco_list.py` 15 条（评分排序/权重钳制/率值 0.79 与 79 等价/标签规则/空 rows）；
+  全量后端 `pytest` 绿；`npm run typecheck` 0；`npx vitest run ...recoInsight.test.ts` 16 条；`npm run build-storybook` 通过。
+  `GET /api/bi/components/meta` 的 kinds 24 个含 `reco_list`；组件库出现第 24 张卡；
+  截图 `docs/_selfcheck/2026-11-23-reco-library.png`（卡片 + 空态）、`-reco-story.png`（6 行真实布局）、
+  `-reco-dialog.png`（五段弹窗，含「按当期人气与搜索增速推算，非按天实测」标注）。
+- ⚠️ **数据前提**：需求端三表（`bi_demand_hot/grow/rel/merged`）当前是 0 行，所以画布上这张卡是空态；
+  导入数据绑定 `bi_demand_merged` 后即出列表，无需改代码。
+- ⚠️ **本期未做**：人气/增速/相关三类切换（只做汇总推荐）、评分权重的面板入口（改 spec 才生效）、
+  走势是**按增速推算**而非按天实测（表里只有单周期，没有日粒度）。
+
+---
 ## 2026-11-23 · 修复：切页面后「未保存」被误标（目标页没改也显示编辑中）
 
 - **原因**：`doSwitchView` 里用「当前页已保存的 items」和「目标页的 items」做比较来判定 `changed`

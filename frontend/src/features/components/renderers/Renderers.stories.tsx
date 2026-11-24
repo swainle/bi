@@ -13,6 +13,8 @@ import GaugeCard from "./GaugeCard";
 import KpiCard from "./KpiCard";
 import PieCard from "./PieCard";
 import RankListCard from "./RankListCard";
+import RecoListCard from "./RecoListCard";
+import recoListFixture from "./__fixtures__/reco_list.json";
 import TableCard from "./TableCard";
 import WaterfallCard from "./WaterfallCard";
 import type { RenderPayload, UiSpec } from "../types";
@@ -177,6 +179,15 @@ export const RankList: Story = {
         })}
         ui={ui("indigo")}
       />
+    </Frame>
+  ),
+};
+
+export const RecoList: Story = {
+  name: "推荐列表",
+  render: () => (
+    <Frame height={460}>
+      <RecoListCard payload={recoListFixture as unknown as RenderPayload} ui={ui("indigo")} />
     </Frame>
   ),
 };

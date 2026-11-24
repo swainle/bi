@@ -10,7 +10,7 @@ import {
   AlignHorizontalCenter, AlignHorizontalLeft, AlignHorizontalRight,
   AlignVerticalBottom, AlignVerticalCenter, AlignVerticalTop,
   AutoAwesome, CloudUpload, CropFree, CropSquare, ExpandMore,
-  Redo, Save, TextFields, Title as TitleIcon, Tune, Undo, Visibility,
+  Redo, TextFields, Title as TitleIcon, Tune, Undo, Visibility,
 } from "@mui/icons-material";
 
 import AiLayoutBar, { type LayoutOp } from "../../features/components/editor/AiLayoutBar";
@@ -49,7 +49,7 @@ export default function EditorToolbar({
   recommendBusy, insertRecommended, alignSelection, distributeSelection, beginInsertDrag, addElement,
   setShapeAnchor, bleedMask, setBleedMask,
   doc, view, editingPage, setEditingPage, commitPageRename, switchView, setPageMenu, addPage,
-  dirty, params, handleSave, handlePublish, saving,
+  unsaved, params, handleSave, handlePublish, saving,
 }: {
   nav: NavigateFunction;
   recentDocs: DashboardBrief[];
@@ -86,7 +86,8 @@ export default function EditorToolbar({
   switchView: (key: string) => void;
   setPageMenu: (v: PageMenuState) => void;
   addPage: () => void;
-  dirty: boolean;
+  /** 只在「脏了很久没存上」时为 true（自动保存期间不显示，避免闪烁） */
+  unsaved: boolean;
   params: Record<string, unknown>;
   handleSave: () => Promise<boolean>;
   handlePublish: () => void;
@@ -337,25 +338,17 @@ export default function EditorToolbar({
             addPage={addPage}
           />
         )}
-        {dirty && <Typography sx={{ fontSize: 11.5, color: "#F59E0B", mr: 1, whiteSpace: "nowrap", flexShrink: 0 }}>未保存</Typography>}
+        {/* 未保存只在「脏了很久还没存上」时出现：自动保存的 500ms 内不闪 */}
+        {unsaved && <Typography sx={{ fontSize: 11.5, color: "#F59E0B", mr: 1, whiteSpace: "nowrap", flexShrink: 0 }}>未保存</Typography>}
         <Button size="small" startIcon={<Visibility sx={{ fontSize: 15 }} />}
-          disabled={!!saving || !doc}
+          disabled={saving === "publish" || !doc}
           onClick={() => void previewDashboard(handleSave, nav, docId, params)}
           sx={{ textTransform: "none", fontSize: 12.5, borderRadius: 2, whiteSpace: "nowrap", flexShrink: 0 }}>
           预览
         </Button>
-        <Button size="small" variant="outlined" startIcon={<Save sx={{ fontSize: 15 }} />}
-          disabled={!!saving || !doc || !dirty} onClick={handleSave}
-          sx={{
-            textTransform: "none", fontSize: 12.5, borderRadius: 2, px: 2,
-            whiteSpace: "nowrap", flexShrink: 0,
-            borderColor: "#D8E2F5", color: "#334155",
-            "&:hover": { borderColor: "#B9C8E6", bgcolor: "rgba(79,70,229,0.04)" },
-          }}>
-          {saving === "save" ? "保存中…" : "保存"}
-        </Button>
+        {/* 保存按钮已去掉：改动 500ms 后自动保存；发布仍是显式动作 */}
         <Button size="small" variant="contained" startIcon={<CloudUpload sx={{ fontSize: 15 }} />}
-          disabled={!!saving || !doc} onClick={handlePublish}
+          disabled={saving === "publish" || !doc} onClick={handlePublish}
           sx={{ bgcolor: "#4F46E5", textTransform: "none", fontSize: 12.5, borderRadius: 2, px: 2.5, whiteSpace: "nowrap", flexShrink: 0 }}>
           {saving === "publish" ? "发布中…" : "发布我的看板"}
         </Button>

@@ -16,6 +16,8 @@ export const COMPONENT_SIZE: Partial<Record<ComponentKind, { w: number; h: numbe
   insight: { w: 420, h: 220 },
   /* 地图：一排 2 张 —— (1440 − 16) / 2 = 712，高度按中国地图比例留足 */
   map: { w: 712, h: 440 },
+  /* 推荐列表：一排 2 张（712），高 460 = 标题 + 10 行 × 42 */
+  reco_list: { w: 712, h: 460 },
   /* 版面 1440 一排 6 张：6×224 + 5×16 间距 = 1424，留 16 余量不溢出 */
   kpi: { w: 224, h: 104 },
 };

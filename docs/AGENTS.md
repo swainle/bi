@@ -53,6 +53,24 @@ DATABASE_URL="postgresql://cavan-m4max@127.0.0.1:5432/mingzebi_dev" DEBUG=true \
 - **整页渲染结果有短时缓存**：`BI_RENDER_CACHE_TTL`（默认 15 秒，0 = 关闭），
   实现在 `backend/app/dashboards/render_cache.py`；key 含用户 / 文档 `updated_at` / 视图 / 参数 / 现场版面，
   保存或删除看板时自动失效（`render:<id>` 前缀）。排查「改了没生效」先看是不是这个缓存或前端没刷新。
+- **实时同步与自动保存（2026-11-24 起）**：编辑画布每 **300ms** 轮询 `GET /api/live/version/{id}`（只读一行、不解析 doc），
+  版本变了才 `GET /api/live/views/{id}/{key}` 拉当前页，前端按**元素 key** 合并（`features/collab/mergeView.ts`）。
+  **切页 / 切平台时强制拉一次该页**（`useBoardSync().refresh`）—— 版本号是文档级的，别人改的是别的页时轮询不会触发同步，
+  不强制拉就会出现「切过去还是旧设计」。
+  合并走 `useCanvasHistory.applyExternal` —— **不进撤销栈、不置 dirty**，所以不会触发自动保存回写（否则两端会来回打）。
+  🚨 **合必须按元素钉住**（`mergeItems(local, remote, pinned)`）：正在拖的元素 + 本地改了还没保存的元素用本地版本，
+  其余跟随远端。2026-11-24 实测过两种反向错误：整页以远端为准 → 快速拖动松手被旧版面盖回去；
+  整段丢弃过时合并 → 自己下一次保存把别人在同一页的改动覆盖掉。别再改回「有改动就整页停更」。
+  本地改动 **500ms 防抖**后自动 `persist(false)`；关页面前尽量冲一版。
+  **顶栏没有「保存」按钮**（自动保存已覆盖），只剩「预览 / 发布我的看板」；自动保存走静默通道 ——
+  不占用 `saving` 状态、不弹「已保存」，「未保存」只在「脏了 1.5 秒还没存上」时出现（否则每 500ms 闪一下）。
+  `/api/live/` 前缀**不记访问日志**（1 秒 × 人数会淹掉真请求）；两个接口都是 GET，本来就不受写接口限流影响。
+  已知边界：页面结构（新建 / 删页 / 改名 / 复制页）**不参与实时同步**；同一张卡两端同时改仍是后写覆盖。
+- **结构操作走专用接口（2026-11-24 起）**：加页 / 删页 / 改名 / 复制页 / 发布全部走
+  `app/dashboards/structure.py`（`POST/PATCH/DELETE …/views`、`POST …/publish`），在 `FOR UPDATE` 下**只改结构字段**。
+  🚨 **编辑器不再发整份文档**（`docDirty` 已删除）：原来结构改动会把它内存里的旧副本整份写回，
+  把别的设备刚改过的页覆盖成旧值（2026-11-24 实测）。新增结构能力照这个模式加接口，不要回到整份保存；
+  `PUT /bi/dashboards/{id}` 保留给脚本 / MCP / 导入，编辑器不得调用。
 - **Redis 可选**：配了 `REDIS_URL` 就是多进程共享缓存（compose 里叫 `redis`），不配就进程内内存（单进程够用）；
   Redis 连不上只会「不缓存」，不会让渲染失败。改 `cache.py` 时保持这个降级语义。
 - 连接池：`DB_POOL_SIZE` / `DB_MAX_OVERFLOW` / `DB_POOL_TIMEOUT`（默认 20 / 10 / 30）。

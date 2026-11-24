@@ -24,7 +24,7 @@ export default function CanvasDialogs({
   pageMenu, setPageMenu, doc, setEditingPage, duplicatePage, copyText, setToast, deletePage,
   shapeAnchor, setShapeAnchor, addShape,
   guideMenu, setGuideMenu, removeGuide, guidesVisible, setGuidesVisible, guides, setGuides, setDirty,
-  publishConfirm, setPublishConfirm, persist, saving, agentGenerated, toast, patchItem, canvasSize, onResizeCanvas,
+  publishConfirm, setPublishConfirm, onPublish, saving, agentGenerated, toast, patchItem, canvasSize, onResizeCanvas,
 }: {
   topKey: string | null;
   setTopKey: (v: string | null) => void;
@@ -62,7 +62,8 @@ export default function CanvasDialogs({
   setDirty: (v: boolean) => void;
   publishConfirm: boolean;
   setPublishConfirm: (v: boolean) => void;
-  persist: (publish: boolean) => Promise<boolean>;
+  /** 确认发布：只置 published（不发整份文档，避免覆盖别人的页） */
+  onPublish: () => void;
   saving: "save" | "publish" | null;
   agentGenerated: boolean;
   toast: ToastState;
@@ -252,7 +253,7 @@ export default function CanvasDialogs({
           <Button onClick={() => setPublishConfirm(false)}
             sx={{ textTransform: "none", fontSize: 13, color: "#86868B" }}>再看看</Button>
           <Button variant="contained" disabled={!!saving}
-            onClick={() => { setPublishConfirm(false); void persist(true); }}
+onClick={() => { setPublishConfirm(false); onPublish(); }}
             sx={{ textTransform: "none", fontSize: 13, borderRadius: 2, bgcolor: "#4F46E5", boxShadow: "none" }}>
             确认发布
           </Button>

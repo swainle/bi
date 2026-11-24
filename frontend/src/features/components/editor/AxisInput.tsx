@@ -12,9 +12,11 @@ interface Props {
   options: string[];
   placeholder: string;
   onPick: (next: string | null) => void;
+  /** 是否显示右端「清除绑定」按钮；外层已有删除入口时传 false，避免同一语义两个 ✕ */
+  clearable?: boolean;
 }
 
-export function AxisInput({ value, options, placeholder, onPick }: Props) {
+export function AxisInput({ value, options, placeholder, onPick, clearable = true }: Props) {
   const [dragging, setDragging] = useState(false);
 
   const handleDrop = (event: DragEvent<HTMLDivElement>) => {
@@ -60,14 +62,16 @@ export function AxisInput({ value, options, placeholder, onPick }: Props) {
         )}
         sx={{ flex: 1, minWidth: 0 }}
       />
-      {value ? (
-        <IconButton size="small" title="清除绑定" onClick={() => onPick(null)} sx={{ flexShrink: 0 }}>
-          <Close sx={{ fontSize: 15 }} />
-        </IconButton>
-      ) : (
-        /* 未绑定时也占同样宽度：换行/换状态时输入框宽度不会跳 */
-        <Box sx={{ width: 26, flexShrink: 0 }} />
-      )}
+      {clearable ? (
+        value ? (
+          <IconButton size="small" title="清除绑定" onClick={() => onPick(null)} sx={{ flexShrink: 0 }}>
+            <Close sx={{ fontSize: 15 }} />
+          </IconButton>
+        ) : (
+          /* 未绑定时也占同样宽度：换行/换状态时输入框宽度不会跳 */
+          <Box sx={{ width: 26, flexShrink: 0 }} />
+        )
+      ) : null}
     </Box>
   );
 }
