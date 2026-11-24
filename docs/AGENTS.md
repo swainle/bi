@@ -71,6 +71,8 @@ DATABASE_URL="postgresql://cavan-m4max@127.0.0.1:5432/mingzebi_dev" DEBUG=true \
   🚨 **编辑器不再发整份文档**（`docDirty` 已删除）：原来结构改动会把它内存里的旧副本整份写回，
   把别的设备刚改过的页覆盖成旧值（2026-11-24 实测）。新增结构能力照这个模式加接口，不要回到整份保存；
   `PUT /bi/dashboards/{id}` 保留给脚本 / MCP / 导入，编辑器不得调用。
+  **跨项目复制页面**走 `POST …/views/copy-from`（`{source_dashboard_id, source_view_key}`）：源可读 + 目标可编辑，
+  只追加一页，元素 key / 页 key / 参考线 id 全部重新生成，**数据集绑定保持原样**（新页仍用源项目那份数据）。
 - **Redis 可选**：配了 `REDIS_URL` 就是多进程共享缓存（compose 里叫 `redis`），不配就进程内内存（单进程够用）；
   Redis 连不上只会「不缓存」，不会让渲染失败。改 `cache.py` 时保持这个降级语义。
 - 连接池：`DB_POOL_SIZE` / `DB_MAX_OVERFLOW` / `DB_POOL_TIMEOUT`（默认 20 / 10 / 30）。

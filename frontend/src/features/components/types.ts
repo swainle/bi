@@ -358,9 +358,21 @@ export interface ChartSpec {
   dot_size?: number;
   x_key: string;
   y_key: string;
+  /** 横轴 / 纵轴字段的聚合（Y 留空 = 跟随指标聚合） */
+  x_agg: string;
+  y_agg: string;
   size_key: string;
   log_x: boolean;
   log_y: boolean;
+  /** 气泡大小按对数缩放（量级差很大时用，否则大值会把小值压成点） */
+  size_log: boolean;
+  /** 四象限分界（null = 当页中位数） */
+  quad_x: number | null;
+  quad_y: number | null;
+  /** （旧）提示框里额外显示的指标；等价于 extras 的简写 */
+  tooltip_keys: string[];
+  /** 附加字段：面板「＋ 添加」出来的行，每行 = 说明 + 绑定字段，不限数量 */
+  extras: { label: string; key: string }[];
   /** 饼图 */
   /** 饼/环文字位置：图形上（inside）/ 图形旁（beside，无引导线）/ 图形外（outside，带引导线） */
   label_layout: "inside" | "beside" | "outside";
@@ -471,6 +483,8 @@ export interface ScatterPoint {
   value?: number;
   quad?: string;
   score?: number;
+  /** 附加字段（面板里加了什么，提示框就显示什么） */
+  extras?: { label: string; key: string; value: number }[];
 }
 
 export interface RenderPayload {
@@ -532,11 +546,15 @@ export interface RenderPayload {
   fields?: FilterFieldSpec[];
   inline?: boolean;
   medians?: { x: number; y: number };
+  /** 当页中位数（手填阈值时用来对照） */
+  auto_medians?: { x: number; y: number };
   quads?: Record<string, number>;
   x_label?: string;
   y_label?: string;
   log_x?: boolean;
   log_y?: boolean;
+  size_log?: boolean;
+  tooltip_keys?: string[];
   mode?: string;
   index?: string;
   note?: string;

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
-  Autocomplete, Box, Button, Chip, IconButton, Menu, MenuItem, Stack, Switch, TextField, Typography,
+  Autocomplete, Box, Button, Chip, IconButton, Menu, MenuItem, Stack, Switch, TextField, ToggleButton, ToggleButtonGroup, Typography,
 } from "@mui/material";
 import { Add, Check, Close, DeleteOutline, ExpandMore, Remove } from "@mui/icons-material";
 import ChartOptionsPanel from "./ChartOptionsPanel";
@@ -75,6 +75,17 @@ export default function QueryPanel({
 
   const patch = (key: string, value: unknown) =>
     onChange({ ...spec, binding: { ...spec.binding, [key]: value } });
+
+  /* ── 散点：X / Y 轴字段 + 附加字段（不限数量） ── */
+  const setChartField = (key: "x_key" | "y_key", value: string) =>
+    onChange({ ...spec, chart: { ...spec.chart, [key]: value } as typeof spec.chart });
+  const extras = spec.chart?.extras ?? [];
+  const setExtras = (next: { label: string; key: string }[]) =>
+    onChange({ ...spec, chart: { ...spec.chart, extras: next } as typeof spec.chart });
+  const patchExtra = (index: number, patchRow: Partial<{ label: string; key: string }>) =>
+    setExtras(extras.map((row, i) => (i === index ? { ...row, ...patchRow } : row)));
+  const removeExtra = (index: number) => setExtras(extras.filter((_, i) => i !== index));
+  const addExtra = () => setExtras([...extras, { label: "", key: "" }]);
 
   /** 自定义聚合表达式的数据来源只认「当前指标」：
    *  换指标时把表达式里的列名一起换掉，避免聚合 SQL 偷偷用了别的列（含公式字段）。 */
@@ -1044,7 +1055,7 @@ export default function QueryPanel({
         </PanelSection>
 
         {/* 文字：ChartOptionsPanel 自带「文字」分区（图表标题 / 轴标题等）；柱状图的坐标轴搬到了「附加」 */}
-        <ChartOptionsPanel kind={kind} spec={spec} onChange={onChange} mode={kind === "bar" || kind === "pie" || kind === "donut" || kind === "combo" ? "text" : "all"} />
+        <ChartOptionsPanel kind={kind} spec={spec} onChange={onChange} mode={kind === "bar" || kind === "pie" || kind === "donut" || kind === "combo" || kind === "scatter" ? "text" : "all"} />
 
         {/* ── 组件特有：只放这个 kind 才有的配置 ── */}
         {hasSpecial && (
@@ -1132,27 +1143,119 @@ export default function QueryPanel({
               />
             )}
 
-            {/* 散点：X / Y 都是数值指标，每个点是一行样本（X 写 chart.x_key，Y 是 aggregate 指标） */}
+            {/* 散点：字段与聚合在「散点」，坐标轴刻度在「坐标轴」，其余在「首选项」 */}
             {kind === "scatter" && (
               <>
-                <PanelSection title="数值" first>
+                <PanelSection title="散点">
                   <Stack spacing={1}>
-                    <Row label="横轴">
-                      <TextField select size="small" value={spec.chart?.x_key || ""}
-                        onChange={(e) => onChange({ ...spec, chart: { ...spec.chart, x_key: e.target.value } })}
-                        sx={fieldSx}>
-                        <MenuItem value="" sx={{ fontSize: 12.5 }}>取纵轴指标</MenuItem>
-                        {metricOptions.map((f) => (
-                          <MenuItem key={f.name} value={f.name} sx={{ fontSize: 12.5 }}>{f.name}</MenuItem>
-                        ))}
+                    <Row label="X 轴">
+                      <AxisInput
+                        value={spec.chart?.x_key || ""}
+                        options={metricOptions.map((f) => f.name)}
+                        placeholder="拖到这里（默认第二个指标）"
+                        onPick={(next) => setChartField("x_key", next ?? "")}
+                      />
+                    </Row>
+                    {spec.chart?.x_key ? (
+                      <Row label="聚合">
+                        <TextField select size="small" value={spec.chart?.x_agg ?? "MAX"}
+                          onChange={(e) => onChange({ ...spec, chart: { ...spec.chart, x_agg: e.target.value } })}
+                          title="横轴字段怎么聚合（同一个点有多行时）"
+                          sx={fieldSx} data-slot="scatter-x-agg">
+                          {AGG.map((a) => <MenuItem key={a} value={a} sx={{ fontSize: 12 }}>{a}</MenuItem>)}
+                        </TextField>
+                      </Row>
+                    ) : null}
+                    <Row label="Y 轴">
+                      <AxisInput
+                        value={spec.chart?.y_key || ""}
+                        options={metricOptions.map((f) => f.name)}
+                        placeholder="拖到这里（默认主指标）"
+                        onPick={(next) => setChartField("y_key", next ?? "")}
+                      />
+                    </Row>
+                    {spec.chart?.y_key ? (
+                      <Row label="聚合">
+                        <TextField select size="small" value={spec.chart?.y_agg || ""}
+                          onChange={(e) => onChange({ ...spec, chart: { ...spec.chart, y_agg: e.target.value } })}
+                          title="纵轴字段怎么聚合；不选就跟随指标聚合"
+                          sx={fieldSx} data-slot="scatter-y-agg">
+                          <MenuItem value="" sx={{ fontSize: 12 }}>跟随指标聚合</MenuItem>
+                          {AGG.map((a) => <MenuItem key={a} value={a} sx={{ fontSize: 12 }}>{a}</MenuItem>)}
+                        </TextField>
+                      </Row>
+                    ) : null}
+                  </Stack>
+                  <Box sx={{ mt: 1.5, mb: 0.75, fontSize: 11.5, fontWeight: 600, color: "#64748B" }}>附加字段</Box>
+                  {(spec.chart?.extras ?? []).map((row, index) => (
+                    <Stack key={`extra-${index}`} direction="row" spacing={0.75} alignItems="center"
+                      sx={{ mb: 0.75 }} data-slot="scatter-extra-row">
+                      <TextField
+                        size="small" placeholder="说明" value={row.label}
+                        onChange={(e) => patchExtra(index, { label: e.target.value })}
+                        inputProps={{ maxLength: 20 }}
+                        sx={{ ...fieldSx, width: 74, flexShrink: 0 }}
+                      />
+                      <AxisInput
+                        value={row.key}
+                        options={metricOptions.map((f) => f.name)}
+                        placeholder="拖到这里"
+                        onPick={(next) => patchExtra(index, { key: next ?? "" })}
+                        clearable={false}
+                      />
+                      <IconButton size="small" title="删除这行" onClick={() => removeExtra(index)} sx={{ flexShrink: 0 }}>
+                        <Close sx={{ fontSize: 15 }} />
+                      </IconButton>
+                    </Stack>
+                  ))}
+                  <Box onClick={addExtra} data-slot="scatter-add-extra"
+                    sx={{ ...dash, cursor: "pointer", "&:hover": { borderColor: "#A5B4FC", color: "#6366F1" } }}>
+                    ＋ 添加附加字段
+                  </Box>
+                </PanelSection>
+
+                <PanelSection title="坐标轴" collapsible defaultOpen={false}>
+                  <ChartOptionsPanel kind={kind} spec={spec} onChange={onChange} mode="axis" />
+                  <Stack spacing={1} sx={{ mt: 1 }}>
+                    <Row label="横轴刻度">
+                      <TextField select size="small" value={spec.chart?.log_x ? "log" : "linear"}
+                        onChange={(e) => onChange({ ...spec, chart: { ...spec.chart, log_x: e.target.value === "log" } })}
+                        sx={fieldSx} data-slot="scatter-log-x">
+                        <MenuItem value="linear" sx={{ fontSize: 12.5 }}>线性</MenuItem>
+                        <MenuItem value="log" sx={{ fontSize: 12.5 }}>对数</MenuItem>
                       </TextField>
+                    </Row>
+                    <Row label="纵轴刻度">
+                      <TextField select size="small" value={spec.chart?.log_y ? "log" : "linear"}
+                        onChange={(e) => onChange({ ...spec, chart: { ...spec.chart, log_y: e.target.value === "log" } })}
+                        sx={fieldSx} data-slot="scatter-log-y">
+                        <MenuItem value="linear" sx={{ fontSize: 12.5 }}>线性</MenuItem>
+                        <MenuItem value="log" sx={{ fontSize: 12.5 }}>对数</MenuItem>
+                      </TextField>
+                    </Row>
+                  </Stack>
+                </PanelSection>
+
+                <PanelSection title="首选项" collapsible defaultOpen={false}>
+                  <ChartOptionsPanel kind={kind} spec={spec} onChange={onChange} mode="prefs" />
+                  <Stack spacing={1} sx={{ mt: 1 }}>
+                    <Row label="模式">
+                      <ToggleButtonGroup exclusive size="small" value={spec.chart?.scatter_mode ?? "point"}
+                        onChange={(_, v) => v !== null && onChange({ ...spec, chart: {
+                          ...spec.chart, scatter_mode: v,
+                          ...(v === "point" ? { size_key: "" } : {}),
+                        } })}
+                        sx={{ "& .MuiToggleButton-root": { px: 1.5, py: 0.25, fontSize: 12, textTransform: "none" } }}>
+                        <ToggleButton value="point">点</ToggleButton>
+                        <ToggleButton value="bubble">气泡</ToggleButton>
+                        <ToggleButton value="quadrant">四象限</ToggleButton>
+                      </ToggleButtonGroup>
                     </Row>
                     <Row label="气泡大小">
                       <TextField select size="small" value={spec.chart?.size_key || ""}
                         onChange={(e) => {
                           const value = e.target.value;
                           const mode = spec.chart?.scatter_mode ?? "point";
-                          /* 选了气泡字段就自动切到气泡模式；清空则从气泡退回点（避免「填了没反应」） */
                           const nextMode = value ? "bubble" : (mode === "bubble" ? "point" : mode);
                           onChange({ ...spec, chart: { ...spec.chart, size_key: value, scatter_mode: nextMode } });
                         }}
@@ -1163,37 +1266,41 @@ export default function QueryPanel({
                         ))}
                       </TextField>
                     </Row>
-                  </Stack>
-                </PanelSection>
-                <PanelSection title="附加">
-                  <Stack spacing={1}>
-                    {extraMetrics.map((m, index) => (
-                      <Stack key={`${m.name}-${index}`} direction="row" spacing={1} alignItems="center">
-                        <TextField size="small" value={m.name} disabled sx={fieldSx} />
-                        <TextField select size="small" value={m.agg ?? "MAX"}
-                          onChange={(e) => {
-                            const next = [...(b.metrics || [])];
-                            next[index] = { name: m.name, agg: e.target.value };
-                            patch("metrics", next);
-                          }}
-                          sx={{ ...fieldSx, maxWidth: 120 }}>
-                          {AGG.map((a) => <MenuItem key={a} value={a} sx={{ fontSize: 12.5 }}>{a}</MenuItem>)}
+                    <Row label="点大小">
+                      <TextField size="small" type="number" value={spec.chart?.dot_size ?? 8}
+                        onChange={(e) => onChange({ ...spec, chart: {
+                          ...spec.chart, dot_size: Math.max(3, Math.min(24, Number(e.target.value) || 8)),
+                        } })}
+                        sx={fieldSx} />
+                    </Row>
+                    {spec.chart?.size_key ? (
+                      <Row label="气泡缩放">
+                        <TextField select size="small" value={spec.chart?.size_log ? "log" : "linear"}
+                          onChange={(e) => onChange({ ...spec, chart: { ...spec.chart, size_log: e.target.value === "log" } })}
+                          sx={fieldSx} data-slot="scatter-size-scale">
+                          <MenuItem value="linear" sx={{ fontSize: 12.5 }}>线性</MenuItem>
+                          <MenuItem value="log" sx={{ fontSize: 12.5 }}>对数</MenuItem>
                         </TextField>
-                        <IconButton size="small" sx={{ flexShrink: 0 }}
-                          onClick={() => patch("metrics", (b.metrics || []).filter((_, i) => i !== index))}>
-                          <Close sx={{ fontSize: 15 }} />
-                        </IconButton>
-                      </Stack>
-                    ))}
-                    <Box
-                      onClick={() => {
-                        const candidate = metricOptions.find((f) => f.name !== b.metric && !extraMetrics.some((m) => m.name === f.name));
-                        if (candidate) patch("metrics", [...(b.metrics || []), { name: candidate.name, agg: "MAX" }]);
-                      }}
-                      sx={{ ...dash, cursor: "pointer", "&:hover": { borderColor: "#A5B4FC", color: "#6366F1" } }}
-                    >
-                      ＋ 附加指标（气泡大小 / 四象限的另一轴）
-                    </Box>
+                      </Row>
+                    ) : null}
+                    {spec.chart?.scatter_mode === "quadrant" ? (
+                      <>
+                        <Row label="分界 X">
+                          <TextField size="small" type="number" value={spec.chart?.quad_x ?? ""}
+                            placeholder="中位数" sx={fieldSx} data-slot="scatter-quad-x"
+                            onChange={(e) => onChange({ ...spec, chart: {
+                              ...spec.chart, quad_x: e.target.value === "" ? null : Number(e.target.value),
+                            } })} />
+                        </Row>
+                        <Row label="分界 Y">
+                          <TextField size="small" type="number" value={spec.chart?.quad_y ?? ""}
+                            placeholder="中位数" sx={fieldSx} data-slot="scatter-quad-y"
+                            onChange={(e) => onChange({ ...spec, chart: {
+                              ...spec.chart, quad_y: e.target.value === "" ? null : Number(e.target.value),
+                            } })} />
+                        </Row>
+                      </>
+                    ) : null}
                   </Stack>
                 </PanelSection>
               </>

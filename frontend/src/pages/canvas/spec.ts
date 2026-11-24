@@ -48,8 +48,8 @@ export function emptySpec(title = "组件"): ComponentSpec {
     chart: {
       show_labels: true, show_legend: true, show_grid: true, x_title: "", y_title: "",
       label_rotate: 0, y_min: null, y_max: null, bar_width: 26, smooth: true,
-      label_format: "auto", scatter_mode: "point", x_key: "", y_key: "", size_key: "",
-      log_x: false, log_y: false, label_layout: "inside", single_slice: true,
+      label_format: "auto", scatter_mode: "point", x_key: "", y_key: "", x_agg: "MAX", y_agg: "", size_key: "",
+      log_x: false, log_y: false, size_log: false, quad_x: null, quad_y: null, tooltip_keys: [], extras: [], label_layout: "inside", single_slice: true,
       pie_inner: 46, pie_start: 90, pie_label: "name_pct", pie_gap: true, pie_rose: false,
       hbar_threshold_key: "", hbar_threshold_gte: null, hbar_highlight: "violet",
     },

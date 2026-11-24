@@ -7,6 +7,112 @@
 > 交付顺序：改代码 → `tsc --noEmit` → 真机截图自检（对齐 / 折行 / 溢出 / 空态）→ 写这里。
 
 ---
+## 2026-11-24 · 优化：散点面板重排（X/Y 拖字段 + 附加字段不限数量 + 坐标轴归入附加）
+
+- **X 轴 / Y 轴改成拖拽字段**：都在「通用 → 数据」里，和维度/指标同一种拖入框；留空时回落原有规则
+  （X = 第二个指标，Y = 主指标）。原来 X 轴是下拉、Y 轴只能靠指标，现在两个都能单独指定字段。
+- **附加字段**：「数据」里「＋ 添加附加字段」按钮，一行一个 `说明 [拖拽框]`，**不限数量**（后端上限 20 防手滑），
+  行尾 ✕ 删除；每个附加字段都会进 SQL（`MAX(...)`）并**逐行显示在散点提示框里**，说明为空时回落成字段名。
+- **坐标轴配置归入「附加」栏**：横轴 / 纵轴刻度（线性 / 对数）从右栏「散点」组挪到左栏「附加」，和气泡大小放在一起。
+- **兼容**：上一版的 `tooltip_keys` 仍然生效（等价于 `extras` 的简写），老看板不用改。
+- **涉及文件**：`backend/app/components/spec.py`（`chart.extras`）、`compute.py`（附加字段带说明、不限数量，提示框逐行输出）、
+  `resolver.py`（附加字段并入查询列）、`frontend/.../editor/QueryPanel.tsx`（X/Y 拖拽框 + 附加字段列表 + 坐标轴刻度）、
+  `editor/ChartOptionsPanel.tsx`（移除轴刻度）、`renderers/ScatterCard.tsx`（按说明逐行渲染附加字段）、`components/types.ts`、
+  `backend/tests/test_scatter_quadrant.py`（改为列表形态 + 2 条新用例）。
+- **怎么验证**（临时看板，验完已删除）：散点配 X=均价、Y=热销指数、气泡=日销量、附加字段两行
+  （说明「转化率」→霸榜天数；说明留空→上架天数）。界面点「＋ 添加附加字段」后说明行 2→3；
+  落库 `extras=[{key:霸榜天数,label:转化率},{key:上架天数,label:""},{key:"",label:""}]`；
+  SQL 里出现 `MAX(top_days)`、`MAX(listed_days)`；提示框实测
+  `…均价：24.2 / 热销指数：7,222 / 日销量：999 / 转化率：37 / 上架天数：37 / 潜力区 · 机会分 74`；
+  「附加」栏的横轴/纵轴刻度控件在位。截图 `docs/_selfcheck/2026-11-24-scatter-extras.png`。
+- **迭代（同日）**：X / Y 轴也能各选**聚合**了 ——「X 聚合」（默认 MAX）、「Y 聚合」（默认「跟随指标聚合」），
+  两者各占一行（挤在同一行会把字段名截断）。Y 轴就是主指标时，选的 Y 聚合会覆盖指标本身的聚合。
+  实测：X=均价/SUM、Y=热销指数/MIN → SQL 变成 `SUM("price_avg") AS 均价`、`MIN("heat_score") AS 热销指数`，
+  气泡与附加字段仍是 `MAX(...)`；面板读回 `SUM / MIN`；非法聚合值回落 MAX，不会 500。
+  截图 `docs/_selfcheck/2026-11-24-scatter-axis-agg.png`。
+- **迭代（同日·面板重排）**：散点的配置按「附加」分组重新归位 ——
+  - **附加 → 散点**：X 轴 / Y 轴（拖拽字段），**聚合行紧跟在各自字段下方**（参照指标的「聚合」，
+    只有绑了字段才出现，标签就叫「聚合」），下面是「附加字段」列表与「＋ 添加附加字段」。
+  - **附加 → 坐标轴**（新，可折叠、内容包在卡片里）：Y 最小 / Y 最大 / 数值格式 / 标签旋转 + 横轴刻度 / 纵轴刻度。
+    原来是「通用」里一段没有折叠按钮、也没包卡片的裸区块。
+  - **附加 → 首选项**（原「附加 → 附加」）：模式（点 / 气泡 / 四象限）、气泡大小、点大小、气泡缩放、分界 X/Y、组件元素开关。
+  - 「通用 → 数据」里不再有散点专属项，只留维度 / 指标 / 聚合。
+  涉及 `editor/QueryPanel.tsx`（新增 3 个 PanelSection）与 `editor/ChartOptionsPanel.tsx`（散点段整体迁出）。
+  实测：面板里 散点 / 坐标轴 / 首选项 三段都在，X 轴有字段时出现「聚合」行、Y 轴为空时不出现（1 行而非 2 行）。
+  截图 `docs/_selfcheck/2026-11-24-scatter-panel.png`。
+
+---
+## 2026-11-24 · 新增：散点三项能力（提示框多指标 / 自定义象限阈值 / 气泡对数缩放）
+
+- **提示框指标**：散点「数值」组新增「提示框」多选（最多 3 个），勾中的指标会逐行显示在悬浮框里
+  （例：`均价 / 热销指数 / 日销量 / 霸榜天数 / 潜力区 · 机会分 69`）。
+- **自定义象限分界**：「散点」组新增「分界 X / 分界 Y」，留空仍按当页中位数自动切；
+  虚线、象限着色、机会分都按填写的阈值算（`payload.auto_medians` 仍带中位数供对照）。
+- **气泡对数缩放**：「气泡缩放」可选 线性 / 对数；量级差很大时（百万级人气 vs 几十）线性会把小点压成针尖。
+- **顺带修一个既有 bug**：`opportunity_scores` 取纵轴只认 `chart.y_key`，没填就当 0 ——
+  结果四象限实际只按 X 轴一刀切。现在散点会显式传入解析后的 X/Y 轴字段；
+  机会分里的「转化率」也优先取提示框里带「转化」的那一列，而不是永远拿气泡字段顶替。
+- **涉及文件**：`backend/app/components/spec.py`（`size_log / quad_x / quad_y / tooltip_keys`）、
+  `components/compute.py`（阈值、extras、Y 轴兜底）、`components/resolver.py`（提示框指标并入查询）、
+  `renderers/ScatterCard.tsx`（对数尺寸 + 多行提示框 + 可测的 `mcbi-scatter-tip`）、
+  `editor/ChartOptionsPanel.tsx`（分界 X/Y、气泡缩放）、`editor/QueryPanel.tsx`（提示框多选）、`components/types.ts`、
+  `backend/tests/test_scatter_quadrant.py`（5 条）。
+- **怎么验证**（临时看板，验完已删除）：散点绑 `测试-01`，X=均价、Y=热销指数、气泡=日销量、
+  提示框=霸榜天数、分界 X=200 / Y=1000、气泡缩放=对数、双对数轴。接口回包：`medians={x:200,y:1000}`、
+  `auto_medians={x:61.8,y:6422}`、`size_log=true`、`tooltip_keys=["霸榜天数"]`、180 个点且首点带 `extras`；
+  SQL 里确实带上了 `MAX(top_days) AS 霸榜天数`。界面：面板读回 `200 / 1000 / log`，
+  悬停提示框实测 `…均价：13.2 / 热销指数：7,318 / 日销量：999 / 霸榜天数：30 / 潜力区 · 机会分 69`。
+  截图 `docs/_selfcheck/2026-11-24-scatter-quadrant.png`。后端全量 + 前端 195 条单测、`tsc`、构建、体积、Storybook 全过。
+
+---
+## 2026-11-24 · 新增：组件导出成 JSON 文件 / 再导入
+
+- **入口**：组件库页面 —— 顶栏「导入」按钮（选 `.json`）；卡片 **hover 右上角出现「导出」**（点卡片本身仍是放大预览）。
+- **导出文件**（`xxx.mcbi.json`）：
+  ```json
+  { "format": "mcbi.component", "version": 1, "exported_at": "…",
+    "component": { "name": "雷达图", "kind": "radar", "category": "关系", "description": "…", "spec": {…} },
+    "dataset": { "id": 2, "name": "测试-01", "physical_table": "bi_demo_sku" } }
+  ```
+  带数据集引用是为了跨环境能认回来：`physical_table` / `name` 用于在本机找同一份数据。
+- **导入**：按 `physical_table` → `name` 顺序找本环境的数据集，找到就把 spec 里**所有** `dataset_id` 重写到本地 id；
+  找不到则**清空绑定**并提示「本机没有数据集「X」，绑定已清空」；组件 code 自动生成 `imp_xxxx`（不与现有冲突）。
+- **为什么**：跨环境（测试 → 生产）、跨账号交接时，组件目前只能手工重配；有了 JSON 就能整包搬。
+- **接口**：`GET /api/bi/components/{id}/export`、`POST /api/bi/components/import`（导入成功返回 `dataset_matched` / `dataset_name`）。
+- **涉及文件**：**`backend/app/components/transfer.py`（新**，导出结构 + `dataset_id` 重写 + 导入校验）、
+  `components/router.py`（2 个端点）、**`frontend/src/features/components/componentFile.ts`（新**，落盘 / 读文件）、
+  `pages/ComponentLibraryPage.tsx`（导入按钮 + 卡片 hover 导出）、`backend/tests/test_component_transfer.py`（11 条）。
+- **怎么验证**：真机组件库 —— 导出「雷达图」得到 `雷达图.mcbi.json`（`format=mcbi.component`，
+  `dataset={id:2, name:测试-01, physical_table:bi_demo_sku}`）；把该文件再导入 → 提示「已导入「雷达图」」，
+  新组件 `imp_b4ff64b0`，`binding.dataset_id` 已重写成本地 2；
+  把文件里的数据集改成不存在的 `nope_table` 再导入 → `dataset_matched=false`、`binding.dataset_id=null`（绑定已清空）；
+  把 `format` 改错 → 400「这不是明策BI 组件文件」。验完导入的组件已删除。
+  截图 `docs/_selfcheck/2026-11-24-component-import.png`。
+
+---
+## 2026-11-24 · 新增：跨项目复制页面
+
+- **入口**：画布页签右键菜单 →「复制到其他项目…」→ 选目标项目 → 复制。
+- **行为**：服务端一次性复制整页（卡片 / 版面 / 分平台 items_map / 参考线），**只往目标项目追加一页**，
+  目标项目已有的页一行不动；元素 key、页 key、参考线 id 全部重新生成，不会和目标的 key 撞。
+  **数据集绑定原样保留**（新页仍用源项目那份数据），所以复制过去内容和原来完全一致；页标题重名时自动加「副本」。
+  复制完成后弹提示「已复制到「XXX」」，点「去看看」直接跳到目标项目那一页。
+- **权限**：源项目要**可读**、目标项目要**可编辑**；同项目直接提示用「复制页面」。
+- **接口**：`POST /api/bi/dashboards/{目标}/views/copy-from`
+  （body `{source_dashboard_id, source_view_key, title?, after?}`），在 `FOR UPDATE` 下锁目标行，
+  复用结构写回链路（校验 / 清渲染缓存 / 重建数据源账本 / 审计）。
+- **为什么**：新建项目时经常要复用上一块看板里调好的某一页，以前只能整板克隆再删页。
+- **涉及文件**：`backend/app/dashboards/structure.py`（`clone_view` 纯函数 + 复制接口，顺带把写回抽成 `_commit`）、
+  `dashboards/router.py`（导出读权限助手）、`**frontend/src/pages/canvas/CopyPageToBoardDialog.tsx**`（新）、
+  `pages/canvas/CanvasDialogs.tsx`（菜单项 + Toast 支持操作按钮）、`pages/CanvasBoardPage.tsx`（接线）、
+  `backend/tests/test_dashboard_structure.py`（+2 条：key 重生成 / 标题去重 / 数据集绑定保留 / 深拷贝）。
+- **怎么验证**（临时看板，验完已删除）：源项目「页1」含头标卡 + 绑定 dataset 10 的指标卡，目标项目只有「目标页」。
+  界面上右键 → 复制 → 目标项目变成 2 页，新页 `page_1ab79c7f`、元素 key `b_1ab79c7f0 / k_1ab79c7f1`（全部新生成）、
+  `dataset_id` 仍是 10、目标原页 `t1` 未动、源项目仍是 1 页；提示带「去看看」，点击跳到 `?doc=16&view=page_1ab79c7f`。
+  反例：同项目 400「源和目标是同一个项目」、源页不存在 404、源项目不存在 404、空 body 400。
+  截图 `docs/_selfcheck/2026-11-24-copy-page-dialog.png`。
+
+---
 ## 2026-11-24 · 修复：点缩略图会连带打开行详情抽屉
 
 - **现象**：明细表里点商品缩略图，除了大图预览，还会把右侧「商品详情」抽屉一起弹出来。

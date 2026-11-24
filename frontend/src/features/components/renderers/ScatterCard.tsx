@@ -48,13 +48,21 @@ export default function ScatterCard({ payload, ui, compact }: { payload: RenderP
   const logX = Boolean(payload.log_x ?? opts.log_x);
   const logY = Boolean(payload.log_y ?? opts.log_y);
   const maxSize = Math.max(...points.map((p) => Number(p.size ?? 0)), 1);
+  /* 气泡按对数缩放：量级差很大时（3,695,833 对 100）线性会把小点压成针尖 */
+  const sizeLog = Boolean(payload.size_log ?? opts.size_log);
+  const sizeRatio = (value: number) => {
+    const raw = Math.max(0, Number(value) || 0);
+    if (!sizeLog) return raw / maxSize;
+    const span = Math.log10(1 + maxSize);
+    return span ? Math.log10(1 + raw) / span : 0;
+  };
   /* 点大小可调：气泡 / 四象限按同一基准等比放大 */
   const base = Math.max(3, Math.min(24, Number(opts.dot_size ?? 8)));
   const sizeOf = (p: ScatterPoint) =>
     mode === "bubble"
-      ? base * 0.75 + (Number(p.size ?? 0) / maxSize) * base * 2.25
+      ? base * 0.75 + sizeRatio(Number(p.size ?? 0)) * base * 2.25
       : mode === "quadrant"
-        ? base * 0.62 + (Number(p.size ?? 0) / maxSize) * base * 1.75
+        ? base * 0.62 + sizeRatio(Number(p.size ?? 0)) * base * 1.75
         : base;
 
   const data = points.map((p) => {
@@ -68,6 +76,7 @@ export default function ScatterCard({ payload, ui, compact }: { payload: RenderP
       quad: p.quad,
       score: p.score,
       sizeValue: p.size,
+      extras: p.extras,
     };
   });
 
@@ -113,12 +122,17 @@ export default function ScatterCard({ payload, ui, compact }: { payload: RenderP
     tooltip: {
       trigger: "item",
       ...TOOLTIP,
-      formatter: (p: { data: { name?: string; value: [number, number]; quad?: string; score?: number; sizeValue?: number } }) => {
+      className: "mcbi-scatter-tip",
+      formatter: (p: { data: { name?: string; value: [number, number]; quad?: string; score?: number; sizeValue?: number; extras?: { label: string; key: string; value: number }[] } }) => {
         const [x, y] = p.data.value;
         const lines = [`<b>${p.data.name ?? ""}</b>`,
           `${xLabel || "x"}：${formatAxis(x, opts)}`,
           `${yLabel || "y"}：${formatAxis(y, opts)}`];
         if (p.data.sizeValue !== undefined) lines.push(`${opts.size_key || "气泡"}：${formatAxis(p.data.sizeValue, opts)}`);
+        /* 面板里「＋ 添加」的附加字段：一行一个，说明在前、数值在后 */
+        for (const row of p.data.extras ?? []) {
+          lines.push(`${row.label || row.key}：${formatAxis(Number(row.value), opts)}`);
+        }
         if (p.data.quad) lines.push(`${QUAD_LABEL[p.data.quad] ?? p.data.quad} · 机会分 ${p.data.score ?? "-"}`);
         return lines.join("<br/>");
       },

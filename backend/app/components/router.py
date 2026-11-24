@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 from app.components import catalog as chart_catalog
 from app.security.nav_guard import require_nav
 from app.components import repository as repo
+from app.components import transfer
 from app.components.compute import fmt_number
 from app.components.resolver import resolve
 from app.components.spec import (
@@ -309,6 +310,55 @@ def preview_batch(
 @router.get("/utils/format")
 def format_sample(value: float = 12345678, fmt: str = "int"):
     return {"value": value, "format": fmt, "rendered": fmt_number(value, fmt)}
+
+
+@router.get("/{component_id}/export")
+def export_component(
+    component_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """把一个组件导出成 JSON（前端存成文件），带上数据集引用便于跨环境导入."""
+    row = repo.get_component(db, component_id)
+    if row is None:
+        raise HTTPException(404, "组件不存在")
+    data = row.to_dict()
+    dataset = transfer.dataset_ref(db, transfer.first_dataset_id(data.get("spec")))
+    return transfer.build_payload(data, dataset)
+
+
+@router.post("/import", dependencies=[Depends(require_nav("bi:nav:components"))])
+def import_component(
+    payload: dict = Body(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """导入组件 JSON：按物理表 / 名称找回本地数据集，找不到就清掉绑定并提示."""
+    try:
+        component, ref = transfer.normalize_payload(payload)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    dataset_id = transfer.find_dataset_id(db, ref)
+    spec = transfer.remap_dataset_ids(component["spec"], dataset_id)
+    try:
+        created = repo.create_component(
+            db,
+            code=f"imp_{uuid.uuid4().hex[:8]}",
+            name=component["name"],
+            kind=component["kind"],
+            spec=spec,
+            category=component["category"],
+            description=component["description"],
+            owner_id=current_user.id,
+        )
+    except SecurityError as exc:
+        raise HTTPException(exc.http_status, exc.message) from exc
+    return {
+        **created.to_dict(),
+        "dataset_matched": bool(dataset_id),
+        "dataset_name": (ref or {}).get("name") if ref else None,
+    }
 
 
 __all__ = ["router"]

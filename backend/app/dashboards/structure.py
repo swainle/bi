@@ -11,7 +11,8 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Callable
+import uuid
+from typing import Any, Callable, Iterable
 
 from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy import text
@@ -21,7 +22,7 @@ from app.dashboards import render_cache
 from app.dashboards import repository as repo
 from app.dashboards import sources
 from app.dashboards.models import validate_doc
-from app.dashboards.router import require_dashboard_edit
+from app.dashboards.router import require_dashboard_edit, require_dashboard_read
 from app.database import get_db
 from app.middleware.audit import log_audit
 from app.middleware.auth import get_current_user
@@ -93,30 +94,66 @@ def publish_doc(doc: dict, when: str | None = None) -> dict:
     return {**doc, "published": True, "published_at": when or china_now().isoformat(timespec="seconds")}
 
 
-def _mutate(
-    db: Session,
-    dashboard_id: int,
-    current_user: User,
-    change: Callable[[dict], dict],
-    action: str,
-    detail: dict | None = None,
-) -> dict:
-    """锁行 → 读最新 doc → 只改结构 → 写回；顺带清缓存 / 重建数据源账本 / 写审计."""
-    row = repo.get(db, dashboard_id)
-    if row is None:
-        raise HTTPException(404, "看板不存在")
-    require_dashboard_edit(row, current_user, db)
+def _fresh_key(prefix: str, stamp: str, index: int | None = None) -> str:
+    return f"{prefix}_{stamp}" if index is None else f"{prefix}_{stamp}{index}"
 
+
+def clone_view(view: Any, stamp: str, title: Any = None, existing_titles: Iterable[str] = ()) -> dict:
+    """把一页深拷贝成「能安全放进另一个项目」的新页：页 key / 元素 key / 参考线 id 全部重新生成.
+
+    数据集绑定**原样保留**（跨项目复制仍然指向源项目用的那份数据），所以页面内容与来源完全一致。
+    """
+    if not isinstance(view, dict):
+        raise StructureError("缺少页面内容")
+    page = json.loads(json.dumps(view))          # 深拷贝，别让两个项目共享同一份对象
+    page["key"] = _fresh_key("page", stamp)
+    taken = {str(item or "") for item in existing_titles}
+    base = _clean_title(title if title is not None else page.get("title"))
+    page["title"] = f"{base} 副本"[:MAX_TITLE] if base in taken else base[:MAX_TITLE]
+
+    def remake(items: Any) -> list[dict]:
+        out = []
+        for index, item in enumerate(items or []):
+            if not isinstance(item, dict):
+                continue
+            copy = dict(item)
+            if copy.get("key"):
+                copy["key"] = _fresh_key(str(copy["key"]).rstrip("0123456789") or "c", stamp, index)
+            out.append(copy)
+        return out
+
+    page["items"] = remake(page.get("items"))
+    if isinstance(page.get("items_map"), dict):
+        page["items_map"] = {platform: remake(bucket) for platform, bucket in page["items_map"].items()}
+    if isinstance(page.get("guides"), list):
+        page["guides"] = [
+            {**guide, "id": _fresh_key("g", stamp, index)}
+            for index, guide in enumerate(page["guides"]) if isinstance(guide, dict)
+        ]
+    return page
+
+
+def _load_locked(db: Session, dashboard_id: int) -> dict:
     locked = db.execute(
         text("SELECT doc FROM bi_canvas WHERE id = :id AND deleted_at IS NULL FOR UPDATE"),
         {"id": dashboard_id},
     ).first()
     if locked is None:
-        db.rollback()
         raise HTTPException(404, "看板不存在")
+    return dict(locked[0] or {})
 
+
+def _commit(
+    db: Session,
+    dashboard_id: int,
+    doc: dict,
+    current_user: User,
+    action: str,
+    detail: dict | None = None,
+) -> dict:
+    """校验 → 写回 → 清缓存 / 重建账本 / 写审计；失败一律回滚成 400."""
+    doc = dict(doc)
     try:
-        doc = change(dict(locked[0] or {}))
         payload = validate_doc(doc).model_dump()   # 只校验，不 heal：不碰别人页里的内容
     except StructureError as exc:
         db.rollback()
@@ -137,9 +174,33 @@ def _mutate(
     except Exception as exc:   # 账本写失败不影响结构改动本身
         print(f"[dashboards] 数据源账本重建失败：{exc}")
     log_audit(current_user.id, action, "canvas", dashboard_id, detail or {})
+    return payload
+
+
+def _mutate(
+    db: Session,
+    dashboard_id: int,
+    current_user: User,
+    change: Callable[[dict], dict],
+    action: str,
+    detail: dict | None = None,
+) -> dict:
+    """锁行 → 读最新 doc → 只改结构 → 写回；顺带清缓存 / 重建数据源账本 / 写审计."""
+    row = repo.get(db, dashboard_id)
+    if row is None:
+        raise HTTPException(404, "看板不存在")
+    require_dashboard_edit(row, current_user, db)
+
+    doc = _load_locked(db, dashboard_id)
+    try:
+        next_doc = change(doc)
+    except StructureError as exc:
+        db.rollback()
+        raise HTTPException(400, str(exc)) from exc
+    payload = _commit(db, dashboard_id, next_doc, current_user, action, detail)
 
     fresh = repo.get(db, dashboard_id)
-    return fresh.to_dict() if fresh else {"id": dashboard_id}
+    return fresh.to_dict() if fresh else {"id": dashboard_id, "doc": payload}
 
 
 @router.post("/{dashboard_id}/views")
@@ -213,4 +274,65 @@ def publish_dashboard(
     )
 
 
-__all__ = ["router", "add_view", "remove_view", "rename_view", "publish_doc", "StructureError"]
+@router.post("/{dashboard_id}/views/copy-from")
+def copy_view_from(
+    dashboard_id: int,
+    payload: dict = Body(default={}),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """跨项目复制页面（body: `{source_dashboard_id, source_view_key, title?, after?}`）.
+
+    源项目要**可读**、目标项目要**可编辑**；只往目标项目追加一页，目标已有的页一行不动。
+    数据集绑定原样保留：新页仍然用源项目那份数据，内容与来源一致。
+    """
+    try:
+        source_id = int(payload.get("source_dashboard_id") or 0)
+    except (TypeError, ValueError):
+        raise HTTPException(400, "源项目不正确") from None
+    source_key = str(payload.get("source_view_key") or "").strip()
+    if not source_id or not source_key:
+        raise HTTPException(400, "缺少源项目或页面")
+    if source_id == dashboard_id:
+        raise HTTPException(400, "源和目标是同一个项目，直接用「复制页面」")
+
+    target_row = repo.get(db, dashboard_id)
+    if target_row is None:
+        raise HTTPException(404, "看板不存在")
+    require_dashboard_edit(target_row, current_user, db)
+    require_dashboard_read(repo.get(db, source_id), current_user, db)
+
+    source = db.execute(
+        text("SELECT doc FROM bi_canvas WHERE id = :id AND deleted_at IS NULL"),
+        {"id": source_id},
+    ).first()
+    if source is None:
+        raise HTTPException(404, "源项目不存在")
+    source_view = next(
+        (view for view in ((source[0] or {}).get("views") or []) if str(view.get("key")) == source_key),
+        None,
+    )
+    if source_view is None:
+        raise HTTPException(404, "源页面不存在")
+
+    target_doc = _load_locked(db, dashboard_id)
+    titles = {str(view.get("title") or "") for view in target_doc.get("views") or []}
+    page = clone_view(source_view, uuid.uuid4().hex[:8], payload.get("title"), titles)
+    try:
+        next_doc = add_view(target_doc, page, payload.get("after"))
+    except StructureError as exc:
+        db.rollback()
+        raise HTTPException(400, str(exc)) from exc
+
+    _commit(db, dashboard_id, next_doc, current_user, "dashboard.copy_view", {
+        "from_dashboard": source_id,
+        "from_view": source_key[:40],
+        "view": page["key"],
+    })
+    fresh = repo.get(db, dashboard_id)
+    out = fresh.to_dict() if fresh else {"id": dashboard_id}
+    out["view_key"] = page["key"]
+    return out
+
+
+__all__ = ["router", "add_view", "remove_view", "rename_view", "publish_doc", "clone_view", "StructureError"]

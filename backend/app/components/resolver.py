@@ -32,7 +32,7 @@ from app.components.compute import (
     build_table,
 )
 from app.components.reco import build_reco
-from app.components.spec import ComponentSpec, ComponentSpecError
+from app.components.spec import AGGREGATES, ComponentSpec, ComponentSpecError
 from app.query.executor import run as execute_query
 from app.query.live import LiveQueryError, run_live
 from app.semantic.compiler import compile_query
@@ -60,6 +60,18 @@ def _execute_dataset(db: Session, dataset, query, user):
                 raise ComponentSpecError(message) from exc
             raise ComponentSpecError(f"{dataset.name}：{message}") from exc
     return execute_query(db, query, user, dataset_id=dataset.id)
+
+
+def scatter_aggs(spec: ComponentSpec) -> dict[str, str]:
+    """散点各字段的聚合方式：X / Y 轴可以在面板里单独选，其余附加字段固定 MAX."""
+    chart = spec.chart
+    fallback = spec.binding.agg if spec.binding.agg in AGGREGATES else "SUM"
+    out: dict[str, str] = {}
+    if chart.x_key:
+        out[chart.x_key] = chart.x_agg if chart.x_agg in AGGREGATES else "MAX"
+    if chart.y_key:
+        out[chart.y_key] = chart.y_agg if chart.y_agg in AGGREGATES else fallback
+    return out
 
 
 def _metric_items(spec: ComponentSpec) -> list[dict]:
@@ -160,7 +172,8 @@ def _extra_metric_names(spec: ComponentSpec) -> list[str]:
     for key in (rank.value_key, rank.x_key, rank.y_key, rank.cvr_key):
         if key:
             names.append(key)
-    for key in (chart.x_key, chart.y_key, chart.size_key):
+    extra_keys = [str(row.get("key") or "") for row in (chart.extras or []) if isinstance(row, dict)]
+    for key in (chart.x_key, chart.y_key, chart.size_key, *(chart.tooltip_keys or []), *extra_keys):
         if key:
             names.append(key)
     return [n for n in dict.fromkeys(names) if n]
@@ -207,9 +220,15 @@ def _request_for(spec: ComponentSpec, kind: str) -> dict:
 
     metrics = _metric_items(spec)
     if kind in ("rank_list", "scatter", "reco_list"):
+        aggs = scatter_aggs(spec) if kind == "scatter" else {}
         for name in _extra_metric_names(spec):
             if all(m["name"] != name for m in metrics) and name != b.dimension:
-                metrics.append({"name": name, "agg": "MAX"})
+                metrics.append({"name": name, "agg": aggs.get(name, "MAX")})
+    # 散点的 Y 轴就是主指标时，面板里选的 Y 聚合要能覆盖指标本身的聚合
+    if kind == "scatter" and spec.chart.y_key and spec.chart.y_agg in AGGREGATES:
+        for item in metrics:
+            if item["name"] == spec.chart.y_key:
+                item["agg"] = spec.chart.y_agg
 
     order_by: list[dict] = []
     if kind == "table" and b.sort_field:

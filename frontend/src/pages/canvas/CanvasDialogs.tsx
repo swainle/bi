@@ -14,14 +14,18 @@ import type { RenderPayload, SortDir } from "../../features/components/types";
 import type { EditingPage, PageMenuState } from "./PageTabs";
 import { validBoardSize } from "./boardResize";
 
-export type ToastState = { open: boolean; msg: string; severity: "success" | "error" };
+export type ToastState = {
+  open: boolean; msg: string; severity: "success" | "error";
+  /** 可选操作按钮（例：复制到其他项目后「去看看」） */
+  action?: { label: string; onClick: () => void };
+};
 export type DeleteConfirm = { keys: string[]; platforms: string[] } | null;
 export type GuideMenuState = { x: number; y: number; id?: string; boardKey?: string } | null;
 
 export default function CanvasDialogs({
   topKey, setTopKey, topSort, setTopSort, docId, view, params, items, toDocItem, cards,
   deleteConfirm, setDeleteConfirm, removeItems,
-  pageMenu, setPageMenu, doc, setEditingPage, duplicatePage, copyText, setToast, deletePage,
+  pageMenu, setPageMenu, doc, setEditingPage, duplicatePage, copyText, setToast, deletePage, onCopyToBoard,
   shapeAnchor, setShapeAnchor, addShape,
   guideMenu, setGuideMenu, removeGuide, guidesVisible, setGuidesVisible, guides, setGuides, setDirty,
   publishConfirm, setPublishConfirm, onPublish, saving, agentGenerated, toast, patchItem, canvasSize, onResizeCanvas,
@@ -49,6 +53,8 @@ export default function CanvasDialogs({
   copyText: (text: string) => void;
   setToast: Dispatch<SetStateAction<ToastState>>;
   deletePage: (key: string) => void;
+  /** 打开「复制到其他项目」弹窗 */
+  onCopyToBoard: (key: string) => void;
   shapeAnchor: HTMLElement | null;
   setShapeAnchor: (v: HTMLElement | null) => void;
   addShape: (kind: ShapeKind) => void;
@@ -122,6 +128,9 @@ export default function CanvasDialogs({
         </MenuItem>
         <MenuItem sx={{ fontSize: 12.5 }} onClick={() => { if (pageMenu) duplicatePage(pageMenu.key); setPageMenu(null); }}>
           复制页面
+        </MenuItem>
+        <MenuItem sx={{ fontSize: 12.5 }} onClick={() => { if (pageMenu) onCopyToBoard(pageMenu.key); setPageMenu(null); }}>
+          复制到其他项目…
         </MenuItem>
         <MenuItem sx={{ fontSize: 12.5 }} onClick={() => {
           if (pageMenu) {
@@ -260,10 +269,21 @@ onClick={() => { setPublishConfirm(false); onPublish(); }}
         </DialogActions>
       </Dialog>
 
-      <Snackbar open={toast.open} autoHideDuration={2400}
+        <Snackbar open={toast.open} autoHideDuration={toast.action ? 6000 : 2400}
         onClose={() => setToast((s) => ({ ...s, open: false }))}
         anchorOrigin={{ vertical: "bottom", horizontal: "center" }}>
-        <Alert severity={toast.severity} sx={{ borderRadius: 2 }}>{toast.msg}</Alert>
+        <Alert
+          severity={toast.severity}
+          sx={{ borderRadius: 2 }}
+          action={toast.action ? (
+            <Button size="small" color="inherit" sx={{ textTransform: "none" }}
+              onClick={() => { toast.action?.onClick(); setToast((s) => ({ ...s, open: false })); }}>
+              {toast.action.label}
+            </Button>
+          ) : undefined}
+        >
+          {toast.msg}
+        </Alert>
       </Snackbar>
     </>
   );

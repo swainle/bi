@@ -116,45 +116,6 @@ export default function ChartOptionsPanel({ kind, spec, onChange, mode = "all" }
           )}
         </Stack>
       </PanelSection>
-
-      {/* ── 散点的三种画法 ── */}
-      {kind === "scatter" && (
-        <PanelSection title="散点">
-          <ToggleButtonGroup exclusive size="small" value={chart.scatter_mode}
-            onChange={(_, v) => v !== null && setChart({
-              scatter_mode: v,
-              ...(v === "point" ? { size_key: "" } : {}),
-            })}
-            sx={{ ...groupSx, mb: 1.5 }}>
-            <ToggleButton value="point">点</ToggleButton>
-            <ToggleButton value="bubble">气泡</ToggleButton>
-            <ToggleButton value="quadrant">四象限</ToggleButton>
-          </ToggleButtonGroup>
-          <Stack spacing={1} sx={{ mb: 1.5 }}>
-            <Row label="点大小">
-              <TextField size="small" type="number" value={chart.dot_size ?? 8}
-                onChange={(e) => setChart({ dot_size: Math.max(3, Math.min(24, Number(e.target.value) || 8)) })}
-                sx={fieldSx} />
-            </Row>
-            <Row label="横轴刻度">
-              <TextField select size="small" value={chart.log_x ? "log" : "linear"}
-                onChange={(e) => setChart({ log_x: e.target.value === "log" })}
-                sx={fieldSx}>
-                <MenuItem value="linear" sx={{ fontSize: 12.5 }}>线性</MenuItem>
-                <MenuItem value="log" sx={{ fontSize: 12.5 }}>对数</MenuItem>
-              </TextField>
-            </Row>
-            <Row label="纵轴刻度">
-              <TextField select size="small" value={chart.log_y ? "log" : "linear"}
-                onChange={(e) => setChart({ log_y: e.target.value === "log" })}
-                sx={fieldSx}>
-                <MenuItem value="linear" sx={{ fontSize: 12.5 }}>线性</MenuItem>
-                <MenuItem value="log" sx={{ fontSize: 12.5 }}>对数</MenuItem>
-              </TextField>
-            </Row>
-          </Stack>
-        </PanelSection>
-        )}
       </>)}
 
       {isCombo && showPrefsBlock && (

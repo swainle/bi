@@ -326,17 +326,35 @@ QUAD_RANK = {"blue": 0, "pot": 1, "red": 2, "drop": 3}
 DEFAULT_WEIGHTS = {"v": 0.45, "cvr": 0.30, "ds": 0.25}
 
 
-def opportunity_scores(rows: list[dict], spec: ComponentSpec) -> dict:
-    """机会分 + 象限：只在当前筛选范围内归一化（与模板 renderDmAll 一致）."""
+def opportunity_scores(
+    rows: list[dict],
+    spec: ComponentSpec,
+    *,
+    x_key: str | None = None,
+    y_key: str | None = None,
+    cvr_key: str | None = None,
+) -> dict:
+    """机会分 + 象限：只在当前筛选范围内归一化（与模板 renderDmAll 一致）.
+
+    `x_key / y_key / cvr_key` 由调用方（散点）显式传入，避免「纵轴没填就按 0 算」——
+    那样四象限只会按 X 轴一刀切。排名卡沿用原来的兜底逻辑。
+    """
     rank = spec.rank
     chart = spec.chart
-    x_key = rank.x_key or chart.x_key or spec.binding.metric
-    y_key = rank.y_key or chart.y_key or ""
-    cvr_key = rank.cvr_key or chart.size_key or ""
+    x_key = x_key if x_key is not None else (rank.x_key or chart.x_key or spec.binding.metric)
+    y_key = y_key if y_key is not None else (rank.y_key or chart.y_key or "")
+    if cvr_key is None:
+        cvr_key = rank.cvr_key or chart.size_key or ""
+        if not cvr_key:
+            # 气泡选的是「人气」这类量级指标时，机会分里的转化率应该另取一列
+            cvr_key = next((key for key in (chart.tooltip_keys or []) if "转化" in key), "")
     weights = {**DEFAULT_WEIGHTS, **{k: float(v) for k, v in (rank.weights or {}).items()}}
     xs = [_num(r.get(x_key)) for r in rows]
     ys = [_num(r.get(y_key)) for r in rows] if y_key else [0.0] * len(rows)
     med_x, med_y = _median(xs), _median(ys)
+    # 面板里手填的阈值优先；没填就按本页中位数
+    th_x = chart.quad_x if chart.quad_x is not None else med_x
+    th_y = chart.quad_y if chart.quad_y is not None else med_y
     max_x = max(xs) if xs else 1
     max_y = max(ys) if ys else 1
     out = []
@@ -347,8 +365,9 @@ def opportunity_scores(rows: list[dict], spec: ComponentSpec) -> dict:
             + weights["cvr"] * min(1.0, cvr / 40)
             + weights["ds"] * (math.log10(1 + ds) / math.log10(1 + max_y) if max_y else 0)
         )
-        out.append({"score": round(score), "quad": quadrant_of(v, ds, med_x, med_y)})
+        out.append({"score": round(score), "quad": quadrant_of(v, ds, th_x, th_y)})
     return {"scores": out, "med_x": med_x, "med_y": med_y,
+            "th_x": th_x, "th_y": th_y,
             "counts": {q: sum(1 for x in out if x["quad"] == q) for q in QUAD_RANK}}
 
 
@@ -386,6 +405,18 @@ def build_scatter(rows: list[dict], spec: ComponentSpec) -> dict:
     x_key = chart.x_key or (names[1] if len(names) > 1 else (names[0] if names else None))
     y_key = chart.y_key or (names[0] if names else None)
     size_key = chart.size_key or (names[2] if len(names) > 2 else "")
+    # 附加字段：面板「＋ 添加」的行（说明 + 字段），旧的 tooltip_keys 也一起算进来
+    extra_pairs: list[tuple[str, str]] = []
+    for row in chart.extras or []:
+        if not isinstance(row, dict):
+            continue
+        key = str(row.get("key") or "").strip()
+        if key:
+            extra_pairs.append((str(row.get("label") or "").strip() or key, key))
+    for key in chart.tooltip_keys or []:
+        if key and all(key != pair[1] for pair in extra_pairs):
+            extra_pairs.append((key, key))
+    extra_pairs = extra_pairs[:20]
     points = []
     for row in rows:
         point = {
@@ -395,13 +426,22 @@ def build_scatter(rows: list[dict], spec: ComponentSpec) -> dict:
         }
         if size_key:
             point["size"] = _num(row.get(size_key))
+        if extra_pairs:
+            point["extras"] = [{"label": label, "key": key, "value": _num(row.get(key))}
+                               for label, key in extra_pairs]
         points.append(point)
 
     payload: dict = {"series": points, "x_label": x_key, "y_label": y_key,
-                     "mode": chart.scatter_mode, "log_x": chart.log_x, "log_y": chart.log_y}
+                     "mode": chart.scatter_mode, "log_x": chart.log_x, "log_y": chart.log_y,
+                     "size_log": chart.size_log,
+                     "tooltip_keys": [key for _, key in extra_pairs]}
     if chart.scatter_mode == "quadrant" and points:
-        stats = opportunity_scores(rows, spec)
-        payload["medians"] = {"x": stats["med_x"], "y": stats["med_y"]}
+        # 机会分里的「转化率」优先取附加字段里带「转化」的那一列，再退回气泡字段（老行为）
+        cvr_key = next((key for _, key in extra_pairs if "转化" in key), "") or size_key
+        stats = opportunity_scores(rows, spec, x_key=x_key or "", y_key=y_key or "", cvr_key=cvr_key or "")
+        # 画线用「实际生效的阈值」（手填优先），中位数仍带回去方便排查
+        payload["medians"] = {"x": stats["th_x"], "y": stats["th_y"]}
+        payload["auto_medians"] = {"x": stats["med_x"], "y": stats["med_y"]}
         payload["quads"] = stats["counts"]
         for point, scored in zip(points, stats["scores"]):
             point["quad"] = scored["quad"]

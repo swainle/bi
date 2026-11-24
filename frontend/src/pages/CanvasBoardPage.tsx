@@ -50,7 +50,8 @@ import {
 import { CollapseButton, CollapseStrip, DistributeIcon, Splitter, paneAnimating, useResizableWidth } from "./canvas/controls";
 import { FilterFieldsEditor, Hint, IdChip, copyText, ElementForm } from "./canvas/panels";
 import PageTabs from "./canvas/PageTabs";
-import CanvasDialogs, { type GuideMenuState } from "./canvas/CanvasDialogs";
+import CanvasDialogs, { type GuideMenuState, type ToastState } from "./canvas/CanvasDialogs";
+import CopyPageToBoardDialog from "./canvas/CopyPageToBoardDialog";
 import LeftDatasetPane from "./canvas/LeftDatasetPane";
 import MiddleConfigPane from "./canvas/MiddleConfigPane";
 import ChartRailPane from "./canvas/ChartRailPane";
@@ -106,9 +107,11 @@ export default function CanvasBoardPage() {
   const [dragKey, setDragKey] = useState<string | null>(null);
   const [rendering, setRendering] = useState(false);
   const [revision, setRevision] = useState(0);
-  const [toast, setToast] = useState<{ open: boolean; msg: string; severity: "success" | "error" }>({
+  const [toast, setToast] = useState<ToastState>({
     open: false, msg: "", severity: "success",
   });
+  /** 右键菜单「复制到其他项目…」被点中的那一页 */
+  const [copyToBoard, setCopyToBoard] = useState<string | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const rulerRef = useRef<HTMLDivElement>(null);
@@ -1852,7 +1855,7 @@ export default function CanvasBoardPage() {
         topKey={topKey} setTopKey={setTopKey} topSort={topSort} setTopSort={setTopSort} docId={docId} view={view} params={params} items={items} toDocItem={toDocItem} cards={cards}
         deleteConfirm={deleteConfirm} setDeleteConfirm={setDeleteConfirm} removeItems={removeItems}
         pageMenu={pageMenu} setPageMenu={setPageMenu} doc={doc} setEditingPage={setEditingPage}
-        duplicatePage={duplicatePage} copyText={copyText} setToast={setToast} deletePage={deletePage}
+        duplicatePage={duplicatePage} copyText={copyText} setToast={setToast} deletePage={deletePage} onCopyToBoard={setCopyToBoard}
         shapeAnchor={shapeAnchor} setShapeAnchor={setShapeAnchor} addShape={addShape}
         patchItem={patchItem}
         canvasSize={{ width: DESIGN_W, height: stageHeight }}
@@ -1861,6 +1864,19 @@ export default function CanvasBoardPage() {
         guidesVisible={guidesVisible} setGuidesVisible={setGuidesVisible} guides={guides} setGuides={setGuides} setDirty={setDirty}
         publishConfirm={publishConfirm} setPublishConfirm={setPublishConfirm} onPublish={publishBoard}
         saving={saving} agentGenerated={agentGenerated} toast={toast}
+      />
+
+      <CopyPageToBoardDialog
+        open={Boolean(copyToBoard) && Boolean(doc)}
+        onClose={() => setCopyToBoard(null)}
+        sourceDocId={docId}
+        viewKey={copyToBoard || ""}
+        viewTitle={doc?.views.find((item) => item.key === copyToBoard)?.title || ""}
+        onCopied={(targetId, targetName, newViewKey) => setToast({
+          open: true, severity: "success",
+          msg: `已复制到「${targetName}」`,
+          action: { label: "去看看", onClick: () => nav(`/bi/canvas?doc=${targetId}&view=${newViewKey}`) },
+        })}
       />
     </Box>
   );

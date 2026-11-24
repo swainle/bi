@@ -1,11 +1,12 @@
 /** 组件库（列表页）—— 卡片墙；右上「新建项目」直达画布编辑器 */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  Box, Button, Chip, InputAdornment, Snackbar, Alert, TextField, Typography,
+  Box, Button, Chip, IconButton, InputAdornment, Snackbar, Alert, TextField, Typography,
 } from "@mui/material";
-import { Add, Search } from "@mui/icons-material";
+import { Add, Download, Search, UploadFile } from "@mui/icons-material";
+import { exportComponent, importComponentFile } from "../componentFile";
 import client from "../../../api/client";
 import PreviewThumb from "../board/PreviewThumb";
 import ComponentPreviewDialog from "../board/ComponentPreviewDialog";
@@ -22,6 +23,8 @@ export default function ComponentLibraryPage() {
   const [keyword, setKeyword] = useState("");
   const [category, setCategory] = useState("");
   const [creating, setCreating] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
   /** 点卡片放大查看的组件 */
   const [previewItem, setPreviewItem] = useState<ComponentItem | null>(null);
   const [toast, setToast] = useState<{ open: boolean; msg: string; severity: "success" | "error" }>({ open: false, msg: "", severity: "success" });
@@ -35,6 +38,27 @@ export default function ComponentLibraryPage() {
   }, [keyword, category]);
 
   useEffect(() => { load().catch(() => setItems([])); }, [load]);
+
+  /** 导入组件 JSON：后端按物理表 / 名称找回本地数据集 */
+  const importFile = async (file: File) => {
+    if (importing) return;
+    setImporting(true);
+    try {
+      const result = await importComponentFile(file);
+      await load();
+      setToast({
+        open: true, severity: "success",
+        msg: result.dataset_matched || !result.dataset_name
+          ? `已导入「${result.name}」`
+          : `已导入「${result.name}」，但本机没有数据集「${result.dataset_name}」，绑定已清空`,
+      });
+    } catch (err) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setToast({ open: true, msg: detail || (err as Error).message || "导入失败", severity: "error" });
+    } finally {
+      setImporting(false);
+    }
+  };
 
   /** 「新建项目」= 建一块空看板，直接进编辑设计（画布） */
   const createProject = async () => {
@@ -79,6 +103,21 @@ export default function ComponentLibraryPage() {
           sx={{ textTransform: "none", fontSize: 12.5, color: "#475569", mr: 0.5 }}
         >
           我的看板
+        </Button>
+        <input
+          ref={fileRef} type="file" accept="application/json,.json" hidden
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            event.target.value = "";
+            if (file) void importFile(file);
+          }}
+        />
+        <Button
+          variant="outlined" size="small" startIcon={<UploadFile sx={{ fontSize: 15 }} />}
+          onClick={() => fileRef.current?.click()} disabled={importing}
+          sx={{ textTransform: "none", fontSize: 12.5, borderRadius: 2, mr: 0.5, borderColor: "#D8E2F5", color: "#475569" }}
+        >
+          {importing ? "导入中…" : "导入"}
         </Button>
         <Button
           variant="contained" size="small" startIcon={<Add sx={{ fontSize: 16 }} />}
@@ -138,15 +177,37 @@ export default function ComponentLibraryPage() {
                   key={item.id}
                   onClick={() => setPreviewItem(item)}
                   sx={{
+                    position: "relative",
                     bgcolor: "#fff", border: "1px solid #EEF3FB", borderRadius: 3,
                     p: 1.75, cursor: "zoom-in", transition: "all .16s",
                     "&:hover": {
                       borderColor: token.border,
                       boxShadow: "0 10px 26px -18px rgba(15,23,42,0.45)",
                       transform: "translateY(-1px)",
+                      "& .export-btn": { opacity: 1 },
                     },
                   }}
                 >
+                  {/* 导出成 JSON（hover 才出现，不抢点击卡片预览的手感） */}
+                  <IconButton
+                    className="export-btn"
+                    title="导出为组件文件"
+                    size="small"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void exportComponent(item.id, item.name)
+                        .then(() => setToast({ open: true, msg: `已导出「${item.name}」`, severity: "success" }))
+                        .catch(() => setToast({ open: true, msg: "导出失败", severity: "error" }));
+                    }}
+                    sx={{
+                      position: "absolute", top: 8, right: 8, zIndex: 2,
+                      width: 26, height: 26, opacity: 0, transition: "opacity .14s",
+                      bgcolor: "rgba(255,255,255,0.92)", border: "1px solid #EEF3FB",
+                      "&:hover": { bgcolor: "#fff" },
+                    }}
+                  >
+                    <Download sx={{ fontSize: 15, color: "#64748B" }} />
+                  </IconButton>
                   <Box sx={{
                     mb: 1.25, borderRadius: 2, overflow: "hidden",
                     border: "1px solid #F1F5F9", bgcolor: "#FCFDFF",

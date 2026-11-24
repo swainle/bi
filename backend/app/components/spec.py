@@ -613,9 +613,17 @@ class ChartSpec(BaseModel):
     dot_size: int = 8                 # 散点基础点大小（气泡/四象限按比例放大）
     x_key: str = ""                   # 四象限横轴字段（默认第二个指标）
     y_key: str = ""                   # 四象限纵轴字段（默认主指标）
+    x_agg: str = "MAX"                # 横轴字段的聚合（同一维度有多行时怎么合并）
+    y_agg: str = ""                   # 纵轴字段的聚合；空 = 跟随指标聚合
     size_key: str = ""                # 气泡大小字段
     log_x: bool = False
     log_y: bool = False
+    size_log: bool = False            # 气泡大小按对数缩放（量级差很大时用）
+    quad_x: float | None = None       # 四象限分界 X（空 = 按本页中位数）
+    quad_y: float | None = None       # 四象限分界 Y（空 = 按本页中位数）
+    tooltip_keys: list[str] = []      # （旧）提示框里额外显示的指标，等价于 extras 的简写
+    # 附加字段：面板里「＋ 添加」出来的行，每行 = 说明 + 绑定字段；不限数量（上限 20 防手滑）
+    extras: list[dict] = []
 
     # ── 饼图 / 环形图专属 ──
     # 饼/环文字位置：图形上 / 图形旁（无引导线）/ 图形外（带引导线）
